@@ -1,0 +1,59 @@
+INTRO
+
+A set of scripts for continuous wavelet transform of f0
+for parametric speech synthesis purposes by Antti Suni,
+antti.suni@helsinki.fi , 15.6.2015
+
+includes:
+- outlier detection and removal
+- interpolation of unvoiced parts with a couple of methods
+- CWT analysis and synthesis
+
+
+METHOD 
+
+The method is described in
+Suni, AS, Aalto, D, Raitio, T, Alku, P, Vainio, M 2013, 
+‘Wavelets for intonation modeling in HMM speech synthesis’
+in 8th ISCA Workshop on Speech Synthesis, Proceedings, Barcelona,
+August 31 – September 2, 2013, pp. 285-290.
+
+
+CHANGES 
+
+The current scripts offer some changes to the paper, 
+- preprocessing is hopefully improved, but a bit experimental.
+  for baseline, set interpolation to linear and omit the outlier detection
+- CWT reconstruction is now correct and preserves the variance
+(previously each utterance had to be normalized be zero mean, unity variance)
+
+
+INSTALLATION
+
+Requires Python 2.7 and relatively recent versions of numpy and scipy
+
+
+USE
+
+demo.py shows the process with nice plots, for example:
+> python demo.py sample_files/rjs_0002.F0
+
+cwt_parameterize.py performs the cwt-parameterization for
+synthesis training purposes, writes out interpolated logF0, 
+wavelet matrix and individual scales. It also contains also example
+code for reconstruction.
+
+usage: 
+>python <input_f0_file>
+
+outputs:
+<input_f0_file>.interp # interpolated logF0
+<input_f0_file>.cwt    # wavelet matrix
+<input_f0_file>.cwt.1  # individual scales
+<input_f0_file>.cwt.2
+..
+
+
+LICENCE
+The included cwt-package does not allow commercial use,
+refer to disclaimer in cwt.py. Otherwise, use and distibute freely.

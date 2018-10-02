@@ -1,0 +1,87 @@
+###### EXAMPLE for CNN #######
+
+Genenral:
+	CURRENNT implements 1-D and 2-D convolution. Note:
+	1. 1-D conv: the filter doesn't move along the feature dimension
+	2. 2-D conv: I don't implement use zero-padding, nor max-pooling
+	
+	For details: see CNN_tutorial.ppt on tonywangx.github.io (strongly recommended)
+
+Usage:
+	1. just train the network as usual after configuring the network.jsn;
+	   no specific option in config.cfg
+	   
+	2. to show the detailed configuration of CNN layers, use command "--verbose 3"
+	   ~$: currennt --options_file config.cfg --verbose 3
+	   a table of filter configuration will be printed for each CNN layer
+
+	3. for historical reason, I use "window" to denote "filter"
+	
+	4. configuration in network.jsn:
+
+	   The configuration for each filter must be provided, in this format
+	   "NUM1*OPTION1_NUM2*OPTION2". Here, NUM1 denotes the number of
+	   filters that use the same option OPTION1, similarly for NUM2
+	   
+
+	   1-D conv layer:
+       	       {
+		"name": "cn1",       
+		"bias": 1.000000,
+		
+		"type": "cnn",
+		# layer type
+		
+		"size": 54,
+		# layer size
+		# 1. For 1-D conv, the layer size = filter number (channel number)
+
+		"window_width":        "27*1_27*2",
+		# width of the filter
+		# 1. "27*1_27*2" means 27 filters will have width parameter 1, and another
+	        #    27 filters with width parameter as 2. Note, this width parameter denotes
+	        #    the half width of the a filter. So, the actual width will be N*2+1
+		# 2. window_width must be specified
+		# 3. for 1-D conv, the total number of filters must be equal to layer size
+		
+		
+		"window_tap_interval": "54*1"
+		# tap width for diluated conv
+		# 1. optional (default =1 for all filters)
+		# 2. for 1-D conv, the total number of filters must be equal to layer size
+
+	       },
+	       	
+
+	   2-D conv layer:
+   	       {
+		
+		"name": "cn1",
+		"bias": 1.000000,
+		
+		"type": "cnn",
+		
+		"size": 54,
+		"window_width":        "5*1_5*2",
+		"window_height":       "2*128_3*128_5*64",
+		"window_stride":       "2*32_3*64_5*32",
+		# configuration for 2-D conv
+		# 1. all the four configurations must be provided
+		# 2. one filter may generated multiple dimensions of output feature:
+		#    dim_output_feature = floor( (previous_layer_size - height) / stride ) + 1
+		# 3. for example, given previous_layer_size = 256,
+		#    if height = 128, stride = 32, then
+		#    	dim_output_feature = floor( (256 - 128) / 32 ) + 1 = 5
+		#    if height = 128, stride = 64, then
+		#    	dim_output_feature = floor( (256 - 128) / 64 ) + 1 = 3
+		#    if height = 64,  stride = 32, then
+		#    	dim_output_feature = floor( (256 -  64) / 32 ) + 1 = 7
+		# 4. for exemplar network, we have 10 filters, 
+		#    where 2 filters have (height, stride) as (128, 32),
+		#          3 filters have (128, 64)
+		#          5 filters have (64,  32)
+	        #    thus, sum_dim_output_feature = 2 * 5 + 3 * 3 + 5 * 7 = 54
+		# 5. please calculate the layer size by yourself as above before specifying "size"
+
+		"window_tap_interval": "10*1"
+	       },

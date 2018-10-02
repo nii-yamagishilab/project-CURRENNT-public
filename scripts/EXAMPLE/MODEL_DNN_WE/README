@@ -1,0 +1,28 @@
+
+# What you need to add to config.cfg:
+# I use WE to denote word embedding
+
+# Learning rate for WE
+welearning_rate      = -3e-5    # Learning rate for WE. If it is < 0, not update WE
+		                # if learning_rate < 0, welearning_rate >0
+				#     update WE, but not weight of network
+				#     updated WE will be saved as epoch***.autosave.we
+				# if learning_rate > 0, welearning_rate >0
+				#     update WE, and weight of network
+				#     updated WE will be saved as epoch***.autosave.we
+				# if learning_rate > 0, welearning_rate <0
+				#     just use WE, only update weight of network
+				# 
+# turn this on to enable WE
+weExternal           = 1        
+
+# what's the dimension index of the WE index in the input file?
+# I always add the WE index as the final dimension of the input feature vector
+# note, weIDDim starts from 0
+weIDDim		     = 382      
+
+# where is the binary WE data, which will be read in the first epoch
+weBank		     = ../RAWDATA/we.webank_s
+
+# dimension of the WE
+weDim		     = 80       

@@ -1,0 +1,48 @@
+
+Block 20161111x01
+
+// open the output file
+                std::ofstream file(config.feedForwardOutputFile().c_str(), std::ofstream::out);
+
+                // process all data set fractions
+                int fracIdx = 0;
+                boost::shared_ptr<data_sets::DataSetFraction> frac;
+                while (((frac = feedForwardSet->getNextFraction()))) {
+                    printf("Computing outputs for data fraction %d...", ++fracIdx);
+                    fflush(stdout);
+
+                    // compute the forward pass for the current data fraction 
+		    // and extract the outputs
+                    neuralNetwork.loadSequences(*frac);
+                    neuralNetwork.computeForwardPass();
+                    std::vector<std::vector<std::vector<real_t> > > outputs = neuralNetwork.getOutputs();
+
+                    // write the outputs in the file
+                    for (int psIdx = 0; psIdx < (int)outputs.size(); ++psIdx) {
+                        // write the sequence tag
+                        file << frac->seqInfo(psIdx).seqTag;
+
+                        // write the patterns
+                        for (int timestep = 0; timestep < (int)outputs[psIdx].size(); ++timestep) {
+                            for (int outputIdx = 0; outputIdx < (int)outputs[psIdx][timestep].size(); ++outputIdx) {
+                                real_t v;
+                                if (timestep < outputs[psIdx].size() - output_lag)
+                                    v = outputs[psIdx][timestep + output_lag][outputIdx];
+                                else
+                                    v = outputs[psIdx][outputs[psIdx].size() - 1][outputIdx];
+                                if (unstandardize) {
+                                    v *= outputStdevs[outputIdx];
+                                    v += outputMeans[outputIdx];
+                                }
+                                file << ';' << v; 
+                            }
+                        }
+
+                        file << '\n';
+                    }
+
+                    printf(" done.\n");
+                }
+
+                // close the file
+                file.close();

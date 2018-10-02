@@ -1,0 +1,166 @@
+{
+    "layers": [
+        {
+            "size": 382,
+            "name": "input",
+            "type": "input"
+        },
+        {
+            "size": 256,
+            "name": "fl1",
+            "bias": 1.0,
+            "type": "feedforward_tanh",
+	    "learningRate": 0.0
+        },
+        {
+            "name": "cn1",
+            "type": "cnn",
+            "size": 54,
+            "bias": 1,
+            "window_width": "27*1_27*2",
+            "window_tap_interval": "54*1",
+	    "learningRate": 0.0
+        },
+	{
+            "size": 128,
+            "name": "fl2",
+            "bias": 1.0,
+            "type": "feedforward_tanh",
+	    "learningRate": 0.0
+        },
+        {
+            "size": 259,
+            "name": "output",
+            "bias": 1.0,
+            "type": "feedforward_identity",
+	    "learningRate": 0.0
+        },
+	{
+	    "size": 259,
+	    "name": "skipInit",
+	    "bias": 1.000000,
+	    "type": "skipini"
+	},
+	{
+	    "size": 359,
+	    "name": "addnoise",
+	    "bias": 1.0,
+	    "type": "operator",
+	    "noiseRatio": 1,
+	    "noiseDim": 100,
+	    "noiseRepeat": 1
+	},
+	{
+            "size": 256,
+            "name": "res_gen_1",
+            "bias": 1.0,
+            "type": "feedforward_tanh"
+        },
+	{
+            "size": 256,
+            "name": "res_gen_2",
+            "bias": 1.0,
+            "type": "cnn",
+            "window_width": "256*1",
+	    "window_convo_range": "256*0",
+	    "window_tap_interval": "64*2_64*4_64*32_64*128"
+        },
+	{
+            "size": 256,
+            "name": "res_gen_3",
+            "bias": 1.0,
+            "type": "feedforward_tanh"
+        },
+	{
+            "size": 259,
+            "name": "res_gen_4",
+            "bias": 1.0,
+            "type": "feedforward_tanh"
+        },
+	{
+            "size": 259,
+            "name": "res_gen_5",
+            "bias": 1.0,
+            "type": "feedforward_identity"
+        },
+	{
+	    "size": 259,
+	    "name": "skipAdd",
+	    "bias": 1.000000,
+	    "type": "skipadd",
+	    "preSkipLayer": "res_gen_5,skipInit"
+	},
+	{
+	    "size": 259,
+	    "name": "middle",
+	    "bias": 1.00,
+	    "type": "middleoutput",
+	    "dataOutputDim": 259,
+	    "ganRatio":   0.8,
+	    "ganGradMag": 10.0
+	},
+	{
+	    "size": 259,
+	    "name": "ope",
+	    "bias": 1.0,
+	    "setZero": "5*0_5*0.001_5*0.01_5*0.05_40*1_199*0",
+	    "type": "operator"
+	},
+        {
+            "size": 512,
+            "name": "forward_6",
+            "bias": 1.0,
+            "type": "feedforward_tanh"
+        },
+	{
+            "size": 256,
+            "name": "cnn1",
+            "bias": 1.0,
+            "type": "cnn",
+            "window_width": "256*1",
+	    "window_convo_range": "256*0",
+	    "window_tap_interval": "64*2_64*4_64*32_64*128"
+        },
+	{
+            "size": 256,
+            "name": "forward_8",
+            "bias": 1.0,
+            "type": "feedforward_tanh"
+        },
+	{
+            "size": 256,
+            "name": "cnn2",
+            "bias": 1.0,
+            "type": "cnn",
+            "window_width": "256*1",
+	    "window_convo_range": "256*0",
+	    "window_tap_interval": "64*2_64*4_64*32_64*128"
+        },
+	{
+            "size": 256,
+            "name": "forward_9",
+            "bias": 1.0,
+            "type": "feedforward_tanh"
+        },
+	{
+            "size": 64,
+            "name": "cnn3",
+            "bias": 1.0,
+            "type": "cnn",
+            "window_width": "64*1",
+	    "window_convo_range": "64*0",
+	    "window_tap_interval": "32*2_32*16"
+        },
+	{
+            "size": 1,
+            "name": "forward_10",
+            "bias": 1.0,
+            "type": "feedforward_identity"
+        },
+        {
+            "size": 1,
+            "name": "postoutput",
+            "type": "mdn"
+        }
+    ]
+}

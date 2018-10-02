@@ -1,0 +1,42 @@
+
+Note:
+	This package contains the toy problems to use simple RNN,
+	clock RNN, DBLSTM, clock DBLSTM
+
+Usage:
+	1. cd to the directory scripts, package the data using CONFIGPOOL/config_CLRNN.pm
+	2. cd to this directory, run 00_batch.sh
+
+
+Instruction:
+	1. configuration for RNN in network.jsn:
+	   uni-directional RNN: 	"type": "rnn"
+	   bi-directional  RNN: 	"type": "brnn"
+
+	2. by default, the non-clock schedule will be used
+
+	3. to use clock RNN and clock LSTM (works for both uni- and bi-):
+	   add "clock": "********" in network.jsn
+
+
+	4. format of clock configuration:
+	   A1_A2_B1_B2_C1_C3..._M1_M2
+	   
+	   A,B,...,M are called clock bands
+	   A1: time resolution
+	   A2: this band occupies the 0th to (A2-1)th dimension of the hidden feature
+	   B1: time resolution
+	   B2: this band occupies the A2th to (B2-1)th dimension of the hidden feature
+	   
+	   
+	   For example, "1_10_2_20_4_30_8_40_32_50_64_70" sets 6 bands
+	   1_10: the first band occupies [ 0- 9] dims, time-resolution is 1
+	   2_20: the first band occupies [10-19] dims, time-resolution is 2		   	    
+	   4_30: the first band occupies [20-29] dims, time-resolution is 4
+	   ...
+
+	   Note:
+		1. if uni-directional rnn or lstm is used, the last number M2
+		   should be equal to the layer size
+		2. if bi-directional rnn or lstm is used, the last number M2
+		   should be equal to the (layer size)/2

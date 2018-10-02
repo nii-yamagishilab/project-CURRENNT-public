@@ -1,0 +1,20 @@
+{
+	"layers": [
+		{
+			"size": 382,
+			"name": "input",
+			"type": "input"
+		},
+		{
+			"size": 259,
+			"name": "output",
+			"bias": 1.0,
+			"type": "feedforward_identity"
+		},
+		{
+			"size": 259,
+			"name": "sse",
+			"type": "sse"
+		}
+	]
+}

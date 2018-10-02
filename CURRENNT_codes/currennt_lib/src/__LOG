@@ -1,0 +1,64 @@
+######## TO DO LIST ########
+20180725 #1
+ID: outputBufPtrBias
+Note: outputBufPtrBias is not added to every layer
+      only WaveNet related layers used outputBufPtrBias for memory save mode
+.//layers/FeedForwardLayer.cu:579:	int shiftIn  = this->precedingLayer().outputBufPtrBias(timeStep * this->parallelSequences(),
+.//layers/FeedForwardLayer.cu:582:	int shiftOut = this->outputBufPtrBias(timeStep * this->parallelSequences(), nnState);
+.//layers/FeedForwardLayer.cu:857:    int FeedForwardLayer<TDevice, TActFn>::outputBufPtrBias(const int timeStepTimesParallel,
+.//layers/FeedForwardLayer.hpp:110:	virtual int outputBufPtrBias(const int timeStepTimesParallel, const int nnState);
+.//layers/CNNLayer.cu:1235:	int shiftIn = this->precedingLayer().outputBufPtrBias(st, nnState);
+.//layers/CNNLayer.cu:1600:    int CNNLayer<TDevice>::outputBufPtrBias(const int timeStepTimesParallel, const int nnState)
+.//layers/CNNLayer.hpp:135:	virtual int  outputBufPtrBias(const int timeStepTimesParallel, const int nnState);
+.//layers/LstmLayer.cu:1405:		 this->precedingLayer().outputBufPtrBias(timeStep*this->parallelSequences(), 0)));
+.//layers/RnnLayer.cu:1001:		 this->precedingLayer().outputBufPtrBias(timeStep * this->parallelSequences(), 0)));
+.//layers/SkipAddLayer.cu:243:	int shiftOut = this->outputBufPtrBias(timeStep * this->parallelSequences(), nnState);
+.//layers/SkipAddLayer.cu:268:		shiftIn = layer->outputBufPtrBias(timeStep * this->parallelSequences(), nnState);
+.//layers/SkipAddLayer.cu:379:    int SkipAddLayer<TDevice>::outputBufPtrBias(const int timeStepTimesParallel, const int nnState)
+.//layers/SkipAddLayer.cu:382:	    return this->precedingLayer().outputBufPtrBias(timeStepTimesParallel, nnState);
+.//layers/SkipAddLayer.hpp:99:	virtual int outputBufPtrBias(const int timeStepTimesParallel, const int nnState);
+.//layers/wavNetCore.cu:553:	int shiftPre    = this->precedingLayer().outputBufPtrBias(effTimeStep, nnState);
+.//layers/wavNetCore.cu:554:	int shiftCur    = this->outputBufPtrBias(effTimeStep, nnState);
+.//layers/wavNetCore.cu:744:    int  WavNetCore<TDevice>::outputBufPtrBias(const int timeStepTimesParallel, const int nnState)
+.//layers/wavNetCore.hpp:103:	virtual int  outputBufPtrBias(const int timeStepTimesParallel, const int nnState);
+
+
+20180726 #1
+ID: patTypes bug
+Note:
+ in memory save mode, patTypes is not reduced in length.
+ however, the time index is reduced. Thus, patTypes[0] is repeatedly acessed
+
+20180726 #2
+ID: memory save mode, time idx
+Note: ShiftIn ShiftOut refers to the shift of input and output, however
+ some modules may use the time index for Shiftout and acess the input buffer
+
+
+20180727 #1
+ID: memory save mode
+Note: memory save mode is entered for WaveNet, generation mode (not training)
+ no shift is specified for computeForwardPass()
+
+20180727 #2
+ID: embedding soft code
+Note: embedding layer use the index to search for the code,
+ how to merge the embedded codes?
+
+
+20180801 #1
+ID: overflow of shiftIn shiftOut
+Note: now these two numbers are int32. If time * size is large, there will be overflow
+ of shiftIn shiftOut
+
+20180916
+#1
+NeuralNetwork.cpp is too complicated. Re-factorize the code
+
+#2
+clearAllBuffers and resizeAllBuffers
+
+20180924
+#1
+When input is not completely noise, initial mean of StructTransformLayer should
+be read from the clean signal

@@ -1,0 +1,13 @@
+CHANGES in version 0.2-rc1
+
+- Fixed a bug in the binary classification layer where the classification error would go to zero erroneously.
+- Allow selection of CUDA device (--list_devices option and CURRENNT_CUDA_DEVICE environment variable).
+- Allow multiple NetCDF files to be used as training, validation, or test set. This is useful, e.g., for aggregating data from multiple training corpora.
+- Allow changing of the cache path (--cache_path option).
+- Implemented training with weight noise (--weight_noise_sigma option).
+- Implemented training of unidirectional RNNs with look-ahead (--output_time_lag option).
+- Implemented automatic truncation of over-long sequences (--truncate_seq option).
+- Implemented cross-entropy cost function ("ce" post-output layer).
+- Implemented weighted sum of squared errors cost function ("weighted_sse" post-output layer).
+- Implemented discriminative training for masking functions ("sse_mask" post-output layer).
+- Added support for specific learning rates per layer ("learningRate" value in the net json file).

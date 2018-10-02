@@ -1,0 +1,72 @@
+Started in hybrid online/batch training mode.
+Mini-batches (1 sequences each) will be shuffled during training.
+Using input noise with a standard deviation of 0.1.
+The trained network will be written to 'trained_network.jsn'.
+WARNING: The output file 'trained_network.jsn' already exists. It will be overwritten!
+Validation error will be calculated every 1 epochs.
+Training will be stopped after 5 epochs or if there is no new lowest validation error within 2 epochs.
+Autosave after EVERY EPOCH enabled.
+Utilizing the GPU for computations with 1 sequences in parallel.
+Normal distribution with mean=0 and sigma=0.1. Random seed: 952394417
+WARNING: the external vectors are utilized, noise on input will be turned off
+
+Using device #0 (Tesla K40c)
+Reading network from './network.jsn'... done.
+
+Loading training set '../DATA_WE/data.nc1' ...
+using cache file: /tmp/b464-6f7a-6fbe-427e
+... done.
+Loaded fraction:  100%
+Sequences:        2
+Sequence lengths: 570..946
+Total timesteps:  1516
+
+Loading validation set '../DATA_WE/data.nc1' ...
+using cache file: /tmp/be55-4e38-1e86-0643
+... done.
+Loaded fraction:  100%
+Sequences:        2
+Sequence lengths: 570..946
+Total timesteps:  1516
+
+Creating the neural network... done.
+Layers:
+(0) input [size: 462]
+(1) feedforward_logistic [size: 512, bias: 1.0, weights: 237056]
+(2) feedforward_logistic [size: 256, bias: 1.0, weights: 131328]
+(3) feedforward_identity [size: 259, bias: 1.0, weights: 66563]
+(4) sse [size: 259]
+Total weights: 434947
+
+Read 3 vectors
+
+Creating the optimizer... done.
+Optimizer type: Steepest descent with momentum
+Max training epochs:       5
+Max epochs until new best: 2
+Validation error every:    1
+Test error every:          1
+Learning rate:             3e-05
+Momentum:                  0
+
+Parameter for WE:
+WE learning_rate:          -3e-05
+WE Bank:                   ../RAWDATA/we.webank_s
+WE Dim:                    80
+WE Start index:            382
+
+Starting training...
+Print error per sequence / per timestep
+ Epoch | Duration |           Training error  |           Validation error|           Test error      |New best 
+-------+----------+---------------------------+---------------------------+---------------------------+---------
+     1 |      0.4 |    152312.297 /   200.940 |    140900.531 /   185.885 |                           |  yes   
+     2 |      0.0 |    130620.578 /   172.323 |    102767.016 /   135.577 |                           |  yes   
+     3 |      0.1 |    103123.953 /   136.047 |    100608.570 /   132.729 |                           |  yes   
+     4 |      0.0 |    101017.719 /   133.269 |    100349.391 /   132.387 |                           |  yes   
+     5 |      0.0 |    100464.188 /   132.539 |     99932.891 /   131.838 |                           |  yes   
+
+Maximum number of training epochs reached. Training stopped.
+Lowest validation error: 99932.890625
+
+Storing the trained network in 'trained_network.jsn'... done.
+Removing cache file(s) ...

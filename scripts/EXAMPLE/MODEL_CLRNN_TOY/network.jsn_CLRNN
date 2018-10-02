@@ -1,0 +1,27 @@
+{
+	"layers": [
+		{
+			"size": 1,
+			"name": "input",
+			"type": "input"
+		},
+		{
+			"size": 70,
+			"name": "fl2",
+			"bias": 1.000000,
+			"type": "rnn",
+			"clock": "1_10_2_20_4_30_8_40_32_50_64_70"
+		},
+		{
+			"size": 1,
+			"name": "output",
+			"bias": 1.000000,
+			"type": "feedforward_identity"
+		},
+		{
+			"size": 1,
+			"name": "postoutput",
+			"type": "sse"
+		}
+	]
+}

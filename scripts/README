@@ -1,0 +1,355 @@
+###########################################################################
+## ---------------------------------------------------------------------  #
+##  Scripts for CURRENNT						  #
+## ---------------------------------------------------------------------  #
+###########################################################################
+##                         Author:  Xin WANG                              #
+##                         Contact: wangxin@nii.ac.jp                     #
+##                         Date:    2016-05-30                            #
+##                         Updated: 2017-10-29                            #
+###########################################################################
+
+## ----------------------- MESSAGE  ------------------------------------  #
+I use the scripts to train networks for speech synthesis.
+They are not full speech synthesis systems but just the script to train
+neural-network-based acoustic model ! 
+
+Some components for specific tasks, e.g. MLPG generation algorithm,
+vocoder for speech-analysis-synthesis, and formant enhancement are removed
+from the scripts. 
+
+At last, I only test the scripts on our GPU servers.
+
+And, the code may be dirty !
+
+## ----------------------- REQUIREMENTS--------------------------------  #
+1. CURRENNT ToolKit, the modified version
+   It requires: 
+   1.1 netcdf http://www.unidata.ucar.edu/software/netcdf/
+       The version I use is 4.3.3.1.
+       The scripts use python/scipy.netCDF to package data. For compatiblity,
+       please configure netCDF by "./configure --disable-netcdf-4 ...". 
+
+       After compiling, nc-config can be used to print the configuration of netCDF.
+
+       wang@gpu13:/work/smg/wang/TOOL/bin/netcdf_220/bin$ ./nc-config --all
+       This netCDF 4.3.3.1 has been built with the following features: 
+
+        --cc        -> gcc
+	--cflags    ->  -I/home/smg/wang/TOOL/bin/netcdf_220/include 
+	--libs      -> -L/home/smg/wang/TOOL/bin/netcdf_220/lib -lnetcdf
+
+	--has-c++   -> no
+ 	--cxx       -> 
+ 	--has-c++4  -> no
+ 	--cxx4      -> 
+
+ 	--fc        -> 
+ 	--fflags    -> 
+ 	--flibs     -> 
+ 	--has-f90   -> no
+
+ 	--has-dap   -> yes
+ 	--has-nc2   -> yes
+ 	--has-nc4   -> no
+	--has-hdf5  -> no
+ 	--has-hdf4  -> no
+ 	--has-pnetcdf-> no
+
+ 	--prefix    -> /home/smg/wang/TOOL/bin/netcdf_220
+ 	--includedir-> /home/smg/wang/TOOL/bin/netcdf_220/include
+ 	--version   -> netCDF 4.3.3.1
+       
+   1.2 Boost  (headers and compiled library) http://www.boost.org
+       The version I use is boost_1_59_0. Just follow the CURRENNT/README to
+       compile Boost
+
+   1.3 CUDA > 6.5
+       The modified CURRENNT can be compiled with CUDA7.0, 8.0 and 9.0.
+       If you are using the original CURRENNT, please check 
+       http://sourceforge.net/p/currennt/discussion/general/thread/df6eeece/
+       http://sourceforge.net/p/currennt/discussion/general/thread/e10ef414/)
+   ...
+   Please follow the CURRENNT/README instruction to install CURRENNT.
+      
+
+2. A small Python toolkit (pyTools) from my github
+   This toolkit requires
+   2.1 Scipy and Numpy
+   2.2 Cython (optional, to compile a binary interface)
+
+## ----------------------- USAGE   ------------------------------------  #
+
+---- For running the EXAMPLE:
+1. Compile and add 'currennt' to your path. Check command below in the terminal
+   ~$ currennt --list_devices 1
+   Configuration Infor:
+   		 Started in forward pass mode.
+		 Writting output to ''.
+		 Utilizing the GPU on 1 sequences in parallel.
+
+   1 devices found
+   0: Tesla K40c
+
+   It will list the GPU devices on your machine
+
+2. Enter directory of the script, make sure you can see:
+   ~$ ls
+   000_PRE.pl  01_prepare_train_data.pl  04_synwav.pl   CONFIGPOOLS  README    showData.pl  tmp
+   001_RUN.pl  03_prepare_test_data.pl   05_calRMSE.pl  EXAMPLE      clean.sh  template     utilities
+   
+3. Add PYTHONPATH to the python toolkit
+   ~$ export PYTHONPATH=PATH_TO_PYTOOLS:$PYTHONPATH
+   
+4. Select one example configuration and run
+   ~$ perl 001_RUN.pl CONFIGPOOLS/config_***.pm
+  
+   Alternatively, there is a simplified script to run the example
+   ~$ cd SCRIPTS_SIMPLE
+   ~$ sh 01_DNN.sh
+   I will add more scripts for other examples. But this simplified script can cover most of
+   the examples.
+
+5. Check the printed information on the screen (several pages). You should see this at last:
+   
+   """
+   Generating features to ***
+   ==================================================================
+    --- All Done ---  at ***
+   ==================================================================
+   """
+
+   To see what has been launched for each step, please add '1' as the last argument
+   ~$ perl 001_RUN.pl CONFIGPOOLS/config_***.pm 1
+
+   This will not execute each step but just show the command of each step
+
+
+6. Please try CONFIGPOOLS/config_DNN.pm and then compare output information on your machine
+   with LOG/config_DNN_log. The printed informaiton may not be extactly the same because I
+   may have modified the interface in CURRENNT.
+   You can search for "COMMANDLINE" in this log file, then you can see the command line
+   used by the script at each step.
+   
+   Please check the directory EXAMPLE/MODEL_DNN/output_trained_network. You should see
+   several files generated by the script. *.mgc are the MGC features, *.lf0 are the F0 files
+   ~$ ls EXAMPLE/MODEL_DNN/output_trained_network
+   BC2011_nancy_NYT096-008-00.bap  BC2011_nancy_RURAL-02652.bap  BC2011_nancy_SCIENCE-03888.bap  BC2011_nancy_SLAT035-001-00.bap  gen.scp
+   BC2011_nancy_NYT096-008-00.htk  BC2011_nancy_RURAL-02652.htk  BC2011_nancy_SCIENCE-03888.htk  BC2011_nancy_SLAT035-001-00.htk
+   BC2011_nancy_NYT096-008-00.lf0  BC2011_nancy_RURAL-02652.lf0  BC2011_nancy_SCIENCE-03888.lf0  BC2011_nancy_SLAT035-001-00.lf0
+   BC2011_nancy_NYT096-008-00.mgc  BC2011_nancy_RURAL-02652.mgc  BC2011_nancy_SCIENCE-03888.mgc  BC2011_nancy_SLAT035-001-00.mgc
+   BC2011_nancy_NYT096-008-00.vuv  BC2011_nancy_RURAL-02652.vuv  BC2011_nancy_SCIENCE-03888.vuv  BC2011_nancy_SLAT035-001-00.vuv
+
+   Note: CURRENNT only generates *.htk. The script extract *.mgc, *lf0 and other files from
+   *.htk. The name extension and dimension of *.mgc... are determined by the EXAMPLE/TESTDATA/data_config.py
+
+   Please check the directory EXAMPLE/MODEL_DNN. You should see the trained networks and
+   the log file of training process:
+   $ ls EXAMPLE/MODEL_DNN
+   config.cfg      epoch001.autosave  epoch003.autosave  epoch005.autosave  network.jsn             trained_network.jsn
+   config_syn.cfg  epoch002.autosave  epoch004.autosave  log_train          output_trained_network
+   
+   If you find any problem or error, please email me.
+
+7. List of examples in CONFIGPOOLS:
+   
+   config_DNN.pm:         the deep feedforward neural network
+                          for RNN example, please see the help of CURRENNT
+                          and modify the network.jsn
+
+   config_DNN_WEIGHT.pm   the deep feedforward neural network with weight mask.
+   			  the weight mask set part of the network connection as zero.
+                          I use this weight mask to create multi-stream network.
+			  please use EXAMPLE/MODEL_DNN_WEIGHT/createWeightMask.py to create
+                          the weight mask. please check /EXAMPLE/MODEL_DNN_WEIGHT/config.cfg
+                          on the option to use weight mask
+
+   config_DNN_WE.pm:      the deep feedforward neural network with word vectors as input
+                          note, the word vectors are stored in a binary data file 
+                          EXAMPLE/RAWDATA/we.webank_s, the dimension is 80.
+			  also, please check /EXAMPLE/MODEL_DNN_WE/README to see
+                          the instruction on writing the config.cfg file
+   
+   config_HIGHWAY.pm:     the highway network.
+                          It is similar to DNN network, except the network.jsn.
+                          please read EXAMPLE/MODEL_HIGHWAY/README to know how to 
+                          create the network.jsn for highway network
+                          
+			  residual network, a specical case of highway can also be created
+                          by simply creating the network.jsn
+
+   config_MDN_*.pm:       the mixture density network (MDN)
+                          I normally initialize MDN based on a trained RNN or DNN network.
+                          It is not suggested to directly train MDN from scratch.
+			  config_MDN_1.pm: train the DNN network
+   			  config_MDN_2.pm: train the MDN based on the MDN
+			  please check EXAMPLE/MODEL_MDN/README
+   
+   config_ARRMDN_*.pm     the Auto-regressive Recurrent Mixture Density Network
+                          please check EXAMPLE/MODEL_ARRMDN/README
+
+   config_CLRNN.pm        this script is only used to package the data for a toy
+   			  problem. After perl 001_RN.pl CONFIGPOOL/config_CLRNN.pm,
+			  ~$ cd EXAMPLE/MODEL_CLRNN_TOY
+			  ~$ sh 00_batch.sh
+			  
+   config_QUANF0.pm   	  this script show the example on training the quantized F0 model
+   			  with autoregressive loop.
+   			  Please read EXAMPLE/MODEL_QUANF0/README for more details
+
+   config_CNN.pm          this script show the example on training CNN model
+   			  Please read EXAMPLE/MODEL_CNN/README for details on CNN
+
+   config_GAN.pm	  this script show the example on GAN (for speech synthesis)
+
+   config_WAVENET.pm	  this script to train wavenet (conditioned on acoustic features)
+   
+   NOTE:
+   1. These examples above are toy examples, please check tonywangx.github.io for the
+      network and training recipes used in my papers.
+      
+   2. Waveform generation (using vocoder) is disabled since we cannot re-distribute the
+      vocoder we use.
+      
+   3. MLPG is not included in the script. The generate files are just static acoustic features
+      
+   4. Data in RAWDATA are input/output features
+      They are all stored as binary data, float32, little-endian. Even though some files are only
+      integer values, they are still stored as float32 data
+      
+      1. mgc_delta: mgc with static, delta, delta-delta components
+      2. lf0_delta: log lf0 with static, delta, delta-delta components
+      3. bap_delta: bandaperiodicity with static, delta, delta-delta components
+      4. lab:       input bindary/continuous-valued linguistic features
+      5. vuv:	    u/v of lf0
+      6. lf0_dis:       log lf0, without interpolation, static component only
+      7. lf0_dis_class: quantized version of lf0_dis (generated by scripts in DATA_F0CLASS/scripts)
+      8. labindx:   index of acoustic feature, which is used by the wavenet
+      9. raw:	    waveform level (these examples are 8bit mu-law waveform)
+
+      You can use the pyTools to read/write these binary data:
+      >> from ioTools import readwrite
+      >> data = readwrite.read_raw_mat(PATH_TO_THE_DATA, FEATURE_DIMENSION)
+
+   4. Please write your script for feature extraction, waveform generation, and MLPG generation
+      (or use the scripts in HTS)
+
+
+
+---- Using your own data:
+0. Please make sure that all the binary data are float32, little-endian.
+   Download the scripts again, and check the EXAMPLE directory carefully.
+   Basically, it will tell you what you need to train the system:
+
+1. DATA: directory for training data
+   1.1 data_config.py: configuration on the training data. 
+       		       Follow the EXAMPLE/DATA_*/data_config.py and prepare
+
+   1.2 *.scp: 	       lists of paths to your training data
+       		       (both input and output to the neural network)
+
+2. TESTDATA: directory for test data
+   2.1 data_config.py: configuration on the training data. 
+       		       Follow the EXAMPLE/TESTDATA_*/data_config.py and prepare
+
+   2.2 *.scp: 	       lists of paths to the test data 
+       		       (only input to the network)
+
+3. MODEL: the directory for neural network training 
+   3.1 config.cfg:     configuration for network training (for currennt)
+
+   3.2 config_syn.cfg: configuration used during generation (for currennt)
+
+   3.3 network.jsn:    network structure  
+
+   3.4 MDN, Highway, word vectors require additional configuration files
+
+       3.4.1 EXAMPLE/MODEL_MDN/MDN/createMDNConfig.py: 
+       	     script to generate the configuration of the MDN layer
+
+       3.4.2 EXAMPLE/MODEL_DNN_WEIGHT/createWeightMask.py: 
+       	     script to generate the weight mask
+
+4. CONFIGURATION panel: 
+   config_***.pm:      please check CONFIGPOOLS/config_***.pm
+   		       There are many options related to training and
+		       generation.
+		       
+   		       By default, every CONFIGPOOLS/config_***.pm will
+		       package the training and testing data.
+		       However, there is no need to re-package the data
+		       every time. In this case, turn off the data packing
+		       process in config_***.pm by setting:
+		       $FLAG_SCP = 0;
+		       $PREP_DAT = 0;
+		       ...
+		
+
+---- For example:
+If I want to train a MDN network on my own data, I will:
+
+0. Make sure all the original input and output feature files
+   are consistent in name. For example
+   A.mgc, A.lf0, A.lab ...
+   B.mgc, B.lf0, B.lab ...
+   ...
+   
+1. In DATA/directory
+   1.1 prepare *.scp
+   1.2 prepare data_config.py
+
+2. In TESTDATA/directory
+   2.1 prepare *.scp
+   2.2 prepare data_config.py
+
+3. In MODEL
+   3.1 prepare config.cfg, config_syn.cfg
+   3.2 prepare network.jsn
+   3.3 for MDN, 
+       3.3.1 prepare createMDNConfig.py
+       3.3.2 python createMDNConfig.py to get mdn.config
+   3.4 for weight mask
+       3.4.1 prepare createWeightMask.py
+       3.4.2 python createWeightMask.py to get weightMask
+   
+   3.5 check network.jsn is compatible with mdn.config or weightMask
+   
+4. Prepare CONFIGPOOLS/config.pm
+
+5. perl 001_RUN.pl CONFIGPOOLS/config.pm
+
+
+---- Tips
+1. You can use the pyTools to read/write the binary data files
+   >> from ioTools import readwrite
+   >> data = readwrite.read_raw_mat('EXAMPLE/RAWDATA/BC2011_nancy_SLAT035-001-00.mgc', 60)
+   >> data.shape
+   (494, 60)
+   >> readwrite.write_raw_mat(data, 'EXAMPLE/RAWDATA/BC2011_nancy_SLAT035-001-00.temp')
+   True
+
+2. You can use the Scipy interface to read *nc files, although they cannot be modified
+   >> from scipy import io
+   >> data = io.netcdf_file('EXAMPLE/DATA/data.nc1')
+   >> data.variables['targetPatterns'][:].shape
+   (1516, 259)
+
+   The list of variables stored in *.nc:
+   inputs:  input features to the neural network
+   targetPatterns: output features of the neural network (for training)
+   seqTags: name of each training file
+   seqLengths: length of each training file
+
+   You can use Scripy to read the *.mv files too
+   >> datamv = io.netcdf_file('EXAMPLE/DATA/data.mv')
+
+   The list of variables stored in *.mv:
+   inutMeans: the mean vector of input features
+   inputStdevs: the std vector of input features
+   outputMeans: ...
+   outputStdevs: ...
+
+## ----------------------- AT LAST   ------------------------------------  #
+There are many options in scripts and CURRENNT without instructions. 
+Email me if you have any question
+

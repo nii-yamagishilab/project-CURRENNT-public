@@ -1,0 +1,62 @@
+{
+	"layers": [
+		{
+			"size": 382,
+			"name": "input",
+			"type": "input"
+		},
+		{
+			"size": 382,
+			"name": "s1",
+			"bias": 1.000000,
+			"type": "skipini"
+		},
+                {
+			"size": 382,
+			"name": "fl1",
+			"bias": 1.000000,
+			"type": "feedforward_logistic"
+		},
+                {
+			"size": 382,
+			"name": "s2",
+			"bias": 1.000000,
+			"type": "skippara_logistic"
+		},
+		{
+			"size": 259,
+			"name": "fl3",
+			"bias": 1.000000,
+			"type": "feedforward_identity"
+		},
+		{
+			"size": 259,
+			"name": "s3",
+			"bias": 1.000000,
+			"type": "skipini"
+		},
+                {
+			"size": 259,
+			"name": "fl4",
+			"bias": 1.000000,
+			"type": "feedforward_logistic"
+		},
+                {
+			"size": 259,
+			"name": "s4",
+			"bias": 1.000000,
+			"type": "skippara_logistic"
+		},
+		{
+			"size": 259,
+			"name": "output",
+			"bias": 1.000000,
+			"type": "feedforward_identity"
+		},
+		{
+			"size": 259,
+			"name": "postoutput",
+			"type": "sse"
+		}
+	]
+}

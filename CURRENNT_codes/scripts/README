@@ -1,0 +1,37 @@
+CURRENNT scripts
+================
+
+This directory is reserved for scripts related to CURRENNT, e.g., to modify
+network files, etc.
+
+discriminative_pretraining.pl: Performs discriminative pre-training of N-layer
+networks with linear output layer.
+
+Usage: perl discriminative_pretraining.pl 
+       <in_net> 
+       <net_config> 
+       <work_dir> 
+       <train_nc> <val_nc> <test_nc> 
+       [max_epochs] 
+       [initial_lr lr_decay_factor]
+
+Arguments:
+    in_net:     Input JSON file of N-layer net.
+    net_config: Options file containing the command line options to train the
+                network (e.g., learning rate, momentum, etc.)
+                See the examples directory for examples and consult the
+                ../README for a full list of options.
+    work_dir:   Working directory where results (trained nets up to N layers,
+                log files) are stored. The final net will be in
+                <work_dir>/trained.N.jsn where N is the number of hidden layers
+                in <in_net>.
+    train_nc,
+    val_nc,
+    test_nc:    Training, validation and test NetCDF files. val_nc and test_nc
+                can be empty ('') to not validate, and/or evaluate on test set.
+    max_epochs: Overwrite max_epochs in config file.
+    initial_lr,
+    lr_decay_factor: Override learning rate in config file by initial learning
+                rate, which is multiplied by lr_decay_factor after adding each
+                layer. Thus, the more layers there are, the less aggressive the
+                optimization is.  (EXPERIMENTAL)

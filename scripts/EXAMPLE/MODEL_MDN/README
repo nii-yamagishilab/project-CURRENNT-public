@@ -1,0 +1,58 @@
+### EXAMPLE for MDN ###
+
+Directory:
+	DNN: the DNN network which will initialize the MDN
+	MDN: the MDN directory
+
+Usage:
+	1. prepare and train the DNN network.
+           the same procedure as the DNN example.
+
+        2. configure the MDN 
+	   please use the MDN/createMDNConfig.py
+	   the default there configuration is 
+           [2 mixture GMM for MGC, sigmoid for UV, 2 mixture GMM for Lf0, 1 mixture for BAP]
+	   without sharing the variance across dimensions
+	  
+           ~$ cd MDN
+	   ~$ python createMDNConfig.py
+	   You will see a file mdn.config, and the screen will print something like:
+	   "
+	   [[0, 722], [722, 723], [723, 737], [737, 888]]
+	   Dimension of output of NN should be 888	
+	   "
+	   
+	   This number is the total number of parameter for the distribution in MDN, including
+           mean, variance, mixture weight, etc. 
+	   
+	3. prepare the MDN network
+	   copy the network.jsn for DNN to MDN directory.
+	   use the number shown in Step.2, (e.g., 888) as the size of the layer BEFORE MDN !
+
+	4. prepare the config.cfg for MDN with additional options
+	   
+	   # path to the mdn.config file
+	   mdn_config           = ./mdn.config                  
+
+	   # path to the DNN network, which will be used to initialize the MDN
+	   trainedModel         = ../DNN/trained_network.jsn    
+	   
+	   # a 1/0 controller, to control which layer should be initialized.
+	   # the length of the 1/0 vector is equal to the number of layers.
+	   # Usually, you can initialize all the layers except the input, last (MDN layer),
+	   # and the output layer before the last layer (actuallt, you can not initialize it
+	   # using the DNN because it has a different layer size from that in DNN).
+	   # in the example, only need to initialize the 2 hidden logistic layers
+	   trainedModelCtr      = 01100                         
+
+	   # default configuration 
+	   wInitPara            = 20
+	   # default configuration 
+	   varInitPara          = 0.001
+
+   	   # If you specify tieVariance=0 in createMDNConfig.py, set tieVariance = 0	
+	   # otherwise, 1
+	   tieVariance          = 0
+
+	   
+	   

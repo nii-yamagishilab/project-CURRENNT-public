@@ -1,0 +1,251 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="src\Configuration.cpp" />
+    <ClCompile Include="src\data_sets\DataSet.cpp">
+      <Filter>data_sets</Filter>
+    </ClCompile>
+    <ClCompile Include="src\NeuralNetwork.cpp" />
+    <ClCompile Include="src\data_sets\DataSetFraction.cpp">
+      <Filter>data_sets</Filter>
+    </ClCompile>
+    <ClCompile Include="src\helpers\JsonClasses.cpp">
+      <Filter>helpers</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\Configuration.hpp" />
+    <ClInclude Include="src\layers\FeedForwardLayer.hpp">
+      <Filter>layers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\layers\InputLayer.hpp">
+      <Filter>layers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\layers\Layer.hpp">
+      <Filter>layers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\NeuralNetwork.hpp" />
+    <ClInclude Include="src\data_sets\DataSet.hpp">
+      <Filter>data_sets</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Types.hpp" />
+    <ClInclude Include="src\rapidjson\document.h">
+      <Filter>rapidjson</Filter>
+    </ClInclude>
+    <ClInclude Include="src\rapidjson\filestream.h">
+      <Filter>rapidjson</Filter>
+    </ClInclude>
+    <ClInclude Include="src\rapidjson\prettywriter.h">
+      <Filter>rapidjson</Filter>
+    </ClInclude>
+    <ClInclude Include="src\rapidjson\rapidjson.h">
+      <Filter>rapidjson</Filter>
+    </ClInclude>
+    <ClInclude Include="src\rapidjson\reader.h">
+      <Filter>rapidjson</Filter>
+    </ClInclude>
+    <ClInclude Include="src\rapidjson\stringbuffer.h">
+      <Filter>rapidjson</Filter>
+    </ClInclude>
+    <ClInclude Include="src\rapidjson\writer.h">
+      <Filter>rapidjson</Filter>
+    </ClInclude>
+    <ClInclude Include="src\rapidjson\internal\pow10.h">
+      <Filter>rapidjson\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="src\rapidjson\internal\stack.h">
+      <Filter>rapidjson\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="src\rapidjson\internal\strfunc.h">
+      <Filter>rapidjson\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="src\optimizers\Optimizer.hpp">
+      <Filter>optimizers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\layers\LstmLayer.hpp">
+      <Filter>layers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\layers\TrainableLayer.hpp">
+      <Filter>layers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\helpers\printVector.hpp">
+      <Filter>helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\LayerFactory.hpp" />
+    <ClInclude Include="src\layers\PostOutputLayer.hpp">
+      <Filter>layers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\activation_functions\Tanh.cuh">
+      <Filter>activation_functions</Filter>
+    </ClInclude>
+    <ClInclude Include="src\activation_functions\Maxmin2.cuh">
+      <Filter>activation_functions</Filter>
+    </ClInclude>
+    <ClInclude Include="src\activation_functions\Maxmin1.cuh">
+      <Filter>activation_functions</Filter>
+    </ClInclude>
+    <ClInclude Include="src\activation_functions\Max2min0.cuh">
+      <Filter>activation_functions</Filter>
+    </ClInclude>
+    <ClInclude Include="src\activation_functions\Logistic.cuh">
+      <Filter>activation_functions</Filter>
+    </ClInclude>
+    <ClInclude Include="src\activation_functions\Identity.cuh">
+      <Filter>activation_functions</Filter>
+    </ClInclude>
+    <ClInclude Include="src\helpers\min.cuh">
+      <Filter>helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\helpers\max.cuh">
+      <Filter>helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\helpers\limitedError.cuh">
+      <Filter>helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\helpers\getRawPointer.cuh">
+      <Filter>helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\helpers\NumericLimits.cuh">
+      <Filter>helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\helpers\boundRange.cuh">
+      <Filter>helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\helpers\JsonClasses.hpp">
+      <Filter>helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\helpers\JsonClassesForward.hpp">
+      <Filter>helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\data_sets\DataSetFraction.hpp">
+      <Filter>data_sets</Filter>
+    </ClInclude>
+    <ClInclude Include="src\layers\BinaryClassificationLayer.hpp">
+      <Filter>layers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\layers\MulticlassClassificationLayer.hpp">
+      <Filter>layers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\layers\SoftmaxLayer.hpp">
+      <Filter>layers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\helpers\cublas.hpp">
+      <Filter>helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\layers\SsePostOutputLayer.hpp">
+      <Filter>layers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\layers\RmsePostOutputLayer.hpp">
+      <Filter>layers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\optimizers\SteepestDescentOptimizer.hpp">
+      <Filter>optimizers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\netcdf\netcdf.h">
+      <Filter>netcdf</Filter>
+    </ClInclude>
+    <ClInclude Include="src\layers\WeightedSsePostOutputLayer.hpp">
+      <Filter>layers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\layers\SseMaskPostOutputLayer.hpp">
+      <Filter>layers</Filter>
+    </ClInclude>
+    <ClInclude Include="src\layers\CePostOutputLayer.hpp">
+      <Filter>layers</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="src\layers\FeedForwardLayer.cu">
+      <Filter>layers</Filter>
+    </CudaCompile>
+    <CudaCompile Include="src\optimizers\Optimizer.cu">
+      <Filter>optimizers</Filter>
+    </CudaCompile>
+    <CudaCompile Include="src\layers\LstmLayer.cu">
+      <Filter>layers</Filter>
+    </CudaCompile>
+    <CudaCompile Include="src\layers\Layer.cpp">
+      <Filter>layers</Filter>
+    </CudaCompile>
+    <CudaCompile Include="src\layers\InputLayer.cpp">
+      <Filter>layers</Filter>
+    </CudaCompile>
+    <CudaCompile Include="src\layers\PostOutputLayer.cpp">
+      <Filter>layers</Filter>
+    </CudaCompile>
+    <CudaCompile Include="src\layers\BinaryClassificationLayer.cu">
+      <Filter>layers</Filter>
+    </CudaCompile>
+    <CudaCompile Include="src\LayerFactory.cu" />
+    <CudaCompile Include="src\layers\MulticlassClassificationLayer.cu">
+      <Filter>layers</Filter>
+    </CudaCompile>
+    <CudaCompile Include="src\layers\SoftmaxLayer.cu">
+      <Filter>layers</Filter>
+    </CudaCompile>
+    <CudaCompile Include="src\helpers\cublas.cu">
+      <Filter>helpers</Filter>
+    </CudaCompile>
+    <CudaCompile Include="src\helpers\Matrix.cu">
+      <Filter>helpers</Filter>
+    </CudaCompile>
+    <CudaCompile Include="src\layers\SsePostOutputLayer.cu">
+      <Filter>layers</Filter>
+    </CudaCompile>
+    <CudaCompile Include="src\layers\RmsePostOutputLayer.cu">
+      <Filter>layers</Filter>
+    </CudaCompile>
+    <CudaCompile Include="src\optimizers\SteepestDescentOptimizer.cu">
+      <Filter>optimizers</Filter>
+    </CudaCompile>
+    <CudaCompile Include="src\layers\WeightedSsePostOutputLayer.cu">
+      <Filter>layers</Filter>
+    </CudaCompile>
+    <CudaCompile Include="src\layers\SseMaskPostOutputLayer.cu">
+      <Filter>layers</Filter>
+    </CudaCompile>
+    <CudaCompile Include="src\layers\CePostOutputLayer.cu">
+      <Filter>layers</Filter>
+    </CudaCompile>
+    <CudaCompile Include="src\layers\TrainableLayer.cu">
+      <Filter>layers</Filter>
+    </CudaCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="layers">
+      <UniqueIdentifier>{aea8d240-9cfe-4b4c-8b22-9e84d03e2c22}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="data_sets">
+      <UniqueIdentifier>{e429d1fd-b4c0-4207-aa64-7eeb4c44cd24}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="rapidjson">
+      <UniqueIdentifier>{70c9022c-3845-4a75-bb2c-edac5674eda8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="rapidjson\internal">
+      <UniqueIdentifier>{1328df0a-ab72-409f-823f-57812d9360a1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="optimizers">
+      <UniqueIdentifier>{884da99a-b489-45f8-bbe0-f7e753e5bd57}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="helpers">
+      <UniqueIdentifier>{66eec1d8-000e-4327-804f-b13df56cee39}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="activation_functions">
+      <UniqueIdentifier>{4e5958b6-98bb-4777-954d-68510a8a92fa}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="netcdf">
+      <UniqueIdentifier>{ce4fab27-35c2-427d-8c2b-66ec4dd2bf5d}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="src\helpers\safeExp.cuh">
+      <Filter>helpers</Filter>
+    </None>
+    <None Include="src\helpers\Matrix.hpp">
+      <Filter>helpers</Filter>
+    </None>
+    <None Include="src\helpers\TypedMath.cuh">
+      <Filter>helpers</Filter>
+    </None>
+  </ItemGroup>
+</Project>

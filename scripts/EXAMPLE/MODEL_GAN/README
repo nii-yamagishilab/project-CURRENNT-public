@@ -1,0 +1,217 @@
+##### EXAMPLE of GAN ####
+
+General:
+	1. I assume a residual approach
+
+				
+	   pre-trained acoustic model -> residual generator ->  +  ->discrminator -> 1/0
+	   			   |   	  	   	     	^
+	   			   |----------------------------|
+
+	   why? to make sure that manifolds of fake and natural data are close enough
+
+
+Useage:
+	1. network.jsn contains three parts:
+	   1. pre-trained acoustic model
+	   2. residual generator
+	   3. discrminator
+	   
+	2. pre-trained acoustic model in network.jsn:
+	
+           {
+            "size": 382,
+            "name": "input",
+            "type": "input"
+            },
+            {
+            "size": 256,
+            "name": "fl1",
+            "bias": 1.0,
+            "type": "feedforward_tanh",
+	    "learningRate": 0.0
+            },
+            {
+            "name": "cn1",
+            "type": "cnn",
+            "size": 54,
+            "bias": 1,
+            "window_width": "27*1_27*2",
+            "window_tap_interval": "54*1",
+	    "learningRate": 0.0
+            },
+	    {
+            "size": 128,
+            "name": "fl2",
+            "bias": 1.0,
+            "type": "feedforward_tanh",
+	    "learningRate": 0.0
+            },
+            {
+            "size": 259,
+            "name": "output",
+            "bias": 1.0,
+            "type": "feedforward_identity",
+	    "learningRate": 0.0
+            },
+
+	    1. just copy from the trained_network.jsn and make sure that
+	       "name" is the same as that of the corresponding layer in pre-trained net
+	       
+	    2. add "learningRate": 0.0 to each layer, then these layers will be fixed
+	    
+	    3. to load the pre-trained acoustic model, use commands in config.cfg
+	       (see config.cfg for explanation)
+	       trainedModel         = ../MODEL_CNN/trained_network.jsn
+	       trainedModelCtr      = 01111000000000000000000
+
+
+
+	3. residual generator:	
+
+	{
+	    "size": 259,
+	    "name": "skipInit",
+	    "bias": 1.000000,
+	    "type": "skipini"
+
+	    # This layer does nothing but just initializing a skip-connection
+	    # Note, "size" must be equal to the previous layer
+	},
+	{
+	    "size": 359,
+	    "name": "addnoise",
+	    "bias": 1.0,
+	    "type": "operator",
+	    "noiseRatio": 1,
+	    "noiseDim": 100,
+
+
+	    "noiseRepeat": 1
+	    # the same noise vector will be repeated and concatenated with feature vectors of
+	    # each frame of one utterance
+
+
+	    # This layer takes in the output of previous layer (output of acoustic model)
+	    # and concatenate it with noise vector (100-dim, \in [-1, 1])
+
+	},
+	{
+            "size": 256,
+            "name": "res_gen_1",
+            "bias": 1.0,
+            "type": "feedforward_tanh"
+        },
+	{
+            "size": 256,
+            "name": "res_gen_2",
+            "bias": 1.0,
+            "type": "cnn",
+            "window_width": "256*1",
+	    "window_convo_range": "256*0",
+	    "window_tap_interval": "64*2_64*4_64*32_64*128"
+        },
+	{
+            "size": 256,
+            "name": "res_gen_3",
+            "bias": 1.0,
+            "type": "feedforward_tanh"
+        },
+	{
+            "size": 259,
+            "name": "res_gen_4",
+            "bias": 1.0,
+            "type": "feedforward_tanh"
+        },
+	{
+            "size": 259,
+            "name": "res_gen_5",
+            "bias": 1.0,
+            "type": "feedforward_identity"
+        },
+	{
+	    "size": 259,
+	    "name": "skipAdd",
+	    "bias": 1.000000,
+	    "type": "skipadd",
+	    
+	    "preSkipLayer": "res_gen_5,skipInit"
+	    # Add which layers ?
+	    # Please specify the name of layers as "Name1,Name2,...",
+	    # don't leave space in the string
+
+	    # This layer sums the generated residual and the output from the acoustic model
+	    
+	},
+
+	To make sure you have the right skip-connection, please check the printed log by currennt
+	when you train the network.
+
+	For example, I will get the following lines for this skipAdd layer
+	-------
+	Layer (12) [ skipAdd ]  skipadd Trainable layer: initialize weight
+	      Receive input from layer(s): res_gen_5, skipInit,
+      	-------
+
+	Please check your network connection
+
+
+	4. Interface between generator and discrminator
+	
+   	{
+	    "size": 259,
+	    "name": "middle",
+	    "bias": 1.00,
+	    "type": "middleoutput",
+	    
+	    "dataOutputDim": 259,
+	    # Set it equal to "size"
+	    
+	    "ganRatio":   0.8,	    
+	    "ganGradMag": 10.0
+    	    # the criterion to train generator
+	    #   = (1-ganRatio) * MSE + ganRatio * ganGradMag * Discriminator
+	    #  
+
+	    # This layer will read in the fake data and natural data, handle the 
+	    # flow of gradients
+	},
+	{
+	    "size": 259,
+	    "name": "ope",
+	    "bias": 1.0,
+	    "type": "operator"
+
+	    "setZero": "5*0_5*0.001_5*0.01_5*0.05_40*1_199*0",	
+    	    # This layer explictly sets a weigh vector on the input data of discrminator
+	    # (both natural and fake data)
+	    # The format is "NUM1*VALUE1_NUM2*VALUE2_...", which means
+	    #   the first NUM1 dimensions will be weighted by VALUE1
+	    #   the next  NUM2 dimensions will be weighted by VALUE2
+	    #   ..
+	    # Here, I only set the value for the 6th-60th static component of MGC
+	    # with a weight > 0.0
+	},
+
+	5. discrminator: just a normal CNN network with a MDN output layer that depicts a
+	   binary distribution using sigmoid function
+	   
+	......
+	{
+            "size": 1,
+            "name": "postoutput",
+            "type": "mdn"
+        }
+
+	Remeber to use ./mdn.config in config.cfg
+
+	
+
+	6. note: in generation stage, the output should be given by the skipAdd layer in residual generator
+	   this will be the sum of the residual and the output of acoustic model.
+	   two ways to get output from that layer 
+	   1. specify the $tapOutput, @tapLayer, @tapGate, @mdnGenPara in config_GAN.pm.
+	      Please read the comments in config_GAN.pm
+	      
+	   2. or specify three configurations in config_syn.cfg
+

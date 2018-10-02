@@ -1,0 +1,40 @@
+{
+	"layers": [
+		{
+			"size": 382,
+			"name": "input",
+			"type": "input"
+		},
+		{
+			"size": 256,
+			"name": "fl1",
+			"bias": 1.000000,
+			"type": "feedforward_tanh"
+		},
+		{
+			"size": 54,
+			"name": "cn1",
+			"bias": 1.000000,
+			"type": "cnn",
+			"window_width":        "27*1_27*2",
+			"window_tap_interval": "54*1"
+		},
+		{
+			"size": 128,
+			"name": "fl2",
+			"bias": 1.000000,
+			"type": "feedforward_tanh"
+		},
+		{
+			"size": 259,
+			"name": "output",
+			"bias": 1.000000,
+			"type": "feedforward_identity"
+		},
+		{
+			"size": 259,
+			"name": "postoutput",
+			"type": "sse"
+		}
+	]
+}

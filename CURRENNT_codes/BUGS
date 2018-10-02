@@ -1,0 +1,10 @@
+If you want large file support on Windows, you have to use Visual Studio 12.0 because it finally uses 64-bit stream offsets on 64-bit systems.
+
+VS 12.0 is normally not compatible with CUDA 5.0, but you can get it to work:
+
+http://code.msdn.microsoft.com/CUDA-50-and-Visual-Studio-20e71aa1
+
+(Thanks Philipp)
+
+
+If there is not validation set given, the weights are not saved correctly. (Felix 5/14/14)

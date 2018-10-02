@@ -1,0 +1,13 @@
+#####
+1. To create the auxillary data, please use the pyTools/scripts/CreateAuxData.py
+2. To show the binary auxillary data .bin files, please use
+   1. x2x in SPTK tools
+      ~$: x2x +ca BC2011_nancy_NYT096-008-00.bin
+   2. pyTools
+      >> from ioTools import readwrite as py_rw
+      >> data = py_rw.read_raw_mat('BC2011_nancy_NYT096-008-00.bin', 1, 'u1','l')
+   Each frame of the binary data is the char type (1 Byte).
+   Each bit encodes the boundary at the frame
+   Current, I use the lowest bit to encode the frame (which is always 1)
+   For details, please see CreateAuxData.py
+####

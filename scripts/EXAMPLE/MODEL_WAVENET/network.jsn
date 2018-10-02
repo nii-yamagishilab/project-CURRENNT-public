@@ -1,0 +1,646 @@
+{
+    "layers": [
+        {
+            "size": 1,
+            "name": "input",
+            "type": "input"
+        },
+	{
+	    "size": 61,
+	    "name": "exInputL1",
+	    "type": "externalloader",
+	    "bias": 1.0,
+	    "externalDataMV": "./data_mgcf0.mv.bin",
+	    "resolution": 80
+	},
+	{
+	    "size": 61,
+	    "name":  "exInputSkip",
+	    "bias":  1.0,
+	    "type":  "skipini",
+    	    "resolution": 80
+	},
+	{
+	    "size":  64,
+	    "name":  "exInputL2",
+	    "bias":  1.0,
+	    "type":  "blstm",
+    	    "resolution": 80
+	},
+	{
+	    "size":  60,
+	    "name":  "exInputL3",
+	    "bias":  1.0,
+	    "type":  "cnn",
+	    "window_width":        "60*1",
+	    "window_tap_interval": "60*1",
+	    "outputTanh": 0,
+	    "resolution": 80
+	},
+	{
+	    "size": 61,
+	    "name":  "exInputAdd",
+	    "bias":  1.0,
+	    "type":  "skipcat",
+    	    "resolution": 80,
+	    "preSkipLayer": "exInputL3,exInputSkip",
+	    "preSkipLayerDim": "0_60_60_61",
+	    "layerFlag": "wavenetConditionInputLayer"
+	},
+        {
+	    "size": 256,
+       	    "name": "feedbackBottom",
+            "bias": 1.0,
+            "type": "feedback",
+	    "previousDimEnd": 0,
+	    "previousDimStart": 0
+        },
+	{
+	    "size": 64,
+	    "name": "causalEmbedding",
+	    "bias": 1.0,
+	    "type": "feedforward_identity"
+	},
+	{
+	    "size":  64,
+	    "name":  "causalSkip",
+	    "bias":  1.0,
+	    "type":  "skipini"
+	},
+	{
+	    "size":  128,
+	    "name":  "diluteB1L1cnn",
+	    "bias":  1.0,
+	    "type":  "cnn",
+	    "window_width": "128*1",
+	    "window_tap_interval": "128*1",
+	    "causal": 1,
+	    "outputTanh": 0
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L1wavc",
+	    "bias": 1.0,
+	    "type": "wavnetc",
+	    "contextDim": 61,
+	    "contextMV": ""
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L1out",
+	    "bias": 1.0,
+	    "type": "feedforward_identity"
+	},
+	{ 
+	    "size": 64,                                       
+	    "name": "diluteB1L1skipadd",
+	    "bias": 1.000000,                                  
+	    "type": "skipadd",                                 
+	    "preSkipLayer": "causalSkip,diluteB1L1out"
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L1temp",
+	    "bias": 1.0,
+	    "type": "skipini"
+	},
+	{
+	    "size": 256,
+	    "name": "diluteB1L1skipouttrans",
+	    "bias": 1.0,
+	    "type": "feedforward_identity"
+	},
+	{
+	    "size": 256,
+	    "name": "diluteB1L1skip",
+	    "bias": 1.0,
+	    "type": "skipini"
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L1temp2",
+	    "bias": 1.0,
+	    "type": "skipadd",
+	    "preSkipLayer": "diluteB1L1temp"
+	},
+	{
+	    "size":  128,
+	    "name":  "diluteB1L2cnn",
+	    "bias":  1.0,
+	    "type":  "cnn",
+	    "window_width": "128*1",
+	    "window_tap_interval": "128*2",
+	    "causal": 1,
+	    "outputTanh": 0
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L2wavc",
+	    "bias": 1.0,
+	    "type": "wavnetc",
+	    "contextDim": 61
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L2out",
+	    "bias": 1.0,
+	    "type": "feedforward_identity"
+	},
+	{ 
+	    "size": 64,                                       
+	    "name": "diluteB1L2skipadd",
+	    "bias": 1.000000,                                  
+	    "type": "skipadd",                                 
+	    "preSkipLayer": "diluteB1L1temp2,diluteB1L2out"
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L2temp",
+	    "bias": 1.0,
+	    "type": "skipini"
+	},
+	{
+	    "size": 256,
+	    "name": "diluteB1L2skipouttrans",
+	    "bias": 1.0,
+	    "type": "feedforward_identity"
+	},
+	{
+	    "size": 256,
+	    "name": "diluteB1L2skip",
+	    "bias": 1.0,
+	    "type": "skipini"
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L2temp2",
+	    "bias": 1.0,
+	    "type": "skipadd",
+	    "preSkipLayer": "diluteB1L2temp"
+	},
+	{
+	    "size":  128,
+	    "name":  "diluteB1L3cnn",
+	    "bias":  1.0,
+	    "type":  "cnn",
+	    "window_width": "128*1",
+	    "window_tap_interval": "128*4",
+	    "causal": 1,
+	    "outputTanh": 0
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L3wavc",
+	    "bias": 1.0,
+	    "type": "wavnetc",
+	    "contextDim": 61
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L3out",
+	    "bias": 1.0,
+	    "type": "feedforward_identity"
+	},
+	{ 
+	    "size": 64,                                       
+	    "name": "diluteB1L3skipadd",
+	    "bias": 1.000000,                                  
+	    "type": "skipadd",                                 
+	    "preSkipLayer": "diluteB1L2temp2,diluteB1L3out"
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L3temp",
+	    "bias": 1.0,
+	    "type": "skipini"
+	},
+	{
+	    "size": 256,
+	    "name": "diluteB1L3skipouttrans",
+	    "bias": 1.0,
+	    "type": "feedforward_identity"
+	},
+	{
+	    "size": 256,
+	    "name": "diluteB1L3skip",
+	    "bias": 1.0,
+	    "type": "skipini"
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L3temp2",
+	    "bias": 1.0,
+	    "type": "skipadd",
+	    "preSkipLayer": "diluteB1L3temp"
+	},
+	{
+	    "size":  128,
+	    "name":  "diluteB1L4cnn",
+	    "bias":  1.0,
+	    "type":  "cnn",
+	    "window_width": "128*1",
+	    "window_tap_interval": "128*8",
+	    "causal": 1,
+	    "outputTanh": 0
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L4wavc",
+	    "bias": 1.0,
+	    "type": "wavnetc",
+	    "contextDim": 61
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L4out",
+	    "bias": 1.0,
+	    "type": "feedforward_identity"
+	},
+	{ 
+	    "size": 64,                                       
+	    "name": "diluteB1L4skipadd",
+	    "bias": 1.000000,                                  
+	    "type": "skipadd",                                 
+	    "preSkipLayer": "diluteB1L3temp2,diluteB1L4out"
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L4temp",
+	    "bias": 1.0,
+	    "type": "skipini"
+	},
+	{
+	    "size": 256,
+	    "name": "diluteB1L4skipouttrans",
+	    "bias": 1.0,
+	    "type": "feedforward_identity"
+	},
+	{
+	    "size": 256,
+	    "name": "diluteB1L4skip",
+	    "bias": 1.0,
+	    "type": "skipini"
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L4temp2",
+	    "bias": 1.0,
+	    "type": "skipadd",
+	    "preSkipLayer": "diluteB1L4temp"
+	},
+	{
+	    "size":  128,
+	    "name":  "diluteB1L5cnn",
+	    "bias":  1.0,
+	    "type":  "cnn",
+	    "window_width": "128*1",
+	    "window_tap_interval": "128*16",
+	    "causal": 1,
+	    "outputTanh": 0
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L5wavc",
+	    "bias": 1.0,
+	    "type": "wavnetc",
+	    "contextDim": 61
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L5out",
+	    "bias": 1.0,
+	    "type": "feedforward_identity"
+	},
+	{ 
+	    "size": 64,                                       
+	    "name": "diluteB1L5skipadd",
+	    "bias": 1.000000,                                  
+	    "type": "skipadd",                                 
+	    "preSkipLayer": "diluteB1L4temp2,diluteB1L5out"
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L5temp",
+	    "bias": 1.0,
+	    "type": "skipini"
+	},
+	{
+	    "size": 256,
+	    "name": "diluteB1L5skipouttrans",
+	    "bias": 1.0,
+	    "type": "feedforward_identity"
+	},
+	{
+	    "size": 256,
+	    "name": "diluteB1L5skip",
+	    "bias": 1.0,
+	    "type": "skipini"
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L5temp2",
+	    "bias": 1.0,
+	    "type": "skipadd",
+	    "preSkipLayer": "diluteB1L5temp"
+	},
+	{
+	    "size":  128,
+	    "name":  "diluteB1L6cnn",
+	    "bias":  1.0,
+	    "type":  "cnn",
+	    "window_width": "128*1",
+	    "window_tap_interval": "128*32",
+	    "causal": 1,
+	    "outputTanh": 0
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L6wavc",
+	    "bias": 1.0,
+	    "type": "wavnetc",
+	    "contextDim": 61
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L6out",
+	    "bias": 1.0,
+	    "type": "feedforward_identity"
+	},
+	{ 
+	    "size": 64,                                       
+	    "name": "diluteB1L6skipadd",
+	    "bias": 1.000000,                                  
+	    "type": "skipadd",                                 
+	    "preSkipLayer": "diluteB1L5temp2,diluteB1L6out"
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L6temp",
+	    "bias": 1.0,
+	    "type": "skipini"
+	},
+	{
+	    "size": 256,
+	    "name": "diluteB1L6skipouttrans",
+	    "bias": 1.0,
+	    "type": "feedforward_identity"
+	},
+	{
+	    "size": 256,
+	    "name": "diluteB1L6skip",
+	    "bias": 1.0,
+	    "type": "skipini"
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L6temp2",
+	    "bias": 1.0,
+	    "type": "skipadd",
+	    "preSkipLayer": "diluteB1L6temp"
+	},
+	{
+	    "size":  128,
+	    "name":  "diluteB1L7cnn",
+	    "bias":  1.0,
+	    "type":  "cnn",
+	    "window_width": "128*1",
+	    "window_tap_interval": "128*64",
+	    "causal": 1,
+	    "outputTanh": 0
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L7wavc",
+	    "bias": 1.0,
+	    "type": "wavnetc",
+	    "contextDim": 61
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L7out",
+	    "bias": 1.0,
+	    "type": "feedforward_identity"
+	},
+	{ 
+	    "size": 64,                                       
+	    "name": "diluteB1L7skipadd",
+	    "bias": 1.000000,                                  
+	    "type": "skipadd",                                 
+	    "preSkipLayer": "diluteB1L6temp2,diluteB1L7out"
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L7temp",
+	    "bias": 1.0,
+	    "type": "skipini"
+	},
+	{
+	    "size": 256,
+	    "name": "diluteB1L7skipouttrans",
+	    "bias": 1.0,
+	    "type": "feedforward_identity"
+	},
+	{
+	    "size": 256,
+	    "name": "diluteB1L7skip",
+	    "bias": 1.0,
+	    "type": "skipini"
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L7temp2",
+	    "bias": 1.0,
+	    "type": "skipadd",
+	    "preSkipLayer": "diluteB1L7temp"
+	},
+	{
+	    "size":  128,
+	    "name":  "diluteB1L8cnn",
+	    "bias":  1.0,
+	    "type":  "cnn",
+	    "window_width": "128*1",
+	    "window_tap_interval": "128*128",
+	    "causal": 1,
+	    "outputTanh": 0
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L8wavc",
+	    "bias": 1.0,
+	    "type": "wavnetc",
+	    "contextDim": 61
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L8out",
+	    "bias": 1.0,
+	    "type": "feedforward_identity"
+	},
+	{ 
+	    "size": 64,                                       
+	    "name": "diluteB1L8skipadd",
+	    "bias": 1.000000,                                  
+	    "type": "skipadd",                                 
+	    "preSkipLayer": "diluteB1L7temp2,diluteB1L8out"
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L8temp",
+	    "bias": 1.0,
+	    "type": "skipini"
+	},
+	{
+	    "size": 256,
+	    "name": "diluteB1L8skipouttrans",
+	    "bias": 1.0,
+	    "type": "feedforward_identity"
+	},
+	{
+	    "size": 256,
+	    "name": "diluteB1L8skip",
+	    "bias": 1.0,
+	    "type": "skipini"
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L8temp2",
+	    "bias": 1.0,
+	    "type": "skipadd",
+	    "preSkipLayer": "diluteB1L8temp"
+	},
+	{
+	    "size":  128,
+	    "name":  "diluteB1L9cnn",
+	    "bias":  1.0,
+	    "type":  "cnn",
+	    "window_width": "128*1",
+	    "window_tap_interval": "128*256",
+	    "causal": 1,
+	    "outputTanh": 0
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L9wavc",
+	    "bias": 1.0,
+	    "type": "wavnetc",
+	    "contextDim": 61
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L9out",
+	    "bias": 1.0,
+	    "type": "feedforward_identity"
+	},
+	{ 
+	    "size": 64,                                       
+	    "name": "diluteB1L9skipadd",
+	    "bias": 1.000000,                                  
+	    "type": "skipadd",                                 
+	    "preSkipLayer": "diluteB1L8temp2,diluteB1L9out"
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L9temp",
+	    "bias": 1.0,
+	    "type": "skipini"
+	},
+	{
+	    "size": 256,
+	    "name": "diluteB1L9skipouttrans",
+	    "bias": 1.0,
+	    "type": "feedforward_identity"
+	},
+	{
+	    "size": 256,
+	    "name": "diluteB1L9skip",
+	    "bias": 1.0,
+	    "type": "skipini"
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L9temp2",
+	    "bias": 1.0,
+	    "type": "skipadd",
+	    "preSkipLayer": "diluteB1L9temp"
+	},
+	{
+	    "size":  128,
+	    "name":  "diluteB1L10cnn",
+	    "bias":  1.0,
+	    "type":  "cnn",
+	    "window_width": "128*1",
+	    "window_tap_interval": "128*256",
+	    "causal": 1,
+	    "outputTanh": 0
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L10wavc",
+	    "bias": 1.0,
+	    "type": "wavnetc",
+	    "contextDim": 61
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L10out",
+	    "bias": 1.0,
+	    "type": "feedforward_identity"
+	},
+	{ 
+	    "size": 64,                                       
+	    "name": "diluteB1L10skipadd",
+	    "bias": 1.000000,                                  
+	    "type": "skipadd",                                 
+	    "preSkipLayer": "diluteB1L9temp2,diluteB1L10out"
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L10temp",
+	    "bias": 1.0,
+	    "type": "skipini"
+	},
+	{
+	    "size": 256,
+	    "name": "diluteB1L10skipouttrans",
+	    "bias": 1.0,
+	    "type": "feedforward_identity"
+	},
+	{
+	    "size": 256,
+	    "name": "diluteB1L10skip",
+	    "bias": 1.0,
+	    "type": "skipini"
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L10temp2",
+	    "bias": 1.0,
+	    "type": "skipadd",
+	    "preSkipLayer": "diluteB1L10temp"
+	},
+	{ 
+	    "size": 256,                                       
+	    "name": "postprocessingAdd",
+	    "bias": 1.000000,                                  
+	    "type": "skipadd",                                 
+	    "preSkipLayer": "diluteB1L1skip,diluteB1L2skip,diluteB1L3skip,diluteB1L4skip,diluteB1L5skip,diluteB1L6skip,diluteB1L7skip,diluteB1L8skip,diluteB1L9skip,diluteB1L10skip"
+	},
+	{
+	    "size": 256,
+	    "name": "postprocessingL1",
+	    "bias": 1.0,
+	    "type": "feedforward_tanh"
+	},
+	{
+		"size": 256,
+        	"name": "output",
+        	"bias": 1.0,
+        	"type": "feedforward_identity"
+    	},
+    {
+        "size": 1,
+        "name": "postoutput",
+        "type": "mdn"
+    }
+    ]
+}

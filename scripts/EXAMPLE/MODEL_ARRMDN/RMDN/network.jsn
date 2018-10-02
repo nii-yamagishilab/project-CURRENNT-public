@@ -1,0 +1,32 @@
+{
+	"layers": [
+		{
+			"size": 382,
+			"name": "input",
+			"type": "input"
+		},
+		{
+			"size": 512,
+			"name": "fl1",
+			"bias": 1.000000,
+			"type": "feedforward_tanh"
+		},
+		{
+			"size": 256,
+			"name": "fl2",
+			"bias": 1.000000,
+			"type": "blstm"
+		},
+		{
+			"size": 888,
+			"name": "output",
+			"bias": 1.000000,
+			"type": "feedforward_identity"
+		},
+		{
+			"size": 259,
+			"name": "postoutput",
+			"type": "mdn"
+		}
+	]
+}

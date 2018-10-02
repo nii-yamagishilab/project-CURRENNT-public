@@ -1,0 +1,2193 @@
+--------------------
+Block 0824x01:
+      // This block is used for AR model based on matrix transformation
+		//  x - Ax_t-1 - b
+		
+      // for full-matrix transformation (not used anymore)
+		// step1.1 get the data corresponding to this unit
+		internal::CopyTargetData fn;
+		fn.startDOut   = this->m_startDimOut;
+		fn.featureDim  = this->m_featureDim;
+		fn.layerSizeOut= this->m_layerSizeTar;
+		
+		fn.patTypes  = helpers::getRawPointer(this->m_precedingLayer.patTypes());
+		fn.output    = helpers::getRawPointer(targets);
+		fn.target    = helpers::getRawPointer(this->m_dataBuff) + 
+		    this->m_maxTime * this->m_featureDim * this->m_numMixture + 
+		    this->m_featureDim * this->m_paral;   // shift by 1 time
+		
+		int n  = (this->m_precedingLayer.curMaxSeqLength() - 1);
+		n =  n * this->m_precedingLayer.parallelSequences();
+		n =  n * this->m_featureDim;
+
+		thrust::for_each(thrust::counting_iterator<int>(0),
+				 thrust::counting_iterator<int>(0)+n,
+				 fn);		
+		/*
+		#ifdef DEBUG_LOCAL
+		Cpu::real_vector tmp1 = targets;
+		Cpu::real_vector tmp2 = this->m_dataBuff;
+		printf("\n"); real_t sum1 = 0.0; real_t sum2 = 0.0;
+		for (int i = 0; i < ( n / this->m_featureDim); i++){
+		    for (int j = 0; j < this->m_featureDim; j++){			
+			int pos_data1 = (fn.layerSizeOut * i)+fn.startDOut+j;
+			int pos_data2 = i*this->m_featureDim + j + 
+			    this->m_maxTime * this->m_featureDim * this->m_numMixture + 
+			    this->m_featureDim * this->m_paral;
+			sum1 += tmp1[pos_data1]; sum2 += tmp2[pos_data2];
+		    }
+		}
+		printf("\nCopyTarget %f %f\n", sum1, sum2);
+                #endif
+		*/
+
+		// step1.2 transform
+		helpers::Matrix<TDevice> weightsMatrix(this->m_weights,
+						       this->m_featureDim * this->m_numMixture,
+						       this->m_featureDim,
+						       this->m_weightStart);
+		helpers::Matrix<TDevice> targetsMat(&this->m_dataBuff, this->m_featureDim,
+						    this->m_totalTime,
+						    this->m_maxTime * this->m_featureDim * 
+						    this->m_numMixture
+						    );
+		helpers::Matrix<TDevice> transformed(&this->m_dataBuff,  
+						     this->m_featureDim * this->m_numMixture,
+						     this->m_totalTime);
+		transformed.assignProduct(weightsMatrix, false, targetsMat, false);
+		
+		/*
+		#ifdef DEBUG_LOCAL
+		Cpu::real_vector mat1 = (*this->m_weights);
+		Cpu::real_vector mat2 = this->m_dataBuff;
+		real_t sum3 = 0.0;
+		real_t sum4 = 0.0;
+		for (int i = 0; i < this->m_featureDim; i++){
+		    if (i % 10 == 0)
+			printf("\n");
+		    printf("%f\t", mat1[i]);
+		}
+		for (int i = 0; i < this->m_totalTime; i++){
+		    for (int j =0; j < (this->m_featureDim * this->m_numMixture); j++){
+			real_t tmp=0.0;
+			for (int k = 0; k< this->m_featureDim; k++){
+			    tmp += mat1[k+j*this->m_featureDim + this->m_weightStart] * 
+				mat2[k+i*this->m_featureDim+this->m_maxTime * this->m_featureDim * 
+				     this->m_numMixture];
+			    if (mat1[k+j*this->m_featureDim + this->m_weightStart] 
+				!= mat1[k+j*this->m_featureDim + this->m_weightStart]){
+				printf("Detect Nan");
+			    }
+			}
+			//printf("%f\t", tmp-mat2[i*this->m_featureDim * this->m_numMixture+j]);
+			sum3 += tmp;
+			if (sum3 != sum3){
+			    printf("Detect Nan ");
+			}
+			sum4 += mat2[i*this->m_featureDim * this->m_numMixture+j];
+		    }
+		}
+		printf("Transform %f %f\n", sum3, sum4);
+		#endif*/
+		
+		// step1.3 shift by the bias and change the mean value
+		// Update the mean value as mu+wx+b
+		internal::ShiftBiasStep1 fn2;
+		fn2.featureDim   = this->m_featureDim;
+		fn2.mixNum       = this->m_numMixture;
+		fn2.totalTime    = this->m_totalTime;
+		
+		fn2.linearPart   = helpers::getRawPointer(this->m_dataBuff);
+		fn2.biasPart     = this->m_weightsPtr  + 
+		                   this->m_featureDim * this->m_featureDim * this->m_numMixture;
+
+		fn2.trainableAPos= -1;   // this is not useful for mxiture_dynSqr
+		fn2.trainableBPos= -1;   // this is not useful for mxiture_dynSqr
+
+		fn2.mdnPara      = helpers::getRawPointer(this->m_paraVec);
+		n =  this->m_totalTime * this->m_numMixture * this->m_featureDim;
+		thrust::for_each(thrust::counting_iterator<int>(0),
+				 thrust::counting_iterator<int>(0)+n,
+				 fn2);
+
+--------------------
+Block 0824x02:
+      // calculate the weightUpdate for this->m_weights
+	{{
+		// step1, prepare the (x - (u+wx+b)) part
+		internal::ShiftBiasStep2 fn2;
+		#ifdef DEBUG_LOCAL
+		Cpu::real_vector mat1 = (*this->m_weights);
+		Cpu::real_vector mat2 = this->m_dataBuff;
+		#endif
+		
+		
+		fn2.featureDim   = this->m_featureDim;
+		fn2.mixNum       = this->m_numMixture;
+		fn2.totalTime    = this->m_totalTime;
+		fn2.startDOut    = this->m_startDimOut;
+		fn2.layerSizeOut = this->m_layerSizeTar;
+
+		fn2.linearPart   = helpers::getRawPointer(this->m_dataBuff);
+		fn2.biasPart     = this->m_weightsPtr + 
+		                   this->m_featureDim * this->m_featureDim * this->m_numMixture;
+		fn2.target       = helpers::getRawPointer(targets);
+		fn2.mdnPara      = helpers::getRawPointer(this->m_paraVec);
+		fn2.postPbuff    = helpers::getRawPointer(this->m_tmpPat);
+		fn2.tieVar       = this->m_tieVar;
+		int n =  this->m_totalTime * this->m_numMixture * this->m_featureDim;
+		thrust::for_each(thrust::counting_iterator<int>(0),
+				 thrust::counting_iterator<int>(0)+n,
+				 fn2);
+
+		
+		
+		#ifdef DEBUG_LOCAL
+		Cpu::real_vector mat3 = this->m_paraVec;
+		Cpu::real_vector mat5 = this->m_dataBuff;
+		Cpu::real_vector mat6 = *this->m_weights;
+		Cpu::real_vector mat7 = this->m_tmpPat;
+		Cpu::real_vector mat8 = targets;
+		printf("\bShiftBias\n");
+		for (int idx = 0; idx < this->m_featureDim; idx++){
+		    printf("%f\t", mat5[this->m_featureDim * this->m_numMixture + idx]);
+		    if (idx % 10 ==9)
+			printf("\n");
+		}
+		if (this->m_totalTime < 100){
+		for (int idx = this->m_featureDim * this->m_numMixture; 
+		     idx < this->m_featureDim * (this->m_numMixture + 1); 
+		     idx++){
+		    //break;
+		    int temp      = idx  % (fn2.featureDim * fn2.mixNum); 
+		    int featIndex = temp % fn2.featureDim; 
+		    int timeStep  = idx  / (fn2.featureDim * fn2.mixNum); 
+		    int mixIndex  = temp / fn2.featureDim;
+		    
+		    int pos_mean, pos_var, pos_data;
+		    // Add to the mean value
+		    pos_mean = (fn2.totalTime * fn2.mixNum + 
+				timeStep  * fn2.featureDim * fn2.mixNum + 
+				mixIndex  * fn2.featureDim + featIndex); 
+		    if (timeStep == 0){
+			continue;
+		    }else{
+			/*
+			mat3[pos_mean] = (mat3[pos_mean] + 
+					  mat2[idx]   + 
+					  mat6[this->m_weightStart + 
+					       this->m_featureDim * 
+					       this->m_featureDim * this->m_numMixture+featIndex]
+					       );*/
+		    }
+		    
+		    pos_var  = (fn2.totalTime * (fn2.mixNum + fn2.mixNum * fn2.featureDim)    + 
+				timeStep  *  fn2.mixNum * (fn2.tieVar ? 1 : fn2.featureDim) + 
+				mixIndex  * (fn2.tieVar ? 1 : fn2.featureDim)        +
+				(fn2.tieVar ? 0 : featIndex)); 
+		    
+		    // pointer to the posterior P and sum of posterior P
+		    
+		    const real_t postP   = mat7[timeStep  * fn2.mixNum + mixIndex];
+		    const real_t sumPost = mat7[fn2.totalTime * fn2.mixNum + timeStep];
+		    real_t posterior = std::exp((postP) - (sumPost));
+		    
+		    // point to the targets data x
+		    pos_data = (fn2.layerSizeOut * timeStep) + fn2.startDOut + featIndex;
+	    
+		    // save x - u - wx'-b to dataBuff now
+		    real_t resu = (-1 * posterior * (mat8[pos_data] - mat3[pos_mean]) 
+				   / mat3[pos_var] / mat3[pos_var]);
+		    printf("%f %f %f %f\t", mat8[pos_data], mat3[pos_mean], mat3[pos_var], resu);
+		    
+		    
+		    // save \phi(i)\sigma()(x-u-wx'-b) in time order
+		    //pos_data = (mixIndex * fn2.totalTime + timeStep)*fn2.featureDim+featIndex; 
+		    //mat4[pos_data] = -1* posterior * mat3[pos_var] * (mat5[idx]);
+		    
+		}}
+		printf("\n");
+		#endif
+	}}
+
+	{{
+	    // step2 update the gradients
+	    helpers::Matrix<TDevice> diffData(&this->m_dataBuff, 
+					      this->m_numMixture * this->m_featureDim,
+					      this->m_totalTime);
+	    helpers::Matrix<TDevice> tartData(&this->m_dataBuff, this->m_featureDim,
+					      this->m_totalTime,
+					      this->m_maxTime * this->m_featureDim * 
+					      this->m_numMixture
+					      );
+	    helpers::Matrix<TDevice> gradMat (this->m_weightUpdates, 
+					      this->m_numMixture * this->m_featureDim,
+					      this->m_featureDim,
+					      this->m_weightStart
+					      );
+	    gradMat.assignProduct(diffData, false, tartData, true);
+	    
+	    // bias part
+	    helpers::Matrix<TDevice> onevec  (&this->m_oneVec, 
+					      this->m_numMixture * this->m_totalTime, 1);
+	    // point to the weightUpdates of bias part
+	    helpers::Matrix<TDevice> gradBia (this->m_weightUpdates, 
+					      this->m_numMixture * this->m_featureDim, 1,
+					      this->m_weightStart + 
+					      this->m_featureDim * this->m_featureDim * 
+					      this->m_numMixture
+					      );
+	    gradBia.assignProduct(diffData, false, onevec, false);
+	}}
+	
+	#ifdef DEBUG_LOCAL
+	printf("\nGraidents to weights\n");
+	Cpu::real_vector tmp2= this->m_dataBuff;
+	Cpu::real_vector tmp = *this->m_weightUpdates;
+	Cpu::real_vector tmp3= *this->m_weights;
+	for (int i = 0; i < this->m_featureDim; i++){
+	    if (i % 5 == 0)
+		printf("\n");
+	    printf("%f %f %f %f %f\t", 
+		   tmp2[i + this->m_featureDim * this->m_numMixture], 
+		   tmp[i],
+		   tmp[i +
+			this->m_weightStart + 
+			this->m_featureDim  * this->m_featureDim * this->m_numMixture],
+		   tmp3[i+this->m_weightStart],
+		   tmp3[i +
+			this->m_weightStart + 
+			this->m_featureDim  * this->m_featureDim * this->m_numMixture]);
+	}
+	printf("\n");
+	#endif
+
+
+--------------------
+Block 0824x03:
+		    /*
+		    thrust::fill(this->m_dataBuff.begin(), this->m_dataBuff.end(), (real_t)0.0);
+		    this->m_paral     = this->m_precedingLayer.parallelSequences();
+		    
+		    // step1.1 get the data corresponding to this unit
+		    internal::CopyTargetData fn;
+		    fn.startDOut   = this->m_startDimOut;
+		    fn.featureDim  = this->m_featureDim;
+		    fn.layerSizeOut= this->m_layerSizeTar;
+		
+		    fn.patTypes  = helpers::getRawPointer(this->m_precedingLayer.patTypes());
+		    fn.output    = targets;
+		    fn.target    = helpers::getRawPointer(this->m_dataBuff) + 
+			this->m_maxTime * this->m_featureDim * this->m_numMixture + 
+			this->m_featureDim * this->m_paral; // shift by 1 time to the currennt time
+		    
+		    // pointer to the previous generated data
+		    startPos    = (i-1) * datapointerperFrame;
+		    endPos      = (i)   * datapointerperFrame;
+		    
+		    thrust::for_each(thrust::counting_iterator<int>(0) + startPos,
+				     thrust::counting_iterator<int>(0) + endPos,   fn);		   
+		    
+		    #ifdef DEBUG_LOCAL
+		    internal::CopySimple2 fn4;
+		    real_vector target_temp(datapoint, 0.0);
+		    fn4.Output = helpers::getRawPointer(target_temp);
+		    fn4.in     = targets;
+		    thrust::for_each(thrust::counting_iterator<int>(0),
+				     thrust::counting_iterator<int>(0)+ datapoint, fn4);
+		    Cpu::real_vector target_temp2 = target_temp;
+		    #endif
+		    
+		    // pointer to the current data frame
+		    startPos    = (i)  * datapointerperFrame;
+		    endPos      = (i+1)* datapointerperFrame;
+
+		    // step1.2 transform
+		    helpers::Matrix<TDevice> weightsMatrix(this->m_weights,
+							   this->m_featureDim * this->m_numMixture,
+							   this->m_featureDim,
+							   this->m_weightStart);
+		    helpers::Matrix<TDevice> targetsMat(&this->m_dataBuff, this->m_featureDim,
+							this->m_paral,
+							this->m_maxTime * this->m_featureDim * 
+							this->m_numMixture + startPos
+							);
+		    helpers::Matrix<TDevice> transformed(&this->m_dataBuff,  
+							 this->m_featureDim * this->m_numMixture,
+							 this->m_paral,
+							 startPos *  this->m_numMixture
+							 );
+		    transformed.assignProduct(weightsMatrix, false, targetsMat, false);
+		    
+		    #ifdef DEBUG_LOCAL		    		    
+		    Cpu::real_vector mat1 = (*this->m_weights);
+		    Cpu::real_vector mat2 = this->m_dataBuff;
+		    Cpu::real_vector mat3 = this->m_paraVec;
+		    real_t sum3 = 0.0;
+		    real_t sum4 = 0.0;
+		    for (int j =0; j < (this->m_featureDim * this->m_numMixture); j++){
+			real_t tmp=0.0;
+			for (int k = 0; k< this->m_featureDim; k++){
+			    tmp += mat1[j + 
+					k * this->m_featureDim * this->m_numMixture + 
+					this->m_weightStart] * 
+				mat2[k+i*this->m_featureDim+this->m_maxTime * this->m_featureDim * 
+				     this->m_numMixture];
+			}
+			//printf("%f\t", tmp-mat2[i*this->m_featureDim * this->m_numMixture+j]);
+			sum3 += tmp;
+			sum4 += mat2[i*this->m_featureDim * this->m_numMixture+j];
+		    }
+		    printf("Transform %f %f\n", sum3, sum4);
+		    #endif
+
+		    // step1.3 shift by the bias and change the mean value
+		    // Update the mean value as mu+wx+b
+		    internal::ShiftBiasStep1 fn2;
+		    fn2.featureDim   = this->m_featureDim;
+		    fn2.mixNum       = this->m_numMixture;
+		    fn2.totalTime    = time * this->m_precedingLayer.parallelSequences();
+		    
+		    fn2.linearPart   = helpers::getRawPointer(this->m_dataBuff);
+		    fn2.biasPart     = this->m_weightsPtr  + 
+			this->m_featureDim * this->m_featureDim * this->m_numMixture;
+		
+		    fn2.mdnPara      = helpers::getRawPointer(this->m_paraVec);
+		    
+		    // pointer tot the w^k O + b
+		    startPos  *=  this->m_numMixture;
+		    endPos    *=  this->m_numMixture;
+
+		    thrust::for_each(thrust::counting_iterator<int>(0)+startPos,
+				     thrust::counting_iterator<int>(0)+endPos,
+				     fn2);
+		    
+		    #ifdef DEBUG_LOCAL
+		    Cpu::real_vector mat4 = this->m_paraVec;
+		    real_t sum = 0.0;
+		    for (int idx = startPos; idx < endPos; idx++){
+			int temp = idx % (fn2.featureDim * fn2.mixNum);
+			int featIndex = temp % (fn2.featureDim);
+			int timeStep  = idx / (fn2.featureDim * fn2.mixNum);
+			int mixIndex  = temp/ fn2.featureDim;
+
+			int index = fn2.totalTime * fn2.mixNum + 
+			    timeStep * fn2.featureDim * fn2.mixNum + 
+			    mixIndex * fn2.featureDim + featIndex;
+			int index2 = mixIndex * fn2.featureDim + featIndex;
+			real_t mean1 = mat4[index];
+			real_t mean2 = mat3[index];
+			real_t tmp = (mat3[index] + mat2[idx] + 
+					      mat1[index2 + 
+						   this->m_featureDim * 
+						   this->m_featureDim * 
+						   this->m_numMixture]);
+			real_t tmp2 = mat4[index] - tmp;
+			printf("%f %f\t", tmp2, tmp);
+			sum += tmp2*tmp2;
+		    }
+		    printf("\n");
+		    #endif
+		    */
+
+--------------------
+Block 0824x04:
+
+
+
+--------------------
+Block 1025x01:
+	if ((this->m_tanhReg >0) && this->m_backOrder < 0){
+	    // if ((this->m_tanhReg >0) && this->m_backOrder < 3){
+	    // Update the AR along the time axis
+	    if (this->m_dynDirection == MDNUNIT_TYPE_1_DIRECT || 
+		this->m_dynDirection == MDNUNIT_TYPE_1_DIRECB ){
+		internal::TanhAutoRegWeightStep1 fn1;
+		internal::TanhAutoRegWeightStep2 fn2;
+		fn1.backOrder  = this->m_backOrder;
+		fn1.featureDim = this->m_featureDim;
+		/* ******** FATAL ERROR *************
+		 * this->m_weights is the shared weight vector
+		 * **********************************/
+		//fn1.weight     = helpers::getRawPointer(*this->m_weights);
+		 fn1.weight     = this->m_weightsPtr;
+	    
+		fn1.weightOut  = helpers::getRawPointer(this->m_wTransBuff);
+		thrust::for_each(
+				 thrust::counting_iterator<int>(0),
+				 thrust::counting_iterator<int>(0) + this->m_featureDim * 2,
+				 fn1);
+		
+		fn2.featureDim = this->m_featureDim;
+		fn2.weight     = helpers::getRawPointer(this->m_wTransBuff);
+		fn2.weightOut  = helpers::getRawPointer(this->m_wTransBuff)+this->m_featureDim * 2;
+		thrust::for_each(
+				 thrust::counting_iterator<int>(0),
+				 thrust::counting_iterator<int>(0) + this->m_featureDim * 2,
+				 fn2);
+	    }   
+	    // Update the AR along the dimension axis
+	    if (this->m_dynDirection == MDNUNIT_TYPE_1_DIRECD || 
+		this->m_dynDirection == MDNUNIT_TYPE_1_DIRECB ){
+		internal::TanhAutoRegWeightStep1 fn1;
+		internal::TanhAutoRegWeightStep2 fn2;
+		fn1.backOrder  = this->m_backOrder;
+		fn1.featureDim = 1;
+		fn1.weight     = this->m_weightsPtr + this->m_weightShiftToDim;
+		fn1.weightOut  = helpers::getRawPointer(this->m_wTransBuff) + 
+		                 this->m_wTransBuffShiftToDim;
+		thrust::for_each(
+				 thrust::counting_iterator<int>(0),
+				 thrust::counting_iterator<int>(0) + 2,
+				 fn1);
+		
+		fn2.featureDim = 1;
+		fn2.weight     = helpers::getRawPointer(this->m_wTransBuff)+ 
+		                 this->m_wTransBuffShiftToDim;
+		fn2.weightOut  = helpers::getRawPointer(this->m_wTransBuff)+ 
+		                 this->m_wTransBuffShiftToDim + 2;
+		thrust::for_each(
+				 thrust::counting_iterator<int>(0),
+				 thrust::counting_iterator<int>(0) + 2,
+				 fn2);
+	    }
+	}
+
+
+
+--------------
+Block 1025x02:
+
+        else if (dynDirection == MDNUNIT_TYPE_1_DIRECD){
+	    
+	    throw std::runtime_error("ARRMDN along dimension axis is no longer supported");
+	    // AR along the dimension axis
+	    m_linearPartLength = 1;
+	    m_biasPartLength   = 1;
+	    m_weightShiftToDim = 0;
+	    m_wTransBuffShiftToDim = 0;
+	    
+	}else{
+	    
+	    throw std::runtime_error("ARRMDN along dimension axis is no longer supported");
+	    // AR along both dimension and time axis
+	    m_linearPartLength = this->m_featureDim + 1;
+	    m_biasPartLength   = this->m_featureDim + 1;
+	    // this is complicated, due to historical reason
+	    m_weightShiftToDim = this->m_featureDim * (m_backOrder + 1);
+	    m_wTransBuffShiftToDim = this->m_featureDim * 4;
+	}
+
+
+-------------
+Block 1025x03:
+      /* ### 
+	   obsolete optionx
+	if (m_backOrder > 2 && m_tanhReg){
+	    //printf("Tanh Autoregressive is not implemented for step order > 2");
+	    //m_tanhReg  = 0;
+	    //m_wTransBuff.clear();
+	    // dimension * (backorder + 1) * 2 * (backorder + 1)
+	    m_wTransBuff.resize(this->m_featureDim*(m_backOrder+1)*(m_backOrder*3+2), 0);
+	    
+	}else{
+	    m_wTransBuff.resize((this->m_featureDim + 1) * 4, 0); // the maximum size it can have
+	}*/
+
+	
+
+
+------------
+Block 1025x04:
+      	    // Regressio on the dimension axis 
+	    {{
+		if(this->m_dynDirection == MDNUNIT_TYPE_1_DIRECD || 
+		   this->m_dynDirection == MDNUNIT_TYPE_1_DIRECB){
+		   		    
+		    for (int stepBack    = 1; stepBack <= this->m_backOrder; stepBack++){
+			internal::ShiftBiasStep1TiedCaseDimensionAxis fn2;
+			
+			fn2.startDOut    = this->m_startDimOut;
+			fn2.featureDim   = this->m_featureDim;
+			fn2.layerSizeOut = this->m_layerSizeTar;
+			fn2.mixNum       = this->m_numMixture;
+			fn2.totalTime    = this->m_totalTime;
+			fn2.tieVar       = this->m_tieVar;
+			fn2.targets      = helpers::getRawPointer(targets);
+			
+			if (this->m_tanhReg && this->m_backOrder < 3){
+			    fn2.linearPart = helpers::getRawPointer(this->m_wTransBuff) + 
+				             (stepBack - 1 + 2)  +
+				             this->m_wTransBuffShiftToDim;
+			}else{
+			    fn2.linearPart = this->m_weightsPtr + this->m_weightShiftToDim
+				             + (stepBack-1);
+			}
+		    
+			fn2.biasPart     = this->m_weightsPtr + this->m_weightShiftToDim + 
+			                   this->m_backOrder;
+			
+			fn2.mdnPara      = helpers::getRawPointer(this->m_paraVec);
+			fn2.stepBack     = stepBack;
+			
+			fn2.trainableAPos= -1;   // this is useful for mxiture_dynSqr
+			fn2.trainableBPos= -1;   // this is useful for mxiture_dynSqr
+		
+			
+			int n =  this->m_totalTime * this->m_numMixture * this->m_featureDim;
+			thrust::for_each(thrust::counting_iterator<int>(0),
+					 thrust::counting_iterator<int>(0)+n,
+					 fn2);
+		    }
+		    
+		}
+	    }}
+
+
+
+
+
+------- 
+Block 1025x05:
+      // (obsolete implementation)
+			if (this->m_tanhReg && this->m_backOrder < 0){
+			    //if (this->m_tanhReg && this->m_backOrder < 3){ 
+			    fn2.linearPart = helpers::getRawPointer(this->m_wTransBuff) + 
+				             (stepBack - 1 + 2) * this->m_featureDim;
+			// AR casecade form
+			}else 
+
+
+
+------
+Block 1925:x06:
+          // gradient for the AR on dimension axis
+	    if (this->m_dynDirection == MDNUNIT_TYPE_1_DIRECD || 
+		this->m_dynDirection == MDNUNIT_TYPE_1_DIRECB){
+		if (this->m_tanhReg){
+		    internal::ShiftBiasStep2TiedCaseAutoRegDimensionAxis fn2;
+		    fn2.featureDim   = this->m_featureDim;
+		    fn2.mixNum       = this->m_numMixture;
+		    fn2.totalTime    = this->m_totalTime;
+		    fn2.startDOut    = this->m_startDimOut;
+		    fn2.layerSizeOut = this->m_layerSizeTar;
+		    fn2.transBuff    = helpers::getRawPointer(this->m_wTransBuff) + 
+			               this->m_wTransBuffShiftToDim;
+		    fn2.gradBuf      = helpers::getRawPointer(this->m_dataBuff);
+		    fn2.target       = helpers::getRawPointer(targets);
+		    fn2.mdnPara      = helpers::getRawPointer(this->m_paraVec);
+		    fn2.postPbuff    = helpers::getRawPointer(this->m_tmpPat);
+		    fn2.tieVar       = this->m_tieVar;
+		    fn2.backOrder    = this->m_backOrder;
+		
+		    int n =  this->m_backOrder  * this->m_totalTime * 
+			     this->m_numMixture * this->m_featureDim;
+		    thrust::for_each(thrust::counting_iterator<int>(0),
+				     thrust::counting_iterator<int>(0)+n,
+				     fn2);
+		}else{
+		    internal::ShiftBiasStep2TiedCaseDimensionAxis fn2;
+		
+		    fn2.featureDim   = this->m_featureDim;
+		    fn2.mixNum       = this->m_numMixture;
+		    fn2.totalTime    = this->m_totalTime;
+		    fn2.startDOut    = this->m_startDimOut;
+		    fn2.layerSizeOut = this->m_layerSizeTar;
+		    
+		    fn2.gradBuf      = helpers::getRawPointer(this->m_dataBuff);
+		    fn2.target       = helpers::getRawPointer(targets);
+		    fn2.mdnPara      = helpers::getRawPointer(this->m_paraVec);
+		    fn2.postPbuff    = helpers::getRawPointer(this->m_tmpPat);
+		    fn2.tieVar       = this->m_tieVar;
+		    fn2.backOrder    = this->m_backOrder;
+		
+		    int n =  this->m_backOrder  * this->m_totalTime * 
+			this->m_numMixture * this->m_featureDim;
+		    thrust::for_each(thrust::counting_iterator<int>(0),
+				     thrust::counting_iterator<int>(0)+n,
+				     fn2);
+		}
+	    	
+		// step2 update the gradients for W    
+		thrust::fill(this->m_oneVec.begin(), this->m_oneVec.end(), 
+			     1.0/this->m_numMixture * this->m_totalTime);
+		helpers::Matrix<TDevice> onevec  (&this->m_oneVec, 
+						  this->m_numMixture * this->m_totalTime 
+						  * this->m_featureDim, 
+						  1);
+		helpers::Matrix<TDevice> diffW   (&this->m_dataBuff, 
+						  this->m_backOrder,
+						  this->m_featureDim * 
+						  this->m_totalTime  * this->m_numMixture);
+		helpers::Matrix<TDevice> gradW   (this->m_weightUpdates, 
+						  this->m_backOrder,
+						  1,
+						  this->m_weightStart + this->m_weightShiftToDim
+						  );
+		gradW.assignProduct(diffW, false, onevec, false);
+		
+		/******************* FATAL ERROR ******************
+		 *  Remember to shift the gradb
+		 **************************************************/
+		// point to the weightUpdates of bias part
+		helpers::Matrix<TDevice> diffB   (&this->m_dataBuff, 
+						  1,
+						  this->m_featureDim * 
+						  this->m_totalTime * this->m_numMixture,
+						  this->m_totalTime * this->m_numMixture *
+						  this->m_backOrder * this->m_featureDim);
+		helpers::Matrix<TDevice> gradb   (this->m_weightUpdates, 
+						  1, 
+						  1,
+						  this->m_weightStart + 
+						  this->m_weightShiftToDim + 
+						  this->m_backOrder
+						  );
+		gradb.assignProduct(diffB, false, onevec, false);
+	    }
+
+
+
+-----------
+Block 1025x07:
+
+      struct ShiftBiasStep2TiedCaseAutoReg
+    {
+	// Accumulating the statistics for BP on the linear regression part W^T o+b
+	// Only implemented for 1st and 2nd order case
+	// For 2-order case
+	// Gradients = 
+	//    for a1: -1 * posterior(m) * (o-mean)/var^2 * [o_t-1 - a2*o_t-2] * [1-a1^2]
+	//    for a2: -1 * posterior(m) * (o-mean)/var^2 * [o_t-1 - a1*o_t-2] * [1-a2^2]
+	//    o_t-1 and o_t-2 are zero when t-1 < 0 or t-2 < 0
+	// For 1-order case
+	//    for a1: -1 * posterior(m) * (o-mean)/var^2 * [o_t-1] * [1-a1^2]
+	int featureDim;
+	int mixNum;
+	int totalTime;
+	int startDOut;
+	int layerSizeOut;
+	int backOrder;
+
+	real_t   *gradBuf;
+	real_t   *target;       // x
+	real_t   *mdnPara;      // 
+	real_t   *postPbuff;
+	real_t   *transBuff;
+	bool      tieVar;
+
+	// from 1 to timesteps * num_mixture
+	__host__ __device__ void operator() (const int idx) const
+	{
+	    
+	    int temp      = idx % (featureDim * mixNum); 
+	    int featIndex = temp % featureDim; 
+	    int mixIndex  = temp / featureDim;
+	    int temp2     = idx  / (featureDim * mixNum);
+	    int timeStep  = temp2 % totalTime;
+	    int backStep  = temp2 / totalTime + 1;
+
+
+	    
+	    // set the pointer
+	    int pos_mean,  pos_var, pos_data, pos_data1, pos_data2;
+	    int pos_buffW, pos_buffb;
+	    
+	    pos_mean = (totalTime * mixNum + 
+			timeStep  * featureDim * mixNum + 
+			mixIndex  * featureDim + featIndex); 
+	    pos_var  = (totalTime * (mixNum + mixNum * featureDim)      + 
+			timeStep  *  mixNum * (tieVar ? 1 : featureDim) + 
+			mixIndex  * (tieVar ? 1 : featureDim)           +
+			(tieVar ? 0 : featIndex)); 
+	    
+	    // pointer to the posterior P and sum of posterior P
+	    const real_t *postP   = postPbuff + timeStep  * mixNum + mixIndex;
+	    const real_t *sumPost = postPbuff + totalTime * mixNum + timeStep;
+	    real_t posterior = helpers::safeExp((*postP) - (*sumPost));
+	    
+	    // point to the targets data x
+	    pos_data  = (layerSizeOut * (timeStep))    + startDOut + featIndex;
+	    pos_data1 = (timeStep>0)?((layerSizeOut * (timeStep-1)) + startDOut + featIndex):-1;
+	    pos_data2 = (timeStep>1)?((layerSizeOut * (timeStep-2)) + startDOut + featIndex):-1;
+	    
+	    // Note, dimension -> backstep -> mixture -> time
+	    pos_buffW = (timeStep * mixNum + mixIndex) * featureDim * backOrder +
+		        (backStep-1) * featureDim + featIndex;
+	    
+	    //pos_buffW = (timeStep * mixNum + mixIndex) * featureDim + featIndex;
+	    //pos_buffb = pos_buffW + totalTime * featureDim * mixNum;
+	    
+	    
+	    real_t grad = (-1 * posterior * (*(target + pos_data) - *(mdnPara + pos_mean)) /
+			   (*(mdnPara + pos_var)) / (*(mdnPara + pos_var)));
+	    
+	    real_t dataBuff = (pos_data1>0)?(*(target+pos_data1)):0;
+	    if (backOrder == 2){
+		dataBuff   += (((pos_data2>0)?(*(target+pos_data2)):0) * 
+			       ((backStep == 1)?
+				(*(transBuff + featIndex + featureDim)):
+				(*(transBuff + featIndex))) * 
+			       -1);
+	    }
+	    dataBuff *=  ((backStep==1) ?
+		      (1-(*(transBuff+featIndex))*(*(transBuff+featIndex))) :
+		      (1-(*(transBuff+featIndex+featureDim))*(*(transBuff+featIndex+featureDim))));
+	    
+	    *(gradBuf + pos_buffW) = grad * dataBuff;
+	    if (backStep == 1){
+		// do this for one time when backStep == 1
+		/* ***** FATAL ERROR ******
+		 * pos_buffb can't be shifted from pos_buffW
+		 * ************************ */
+		//pos_buffb = pos_buffW + backOrder * totalTime * featureDim * mixNum;
+		pos_buffb = backOrder * totalTime * featureDim * mixNum;
+		pos_buffb+= (timeStep * mixNum + mixIndex) * featureDim + featIndex;
+		*(gradBuf + pos_buffb) = grad;
+	    }
+	}
+    };
+
+
+
+
+----
+Block 1025x08:
+      if (this->m_tanhReg && this->m_backOrder < 0){
+		    //   if (this->m_tanhReg && this->m_backOrder < 3){
+		    internal::ShiftBiasStep2TiedCaseAutoReg fn2;
+		    fn2.featureDim   = this->m_featureDim;
+		    fn2.mixNum       = this->m_numMixture;
+		    fn2.totalTime    = this->m_totalTime;
+		    fn2.startDOut    = this->m_startDimOut;
+		    fn2.layerSizeOut = this->m_layerSizeTar;
+		    fn2.transBuff    = helpers::getRawPointer(this->m_wTransBuff);
+		    fn2.gradBuf      = helpers::getRawPointer(this->m_dataBuff);
+		    fn2.target       = helpers::getRawPointer(targets);
+		    fn2.mdnPara      = helpers::getRawPointer(this->m_paraVec);
+		    fn2.postPbuff    = helpers::getRawPointer(this->m_tmpPat);
+		    fn2.tieVar       = this->m_tieVar;
+		    fn2.backOrder    = this->m_backOrder;
+		
+		    int n =  this->m_backOrder  * this->m_totalTime * 
+			this->m_numMixture * this->m_featureDim;
+		    thrust::for_each(thrust::counting_iterator<int>(0),
+				     thrust::counting_iterator<int>(0)+n,
+				     fn2);
+
+		// implementation to calculate the gradient
+		}else
+
+
+------
+Block 1025x09:
+      struct ShiftBiasStep2TiedCaseAutoRegDimensionAxis
+    {
+	// Accumulating the statistics for BP on the linear regression part W^T o+b
+	// Only implemented for 1st and 2nd order case
+	// For 2-order case
+	// Gradients = 
+	//    for a1: -1 * posterior(m) * (o-mean)/var^2 * [o_t-1 - a2*o_t-2] * [1-a1^2]
+	//    for a2: -1 * posterior(m) * (o-mean)/var^2 * [o_t-1 - a1*o_t-2] * [1-a2^2]
+	//    o_t-1 and o_t-2 are zero when t-1 < 0 or t-2 < 0
+	// For 1-order case
+	//    for a1: -1 * posterior(m) * (o-mean)/var^2 * [o_t-1] * [1-a1^2]
+	int featureDim;
+	int mixNum;
+	int totalTime;
+	int startDOut;
+	int layerSizeOut;
+	int backOrder;
+
+	real_t   *gradBuf;
+	real_t   *target;       // x
+	real_t   *mdnPara;      // 
+	real_t   *postPbuff;
+	real_t   *transBuff;
+	bool      tieVar;
+
+	// from 1 to timesteps * num_mixture
+	__host__ __device__ void operator() (const int idx) const
+	{
+	    
+	    int temp      = idx % (featureDim * mixNum); 
+	    int featIndex = temp % featureDim; 
+	    int mixIndex  = temp / featureDim;
+	    int temp2     = idx  / (featureDim * mixNum);
+	    int timeStep  = temp2 % totalTime;
+	    int backStep  = temp2 / totalTime + 1;
+
+
+	    
+	    // set the pointer
+	    int pos_mean,  pos_var, pos_data, pos_data1, pos_data2;
+	    int pos_buffW, pos_buffb;
+	    
+	    pos_mean = (totalTime * mixNum + 
+			timeStep  * featureDim * mixNum + 
+			mixIndex  * featureDim + featIndex); 
+	    pos_var  = (totalTime * (mixNum + mixNum * featureDim)      + 
+			timeStep  *  mixNum * (tieVar ? 1 : featureDim) + 
+			mixIndex  * (tieVar ? 1 : featureDim)           +
+			(tieVar ? 0 : featIndex)); 
+	    
+	    // pointer to the posterior P and sum of posterior P
+	    const real_t *postP   = postPbuff + timeStep  * mixNum + mixIndex;
+	    const real_t *sumPost = postPbuff + totalTime * mixNum + timeStep;
+	    real_t posterior = helpers::safeExp((*postP) - (*sumPost));
+	    
+	    // point to the targets data x
+	    pos_data  = (layerSizeOut * (timeStep))    + startDOut + featIndex;
+	    pos_data1 = (featIndex>0)?(layerSizeOut*timeStep + startDOut + featIndex-1):-1;
+	    pos_data2 = (featIndex>1)?(layerSizeOut*timeStep + startDOut + featIndex-2):-1;
+	    
+	    // Note, backstep -> dimension -> mixture -> time
+	    pos_buffW = ((timeStep * mixNum + mixIndex) * featureDim + featIndex) * backOrder +
+		        (backStep-1);
+	    
+	    //pos_buffW = (timeStep * mixNum + mixIndex) * featureDim + featIndex;
+	    //pos_buffb = pos_buffW + totalTime * featureDim * mixNum;
+	    
+	    
+	    real_t grad = (-1 * posterior * (*(target + pos_data) - *(mdnPara + pos_mean)) /
+			   (*(mdnPara + pos_var)) / (*(mdnPara + pos_var)));
+	    
+	    real_t dataBuff = (pos_data1>0)?(*(target+pos_data1)):0;
+	    if (backOrder == 2){
+		dataBuff   += (((pos_data2>0)?(*(target+pos_data2)):0) * 
+			       ((backStep == 1)?
+				(*(transBuff + 1)):
+				(*(transBuff + 0))) * 
+			       -1);
+	    }
+	    dataBuff *=  ((backStep==1) ?
+		      (1-(*(transBuff+0))*(*(transBuff+0))) :
+		      (1-(*(transBuff+1))*(*(transBuff+1))));
+	    
+	    *(gradBuf + pos_buffW) = grad * dataBuff;
+	    if (backStep == 1){
+		// do this for one time when backStep == 1
+		pos_buffb = backOrder * totalTime * featureDim * mixNum + 
+		            (timeStep * mixNum + mixIndex) * featureDim + featIndex;
+		*(gradBuf + pos_buffb) = grad;
+	    }
+	}
+    };
+
+
+
+-----
+Block 1025x10:
+
+    struct ShiftBiasStep2TiedCaseDimensionAxis
+    {
+	// Accumulating the statistics for BP on the linear regression part W^T o+b
+	// -1 * posteriorP(k) * (O_t - (u + W_k ^ T O_t-1 + b_k)) * O_t-1 / var^k_d / var^k_d
+	// -1 * posteriorP(k) * (O_t - (u + W_k ^ T O_t-1 + b_k)) / var^k_d / var^k_d
+	
+	int featureDim;
+	int mixNum;
+	int totalTime;
+	int startDOut;
+	int layerSizeOut;
+	int backOrder;
+
+	real_t   *gradBuf;
+	real_t   *target;       // x
+	real_t   *mdnPara;      // 
+	real_t   *postPbuff;
+	bool      tieVar;
+
+	// from 1 to timesteps * num_mixture
+	__host__ __device__ void operator() (const int idx) const
+	{
+	    
+	    int temp      = idx % (featureDim * mixNum); 
+	    int featIndex = temp % featureDim; 
+	    int mixIndex  = temp / featureDim;
+	    int temp2     = idx  / (featureDim * mixNum);
+	    int timeStep  = temp2 % totalTime;
+	    int backStep  = temp2 / totalTime + 1;
+
+
+	    // skip the first time step
+	    if (featIndex < backStep)
+		return;
+	    
+	    // set the pointer
+	    int pos_mean,  pos_var, pos_data, pos_dataShift;
+	    int pos_buffW, pos_buffb;
+	    pos_mean = (totalTime * mixNum + 
+			timeStep  * featureDim * mixNum + 
+			mixIndex  * featureDim + featIndex); 
+	    pos_var  = (totalTime * (mixNum + mixNum * featureDim)      + 
+			timeStep  *  mixNum * (tieVar ? 1 : featureDim) + 
+			mixIndex  * (tieVar ? 1 : featureDim)           +
+			(tieVar ? 0 : featIndex)); 
+	    
+	    // pointer to the posterior P and sum of posterior P
+	    const real_t *postP   = postPbuff + timeStep  * mixNum + mixIndex;
+	    const real_t *sumPost = postPbuff + totalTime * mixNum + timeStep;
+	    real_t posterior = helpers::safeExp((*postP) - (*sumPost));
+	    
+	    // point to the targets data x
+	    /***********p******** Fatal Error ****************************
+	     * : how could I just use pos_dataShift as pos_data ??? 
+	     ************************************************************/
+	    pos_data = (layerSizeOut * (timeStep)) + startDOut + featIndex;
+	    pos_dataShift = (layerSizeOut * timeStep) + startDOut + featIndex - backStep;
+	    
+	    // Note, dimension -> backstep -> mixture -> time
+	    pos_buffW = ((timeStep * mixNum + mixIndex) * featureDim + featIndex) * backOrder +
+		        (backStep-1);
+	    
+	    //pos_buffW = (timeStep * mixNum + mixIndex) * featureDim + featIndex;
+	    //pos_buffb = pos_buffW + totalTime * featureDim * mixNum;
+	    
+	    real_t grad = (-1 * posterior * (*(target + pos_data) - *(mdnPara + pos_mean)) /
+			   (*(mdnPara + pos_var)) / (*(mdnPara + pos_var)));
+	    
+	    *(gradBuf + pos_buffW) = grad * (*(target + pos_dataShift));
+	    
+	    if (backStep == 1){
+		// do this for one time when backStep == 1
+		pos_buffb = backOrder * totalTime * featureDim * mixNum;
+		pos_buffb+= (timeStep * mixNum + mixIndex) * featureDim + featIndex;
+		*(gradBuf + pos_buffb) = grad;
+	    }
+	}
+    };
+
+
+
+-----------
+Block 1025x11
+
+	    // AR along the dimension axis
+	    if (this->m_dynDirection == MDNUNIT_TYPE_1_DIRECD || 
+		this->m_dynDirection == MDNUNIT_TYPE_1_DIRECB ){
+		// ??? this is only for the sampling with a small ratio for variance
+		// 
+		for (int stepBack = 1; stepBack <= this->m_backOrder; stepBack++){
+		    internal::ShiftBiasStep1TiedCaseDimensionAxis fn2;
+		    fn2.startDOut    = this->m_startDimOut;
+		    fn2.featureDim   = this->m_featureDim;
+		    fn2.layerSizeOut = this->m_layerSizeTar;
+		    fn2.mixNum       = this->m_numMixture;
+		    fn2.totalTime    = this->m_totalTime;
+		    fn2.targets      = helpers::getRawPointer(targets);
+		    
+		    if (this->m_tanhReg && this->m_backOrder < 3){
+			fn2.linearPart = helpers::getRawPointer(this->m_wTransBuff) + 
+			                (stepBack - 1 + 2)  + this->m_wTransBuffShiftToDim;
+		    }else{
+			fn2.linearPart = this->m_weightsPtr + this->m_weightShiftToDim
+			    + (stepBack-1);
+		    }
+		    
+		    fn2.biasPart     = this->m_weightsPtr + this->m_weightShiftToDim + 
+			               this->m_backOrder;
+		    
+		    fn2.mdnPara      = helpers::getRawPointer(this->m_paraVec);
+		    fn2.stepBack     = stepBack;
+			
+		    fn2.trainableAPos= -1;   // this is useful for mxiture_dynSqr
+		    fn2.trainableBPos= -1;   // this is useful for mxiture_dynSqr
+		
+		    // No choice but iteration. This is an IIR filter
+		    for (int featDimIdx = 0; featDimIdx < this->m_featureDim; featDimIdx++){
+			startPos = i * this->m_numMixture * this->m_featureDim + featDimIdx;
+			endPos   = i * this->m_numMixture * this->m_featureDim + featDimIdx + 1;
+			thrust::for_each(thrust::counting_iterator<int>(0)+startPos,
+					 thrust::counting_iterator<int>(0)+endPos,
+					 fn2);
+		    }
+		}
+	    }
+
+
+
+
+-------------
+Block 1226x01
+    // Parse the softmax layer option
+    //    Softmax output is a specical case, we need to map the scalar of softmax index
+    //    to one-hot vector
+    //    options: options of multiple  MDNUnit_softmax.MDNUnitInfor
+    //    oneHotDim:         the dimension of softmax parameter
+    //    oneHotStartTarget: position of the softmax index in the output vector of MDN
+    //    oneHotStartSource: position of the softmax parameter in the MDN parameter vector
+    //
+    int ParseSoftMaxOpt(const std::string options, 
+			 std::vector<int> &oneHotDim,
+			 std::vector<int> &oneHotStartTarget,
+			 std::vector<int> &oneHotStartSource,
+			 int targetStart, int targetEnd){
+	// read in the option
+	std::vector<std::string> tempArgs;
+
+	// softmax unit 1              softmax unit 2
+	// startSource_startTarget_Dim_startSource_startTarget_Dim_...
+	boost::split(tempArgs, options, boost::is_any_of("_"));
+	if ((tempArgs.size() % 3) != 1 || tempArgs[tempArgs.size()-1].size()>0){
+	    throw std::runtime_error("Error in parsing in FeedBackLayer");
+	}
+	oneHotDim.clear();
+	oneHotStartTarget.clear();
+	oneHotStartSource.clear();
+	int sumDim = 0;
+	for (int i=0; i < tempArgs.size()-1; i=i+3){
+	    int tmp = boost::lexical_cast<int>(tempArgs[i+1]);
+	    if (tmp >= targetStart && tmp < targetEnd){
+		oneHotDim.push_back(boost::lexical_cast<int>(tempArgs[i+2]));
+		oneHotStartTarget.push_back(tmp);
+		oneHotStartSource.push_back(boost::lexical_cast<int>(tempArgs[i]));
+		sumDim += oneHotDim.back();
+	    }
+	}
+	return sumDim;
+    }
+
+
+Block 1226x02
+// 
+    struct setOneHotVector
+    {
+	// Transform the softmax idx into one-hot representation
+	//
+	int targetDim;      // dimension of output of the layer to be fed back (target layer)
+	int oneHotStart;    // where is the softmax idx in output of the target layer
+	                    //  oneHotStart >=0 && oneHotStart < targetDim
+	int oneHotUpper;    // dimension of the softmax vector
+	
+	int outputDim;      // dimension of the output of this layer
+	int zeroDimStart;   // where is the 1st dimension of softmax vector in output of this layer
+	int otherDimStart;  // where is the 2nd dimension of softmax vector in output of this layer
+
+	int parallel;       // number of parallel sentences
+
+	real_t *input2;     // output of the target layer
+	real_t *output;     // output of this layer
+	
+	// dispatched over 1 * T * Parallel
+	__host__ __device__ void operator() (const thrust::tuple<const real_t&, int> &t) const
+	{
+	    // frame index
+	    const int timeIdx= t.get<1>();  
+
+	    // position of the softmax idx (scalar) in the output of the target layer
+	    int dimTargetIdx = (timeIdx - parallel) * targetDim + oneHotStart; // look one step back
+	    
+	    // value of the softmax idx
+	    int oneHotValue  = (int)(input2[dimTargetIdx]);
+
+	    // position of frame in the output of this layer
+	    int setIdx       = timeIdx * outputDim;
+
+	    if (oneHotValue == 0){
+		// if the softmax idx is 0, set the 1st softmax dimension to 1
+		*(output + setIdx + zeroDimStart) = 1.0;
+		
+	    }else if(oneHotValue < oneHotUpper){
+		// else, set the corresponding softmax dimension to 1
+		//   otherDimStart + oneHotValue - 1 : position of the nth dimension in one frame
+		//   otherDimStart : jump over the dimensions belonging to another softmax unit
+		//   oneHotValue   : value of the softmax idx
+		//              -1 : ignores the 1st dimension of softmax one-hot 
+		*(output + setIdx + otherDimStart + oneHotValue -1) = 1.0;
+		
+		// set the 1st dimension to 0 
+		*(output + setIdx + zeroDimStart) = 0.0;
+	    }
+	}
+    };
+
+    struct setSoftMaxProb
+    {
+	// Similar to setOneHotVector, but set each dimension of the vector to the probability given
+	//  by the softmax target layer
+	// Note: the softmax probability vector is contained in the MDNLayer->m_mdnParaVec
+	int outputDim;       //
+	int oneHotDim;       //
+	int sourceDim;       // dimension of the MDNLayer->m_mdnParaVec
+
+	int zeroDimStart;    // zeroDimStart above
+	int otherDimStart;   // otherDimStart above
+	int sourceDimStart;  // where is the 1st dimension of softmax prob in MDNLayer->m_mdnParaVec
+	
+	int parallel;        // 
+	int outputUpper;     // total lenght of this->outputs()
+	int inputUpper;      // total length of MDNLayer->m_mdnParaVec
+	
+	real_t *input2;      // MDNLayer->m_mdnParaVec
+	real_t *output;      // this->outputs()
+	
+	// dispatched over 1 * T * Parallel
+	// Dim here is the dimension of the output of this layer
+	__host__ __device__ void operator() (const thrust::tuple<const real_t&, int> &t) const
+	{
+	    const int idx    = t.get<1>();
+	    int timeIdx      = idx / oneHotDim;
+	    int dimIdx       = idx % oneHotDim;
+
+	    // one time back
+	    int probIdx      = (timeIdx - parallel) * sourceDim + sourceDimStart + dimIdx;
+	    // 
+	    int outputIdx    = (timeIdx * outputDim +
+				((dimIdx==0)?(zeroDimStart):(otherDimStart + dimIdx - 1)));
+	    if (outputIdx < outputUpper && probIdx < inputUpper)
+		output[outputIdx] = input2[probIdx];	    
+	}
+    };
+
+
+Block1226x03
+    // Map the softmax scalar into one-hot vector
+	    int shiftDim = 0;
+	    for (int i = 0; i < m_oneHotDim.size(); i++){
+		internal::setOneHotVector fn2;
+		fn2.targetDim    = m_targetDim;         //
+		fn2.outputDim    = this->size();        //
+
+		fn2.parallel     = this->parallelSequences();
+		fn2.oneHotUpper  = m_oneHotDim[i];
+		fn2.oneHotStart  = m_oneHotStartTar[i]; // where is the softmax idx in target vector
+		
+		// where is the first dimension of softmax one-hot vector 
+		fn2.zeroDimStart = previousSize  + m_oneHotStartTar[i] - m_targetDimStart;
+		// where is the second dimension of softmax one-hot vector
+		fn2.otherDimStart= tmpTargetSize + shiftDim;
+		
+		fn2.input2       = helpers::getRawPointer(m_targetLayer->outputs());
+		fn2.output       = helpers::getRawPointer(this->outputs());
+		int n = this->curMaxSeqLength() * this->parallelSequences();
+		thrust::for_each(
+		  thrust::make_zip_iterator(
+		   thrust::make_tuple(this->outputs().begin()+this->parallelSequences(),
+				      thrust::counting_iterator<int>(0)+this->parallelSequences())),
+		  thrust::make_zip_iterator(
+		   thrust::make_tuple(this->outputs().begin()+n,
+				      thrust::counting_iterator<int>(0)+n)),
+		  fn2);
+
+		// skip over the preceding softmax one-hot vector part
+		shiftDim += (m_oneHotDim[i]-1); 
+	    }
+
+
+
+Block1226x04
+	    // Unfold the softmax output into the one-hot vector format
+	    // Two choices:
+	    //    feedback the predicted value
+	    //    feedback the probablity vector
+	    int shiftDim = 0;
+	    
+	    for (int i = 0; i < m_oneHotDim.size(); i++){
+		if (timeStep == 0)
+		    break;
+		if (0){
+		    //    feedback the predicted value
+		    internal::setOneHotVector fn2;
+		    fn2.targetDim    = m_targetDim;
+		    fn2.oneHotStart  = m_oneHotStartTar[i];
+		    fn2.oneHotUpper  = m_oneHotDim[i];
+		    
+		    fn2.parallel     = this->parallelSequences();
+		    fn2.outputDim    = this->size();
+		    
+		    fn2.zeroDimStart = (this->precedingLayer().size()+
+					(m_oneHotStartTar[i]-m_targetDimStart));
+		    fn2.otherDimStart= (this->precedingLayer().size()+
+					(m_targetDimEnd-m_targetDimStart) + shiftDim);
+		    
+		    
+		    fn2.input2       = helpers::getRawPointer(m_targetLayer->outputs());
+		    fn2.output       = helpers::getRawPointer(this->outputs());
+		    
+		    //int n = this->curMaxSeqLength() * this->parallelSequences();
+		    thrust::for_each(
+			thrust::make_zip_iterator(
+			  thrust::make_tuple(this->outputs().begin()+ effTimeStepS,
+					     thrust::counting_iterator<int>(0) + effTimeStepS)),
+			thrust::make_zip_iterator(
+			  thrust::make_tuple(this->outputs().begin()+ effTimeStepE,
+					     thrust::counting_iterator<int>(0) + effTimeStepE)),
+			fn2);
+		    shiftDim += (m_oneHotDim[i]-1);
+		    
+		}else{
+		    // feedback the probablity vector
+		    // dim of mdn->m_mdnParaVec
+		    int mdnParaVecSize  = (m_targetLayer->secondOutputs().size()/
+					   this->curMaxSeqLength() * this->parallelSequences());
+		    
+		    internal::setSoftMaxProb fn2;
+		    fn2.outputDim       = this->size();
+		    fn2.sourceDim       = mdnParaVecSize;  
+		    fn2.oneHotDim       = m_oneHotDim[i];
+		    
+		    fn2.sourceDimStart  = m_oneHotStartSrc[i];
+		    fn2.parallel        = this->parallelSequences();
+		    
+		    // where is the first dimension of softmax one-hot vector 
+		    fn2.zeroDimStart    = previousSize  + m_oneHotStartTar[i]-m_targetDimStart;
+		    // where is the second dimension of softmax one-hot vector 
+		    fn2.otherDimStart   = tmpTargetSize + shiftDim;
+		    
+		    fn2.input2       = helpers::getRawPointer(m_targetLayer->secondOutputs());
+		    fn2.output       = helpers::getRawPointer(this->outputs());
+		    
+		    fn2.inputUpper   = m_targetLayer->secondOutputs().size();
+		    fn2.outputUpper  = this->outputs().size();
+
+		    thrust::for_each(
+		      thrust::make_zip_iterator(
+			thrust::make_tuple(
+			   this->outputs().begin()+effTimeStepS * m_oneHotDim[i],
+			   thrust::counting_iterator<int>(0) + effTimeStepS * m_oneHotDim[i])),
+		      thrust::make_zip_iterator(
+			thrust::make_tuple(
+			   this->outputs().begin()+effTimeStepE * m_oneHotDim[i],
+			   thrust::counting_iterator<int>(0) + effTimeStepE * m_oneHotDim[i])),
+		      fn2);
+			
+		    shiftDim += (m_oneHotDim[i]-1);
+		}
+	    }
+
+
+-------
+Block 20170421x01
+    /*
+    struct ConvolutionCore
+    {
+        int    curLayerSize;
+	int    preLayerSize;
+	
+	real_t *sourceData;
+	real_t *targetBuff;
+	real_t *weight;
+
+	int    *maxPoolingIdxBuf;   // pooling idx (buffer)
+	int    *winSizeBuf;         // size of window (buffer)
+	int    *conRangeBuf;        // convolution range (buffer)
+	int    *weightIdx;
+	
+	const char *patTypes;
+	int   paral;                
+	int   maxSeqLength;         // max length of one utterance
+	
+        __host__ __device__ void operator() (const thrust::tuple<int&, int> &t) const
+        {
+	    
+            // unpack the tuple
+            int outputIdx = t.get<1>();
+
+            // calculate the pattern index
+            int timeIdx = outputIdx / curLayerSize;   // 
+	    int dimIdx  = outputIdx % curLayerSize;   // also the window index
+
+	    if (patTypes[timeIdx] == PATTYPE_NONE)
+		return;
+
+	    //
+	    int winSize = winSizeBuf[dimIdx];
+	    int winConv = conRangeBuf[dimIdx];
+	    int wIdx    = weightIdx[dimIdx];
+	    
+	    int sIdx = 0;
+	    int eIdx = 0;
+
+	    real_t maxValue  = -1 * helpers::NumericLimits<real_t>::max();
+	    real_t tmpResult = 0.0;
+	    
+	    for (int conShift = -1 * winConv; conShift <= winConv; conShift++){
+		sIdx = timeIdx - winSize * paral + conShift * paral;
+		eIdx = timeIdx + winSize * paral + conShift * paral;
+		    
+		tmpResult = 0.0;
+
+		for (int j = sIdx; j <= eIdx; j +=  paral){
+		    
+		    // out of the data range
+		    if (j < 0 || j >= (maxSeqLength*paral) || patTypes[j] == PATTYPE_NONE)
+			continue;
+		    
+		    // Convolution
+		    for (int i = 0; i < preLayerSize; i++)
+			tmpResult += (sourceData[j * preLayerSize + i] *
+				      weight[wIdx + (j-sIdx)/paral * preLayerSize + i]);
+		}
+		if (tmpResult > maxValue){
+		    maxValue = tmpResult;
+		    t.get<0>() = conShift;
+		}
+	    }
+	    targetBuff[outputIdx] = cell_act_fn_t::fn(maxValue);
+        }
+    };
+    struct GradientPreLayer
+    {
+	int     preLayerSize;
+	int     curLayerSize;
+
+	real_t *curErrorBuf;
+	real_t *preErrorBuf;
+	real_t *weight;
+	
+	int    *maxPoolingIdxBuf;   // pooling idx (buffer)
+	int    *winSizeBuf;         // size of window (buffer)
+	int    *weightIdx;
+	int    *conRangeBuf;
+	
+	const char *patTypes;
+	
+	int     paral;
+	int     maxSeqLength;
+	
+	__host__ __device__ void operator() (const thrust::tuple<int&, int> &t) const
+	{
+	    int outputIdx = t.get<1>();    
+            // calculate the pattern index
+            int timeIdx = outputIdx / preLayerSize;   // 
+	    int dimIdx  = outputIdx % preLayerSize;   // also the window index
+	    
+	    int paralIdx= timeIdx   % paral;          // which utterance in the parallel block ?
+	    int timeIdx2= timeIdx   / paral;          // which time block ?
+	    
+	    if (patTypes[timeIdx] == PATTYPE_NONE){
+		preErrorBuf[outputIdx] = 0.0;
+		return;
+	    }
+	    
+	    int winSize = 0;  // window size 
+	    int wIdx    = 0;  // index to the first weight of one window matrix
+	    int winShift= 0;  // index of the max pooling
+	    
+	    int sIdx    = 0;
+	    int eIdx    = 0;
+	    int wShift  = 0;  // tmp
+	    	    
+	    for (int k = 0; k < curLayerSize; k++){
+
+		// determine the possible time range
+		winSize  = winSizeBuf[k];
+		winShift = conRangeBuf[k];
+		wIdx     = weightIdx[k];
+
+		// time range (of parallel block)
+		sIdx = timeIdx2 - winSize - winShift; // minimum timeIdx to cover the current time
+		eIdx = timeIdx2 + winSize + winShift; // maximum timeidx to cover the current time
+
+		for (int t = (sIdx * paral + paralIdx); t <= (eIdx * paral + paralIdx);
+		     t += paral){
+		    
+		    // skip the dummy node
+		    if (patTypes[t] == PATTYPE_NONE)
+			continue;
+		    
+		    winShift = maxPoolingIdxBuf[t * curLayerSize + k]; // maxpooling shift
+		    
+		    sIdx = t + winShift * paral - winSize * paral;
+		    eIdx = t + winShift * paral + winSize * paral;
+		    
+		    if (timeIdx >= sIdx && timeIdx <= eIdx){
+			// which column of the weight 
+			wShift = ((timeIdx - (t + winShift * paral)) / paral) + winSize;
+			
+			preErrorBuf[outputIdx] += (curErrorBuf[t * curLayerSize + k] *
+						   weight[wIdx + wShift * preLayerSize + dimIdx]);
+		    }
+		}
+	    }
+	   
+	}
+    };
+    
+    struct GradientWeight
+    {
+	int     preLayerSize;
+	int     curLayerSize;
+
+	real_t *curErrorBuf;
+	real_t *preOutput;
+	real_t *weightErrorBuf;
+	
+	int    *maxPoolingIdxBuf;   // pooling idx (buffer)
+	int    *winSizeBuf;         // size of window (buffer)
+	int    *weightIdx;
+
+	const char *patTypes;
+	
+	int     paral;
+	int     maxSeqLength;
+	
+	__host__ __device__ void operator() (const thrust::tuple<int&, int> &t) const
+	{
+	    
+	    int outputIdx = t.get<1>();
+	    int dimIdx = 0;
+	    int colIdx = 0;
+	    int rowIdx = 0;
+	    
+	    for (int i = 0; i < curLayerSize; i++){
+		if (outputIdx < weightIdx[i+1]){
+		    dimIdx = i;
+		    colIdx = (outputIdx - weightIdx[i]) / preLayerSize;
+		    rowIdx = (outputIdx - weightIdx[i]) % preLayerSize;
+		}
+	    }
+
+	    int winShift= 0;  // index of the max pooling
+	    int dataIdx = 0;
+	    int winSize = winSizeBuf[dimIdx];
+	    
+	    for (int t = 0; t < maxSeqLength * paral; t++){
+		// skip the dummy node
+		if (patTypes[t] == PATTYPE_NONE)
+		    continue;
+		
+		winShift = maxPoolingIdxBuf[t * curLayerSize + dimIdx];
+		dataIdx  = t + (colIdx - winSize) * paral + winShift * paral;
+		
+		if (dataIdx < 0 || dataIdx >= (maxSeqLength * paral) ||
+		    patTypes[dataIdx] == PATTYPE_NONE)
+		    continue;
+		
+		weightErrorBuf[weightIdx[dimIdx] + colIdx * preLayerSize + rowIdx] +=
+		    (curErrorBuf[t * curLayerSize + dimIdx] *
+		     preOutput[dataIdx * preLayerSize + rowIdx]);
+	    }
+	}
+    };
+    */
+
+------
+Block 20170421x02
+	/*
+	internal::ConvolutionCore fn;
+	fn.curLayerSize     = this->size();
+	fn.preLayerSize     = this->precedingLayer().size();
+
+	fn.sourceData       = helpers::getRawPointer(this->precedingLayer().outputs());
+	fn.targetBuff       = helpers::getRawPointer(this->outputs());
+	fn.weight           = helpers::getRawPointer(this->weights());
+	
+	fn.maxPoolingIdxBuf = helpers::getRawPointer(m_maxIdxBuffer);
+	fn.winSizeBuf       = helpers::getRawPointer(m_winWidth_D);
+	fn.conRangeBuf      = helpers::getRawPointer(m_winConRange_D);
+	fn.weightIdx        = helpers::getRawPointer(m_weightIdx);
+
+	fn.patTypes         = helpers::getRawPointer(this->patTypes());
+	fn.paral            = this->precedingLayer().parallelSequences();
+	fn.maxSeqLength     = this->curMaxSeqLength();
+	    
+	int n =this->precedingLayer().curMaxSeqLength();
+	n = n*this->precedingLayer().parallelSequences();
+	n = n*this->size();
+
+	thrust::for_each(
+	     thrust::make_zip_iterator(
+			thrust::make_tuple(m_maxIdxBuffer.begin(),
+					   thrust::counting_iterator<int>(0))),
+	     thrust::make_zip_iterator(
+			thrust::make_tuple(m_maxIdxBuffer.begin()+n, 
+					   thrust::counting_iterator<int>(0)+n)),
+	     fn);
+	*/
+
+
+
+-------
+Block 20170421x03
+	/*
+	// Gradient to the previous layer
+	{{
+		
+	   internal::GradientPreLayer fn;
+	   fn.curLayerSize     = this->size();
+	   fn.preLayerSize     = this->precedingLayer().size();
+
+	   fn.preErrorBuf      = helpers::getRawPointer(this->precedingLayer().outputErrors());
+	   fn.curErrorBuf      = helpers::getRawPointer(this->outputErrors());
+	   fn.weight           = helpers::getRawPointer(this->weights());
+	
+	   fn.maxPoolingIdxBuf = helpers::getRawPointer(m_maxIdxBuffer);
+	   fn.winSizeBuf       = helpers::getRawPointer(m_winWidth_D);
+	   fn.weightIdx        = helpers::getRawPointer(m_weightIdx);
+	   fn.conRangeBuf      = helpers::getRawPointer(m_winConRange_D);
+	   
+	   fn.patTypes         = helpers::getRawPointer(this->patTypes());
+	   fn.paral            = this->precedingLayer().parallelSequences();
+	   fn.maxSeqLength     = this->curMaxSeqLength();
+
+	   int n =this->precedingLayer().curMaxSeqLength();
+	   n = n*this->precedingLayer().parallelSequences();
+	   n = n*this->precedingLayer().size();
+
+	   thrust::for_each(
+	     thrust::make_zip_iterator(
+			thrust::make_tuple(m_maxIdxBuffer.begin(),
+					   thrust::counting_iterator<int>(0))),
+	     thrust::make_zip_iterator(
+			thrust::make_tuple(m_maxIdxBuffer.begin() + n, 
+					   thrust::counting_iterator<int>(0) + n)),
+	     fn);
+	}}
+
+	thrust::fill(this->_weightUpdates().begin(),
+		     this->_weightUpdates().end(), 0.0);
+	{{
+	   internal::GradientWeight fn;
+	   fn.curLayerSize     = this->size();
+	   fn.preLayerSize     = this->precedingLayer().size();
+
+	   fn.curErrorBuf      = helpers::getRawPointer(this->outputErrors());
+	   fn.preOutput        = helpers::getRawPointer(this->precedingLayer().outputs());
+	   fn.weightErrorBuf   = helpers::getRawPointer(this->_weightUpdates());
+	
+	   fn.maxPoolingIdxBuf = helpers::getRawPointer(m_maxIdxBuffer);
+	   fn.winSizeBuf       = helpers::getRawPointer(m_winWidth_D);
+	   fn.weightIdx        = helpers::getRawPointer(m_weightIdx);
+
+	   fn.patTypes         = helpers::getRawPointer(this->patTypes());
+	   fn.paral            = this->precedingLayer().parallelSequences();
+	   fn.maxSeqLength     = this->curMaxSeqLength();
+
+	   int n = m_weightIdx[m_winWidth_H.size()];
+	   
+	   thrust::for_each(
+	     thrust::make_zip_iterator(
+			thrust::make_tuple(m_maxIdxBuffer.begin(),
+					   thrust::counting_iterator<int>(0))),
+	     thrust::make_zip_iterator(
+			thrust::make_tuple(m_maxIdxBuffer.begin() + n, 
+					   thrust::counting_iterator<int>(0) + n)),
+	     fn);
+	}}
+	*/
+
+
+
+-----------
+Block20170702x01
+	if (m_quanMerge.size()){
+	    // merge the result
+	    internal::quantizationMerge fn;
+	    fn.buffer    = helpers::getRawPointer(fillBuffer);
+	    fn.bufDim    = bufferDim;
+	    fn.bufS      = dimStart;
+	    fn.paraDim   = this->m_paraDim;
+	    fn.quanOpt   = helpers::getRawPointer(m_quanMerge);
+	    fn.quanInter = m_quanMerge.size();
+	    fn.uvSigmoid = m_uvSigmoid;
+	    
+	    thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple(this->m_paraVec.begin() + ts, 
+					   thrust::counting_iterator<int>(0) + ts)),
+		thrust::make_zip_iterator(
+			thrust::make_tuple(this->m_paraVec.begin() + te, 
+					   thrust::counting_iterator<int>(0) + te)),
+		fn);
+	}
+
+-----------
+Block20170702x02
+	// no longer used
+		internal::setSoftVectorSoftmax fn;
+		fn.target    = helpers::getRawPointer(fillBuffer);
+		fn.tarDim    = bufferDim;
+		fn.tarS      = dimStart;
+		fn.source    = helpers::getRawPointer(this->m_paraVec);
+		fn.srcDim    = this->m_paraDim;
+		fn.srcS      = 0;
+		fn.copyDim   = this->m_paraDim;
+		fn.uvSigmoid = m_uvSigmoid;
+		fn.threshold = m_threshold;
+		fn.patTypes     = helpers::getRawPointer(this->m_precedingLayer.patTypes()); 
+		int n = this->m_precedingLayer.curMaxSeqLength();
+		n = n * this->m_precedingLayer.parallelSequences() * fn.copyDim;
+		
+		thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple(this->m_paraVec.begin(), 
+					   thrust::counting_iterator<int>(0))),
+		thrust::make_zip_iterator(
+			thrust::make_tuple(this->m_paraVec.begin() + n, 
+					   thrust::counting_iterator<int>(0) + n)),
+		fn);
+	// 
+	if (m_quanMerge.size()){
+	    // merge the result
+	    internal::quantizationMerge fn;
+	    fn.buffer    = helpers::getRawPointer(fillBuffer);
+	    fn.bufDim    = bufferDim;
+	    fn.bufS      = dimStart;
+	    fn.paraDim   = this->m_paraDim;
+	    fn.quanOpt   = helpers::getRawPointer(m_quanMerge);
+	    fn.quanInter = m_quanMerge.size();
+	    fn.uvSigmoid = m_uvSigmoid;
+	    int n = this->m_precedingLayer.curMaxSeqLength();
+	    n = n * this->m_precedingLayer.parallelSequences();
+
+	    
+	    thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple(this->m_paraVec.begin(), 
+					   thrust::counting_iterator<int>(0))),
+		thrust::make_zip_iterator(
+			thrust::make_tuple(this->m_paraVec.begin() + n, 
+					   thrust::counting_iterator<int>(0) + n)),
+		fn);
+	    /*Cpu::real_vector temp2 = fillBuffer;
+	    for (int i = 0; i<128*400; i++){
+		if ((i%128)==0) printf("%3d: ",i)/128;
+		if (temp2[i]>0.2) printf("1 ");
+		else printf("  ");
+		if ((i%128)==127) printf("\n");
+		}*/
+
+	}
+
+
+
+----------------
+Block20170702x03
+	// option to merge quantized data
+	// Note: only used for feedback layer
+	m_quanMerge = quanMerge;
+	for (int i =0; i<m_quanMerge.size(); i++){
+	    if (m_quanMerge[i] < 0 || m_quanMerge[i] >= (endDim-startDim)){
+		throw std::runtime_error("Softmax quanMerge larger than dimension");
+	    }
+	}
+
+
+
+----------------
+Block20170702x04
+    struct quantizationMerge
+    {
+	real_t *buffer;
+	int     bufDim;
+	int     bufS;
+	int     paraDim;
+	int    *quanOpt;
+	int     quanInter;
+	bool    uvSigmoid;
+        __host__ __device__ void operator() (const thrust::tuple<real_t&, const int&> &values) const
+        {
+	    const int frameIdx = values.get<1>();
+	    int accumIdx = 0;
+	    if (quanInter > 1){
+		for (int i = 0; i < quanInter/2; i++){
+		    accumIdx = quanOpt[i*2];
+		    for (int dimIdx = (accumIdx + 1); dimIdx < quanOpt[i*2+1]; dimIdx++){
+			buffer[frameIdx * bufDim + bufS + accumIdx] +=
+			    buffer[frameIdx * bufDim + bufS + dimIdx];
+			buffer[frameIdx * bufDim + bufS + dimIdx] = 0.0;
+		    }
+		}
+	    }else if (quanInter == 1){
+		int tmp = (uvSigmoid)?1:0;
+		for (int i = tmp; i < paraDim; i++){
+		    if ((i-tmp) % quanOpt[0]){
+			accumIdx = i - ((i-tmp) % quanOpt[0]);
+			buffer[frameIdx * bufDim + bufS + accumIdx] +=
+			    buffer[frameIdx * bufDim + bufS + i];
+			buffer[frameIdx * bufDim + bufS + i] = 0.0;
+		    }
+		}
+	    }
+        }
+    };
+
+
+----------------
+Block20170702x05
+
+	m_quanMergeStr  = ((layerChild->HasMember("quantizeMerge")) ? 
+			       ((*layerChild)["quantizeMerge"].GetString()) : (""));
+	// quantization option for MDN_softmax that will be feedback
+	// should be moved to feedback layer
+	
+	if (m_quanMergeStr.size()){
+	    Cpu::int_vector temp;
+	    readQuanMerge(m_quanMergeStr, temp);
+	    m_quanMergeVal = temp;
+	}else{
+	    m_quanMergeVal.clear();
+	}
+
+    void readQuanMerge(const std::string options, Cpu::int_vector &quanOpt)
+    {
+	// read in the option
+	std::vector<std::string> tempArgs;
+	boost::split(tempArgs, options, boost::is_any_of("_"));
+	if ((tempArgs.size() % 2) != 0 && tempArgs.size()!= 1){
+	    printf("quanMerge: S_E_S_E");
+	    throw std::runtime_error("Error in MDN layer configuration");
+	}
+	quanOpt.resize(tempArgs.size(),-1);
+	for (int i=0; i < tempArgs.size(); i++){
+	    quanOpt[i] = boost::lexical_cast<int>(tempArgs[i]);
+	}
+    }
+
+
+----------------
+Block20170702x06
+    // FeedBackLayer.cu
+    // Obsolete
+    if (crossBoundary == 3 &&
+	input2[(timeStep - lookBackTime) * dimInput2 + dimInput2Start] > 0.98){
+	// Set the feedback to zero if previous frame is silence
+	output[outputIdx] = 0.0;
+	}
+
+
+Block20170702x07
+     if (crossBoundary == 3 && (inputIdx - dimInput2)>0 &&
+         input2[inputIdx - dimInput2 - dimIdxRel % dim1Band] > 0.98){
+         output[outputIdx] = 0;
+         // set the previous frame to zero if it is silence
+      }
+
+
+
+
+---------------
+Block20170904x01
+	    /* Code based on Thrust parallel */
+	    /*{{
+		internal::ReadInput fn;
+		fn.sourceW   = helpers::getRawPointer(fraction.inputs());
+		fn.targetW   = helpers::getRawPointer(m_weBufferInput);
+		fn.weBank    = helpers::getRawPointer(m_weBank);
+		fn.sourceDim = fraction.inputs().size()/fracTime;
+		fn.targetDim = this->size();
+		fn.weDim     = m_weDim;
+		fn.weIdxDim  = m_weIDDim;
+		
+		int n = fracTime * this->size();
+		thrust::for_each(thrust::host, 
+				 thrust::counting_iterator<int> (0),
+				 thrust::counting_iterator<int> (0)+n,
+				 fn);
+		
+		thrust::copy(m_weBufferInput.begin(),
+			     m_weBufferInput.begin()+n,
+			     this->_outputs().begin());
+	    }}
+	    */
+	    
+Block20170904x02
+    /*
+    struct ReadInput
+    {
+	const real_t *sourceW;
+	real_t       *targetW;
+	const real_t *index;
+	int           sourceDim;
+	int           targetDim;
+	int           startDim;
+	
+	__host__ __device__ void operator() (const int idx) const
+	{
+	    int dim  = (idx % targetDim);
+	    int time = (idx / targetDim);
+	    int sourcePos = index[time] * sourceDim + dim;
+	    int targetPos = time * targetDim + dim + startDim;
+	    *(targetW + targetPos) = *(sourceW + sourcePos);
+	}
+    };
+    */    
+
+
+Block20170904x03
+// copy the data from t.get<0> to the memory block started from Output 
+    struct CopySimple
+    {
+	real_t     *Output;           // output address to store data
+	int         paraDim;
+	
+	const char *patTypes;     // sentence termination check
+	
+        __host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
+        {
+            // unpack the tuple
+            int outputIdx = t.get<1>();
+	    int timeIdx   = outputIdx / paraDim;
+
+	    // skip dummy frame (for parallel sentence processing)
+	    if (patTypes[timeIdx] == PATTYPE_NONE)
+                return;
+
+            // store the result
+            *(Output+outputIdx) = t.get<0>();
+        }
+    };
+
+
+Block20170904x04
+    // Calculate the mixture distance \sum_d (x_d-\mu_d)^2/(2*std^2) for mixture model
+    // This function is used in EM-style generation
+    //  and forward anc backward propagation of mixture unit
+    struct ComputeMixtureDistanceWithTransForm
+    {
+	int startDOut;
+	int layerSizeOut;
+	int mixture_num;
+	int featureDim;
+	int totaltime;
+	bool tieVar;
+
+	const char *patTypes;
+	const real_t *output;    // targets data
+	const real_t *mdnPara;   // mean value of the mixture
+	const real_t *tranData; 
+	// from 1 to timesteps * num_mixture
+	__host__ __device__ real_t operator() (const int idx) const
+	{
+	    
+	    int timeStep = idx / mixture_num; //t.get<0>();
+	    int mixIndex = idx % mixture_num; //t.get<1>(); 
+	    
+	    // point to the targets data x
+	    int pos_data = (layerSizeOut * timeStep)+startDOut;
+		
+	    const real_t *data, *mean, *var, *trans;
+
+	    if (patTypes[timeStep] == PATTYPE_NONE)
+		return 0;
+	    
+	    // point to the mixture data (mean and variance)
+	    int pos =  totaltime * mixture_num;
+	    int pos_mean = pos+timeStep*featureDim*mixture_num+mixIndex*featureDim;
+	    pos     =  totaltime * (mixture_num + mixture_num * featureDim);
+
+            #ifdef ALTER_TIEVAR
+	    int pos_var  = pos+timeStep*mixture_num;
+            #else
+	    int pos_var  = pos+ (tieVar?
+				 (timeStep * mixture_num + mixIndex) :
+				 (timeStep * mixture_num * featureDim + mixIndex*featureDim));
+            #endif
+	    var  = mdnPara + pos_var;
+	    
+	    // pointer to the transformation part 
+	    int pos_trans = idx;
+	    
+	    // accumulate the distance over dimension
+	    real_t tmp = 0.0;
+	    for (int i = 0; i<featureDim; i++){
+		data = output    + pos_data + i;
+		mean = mdnPara   + pos_mean + i;
+		var  = mdnPara   + pos_var  + (tieVar?0:i);
+		trans= tranData  + pos_trans+ i;
+		tmp += (*data-*mean-*trans)*(*data-*mean-*trans)/((*var)*(*var))/2;
+		
+	    }
+	    return tmp;
+	}
+    };
+
+
+    // Copy the data from the output buffer to the target unit (for mixture_dyn unit)
+    struct CopyTargetData
+    {
+	int startDOut;
+	int layerSizeOut;
+	int featureDim;
+
+	const char *patTypes;
+	const real_t *output;   // targets data
+	real_t *target;   // 
+
+	// from 1 to timesteps * num_mixture
+	__host__ __device__ void operator() (const int idx) const
+	{
+	    
+	    int timeStep  = idx / featureDim; //t.get<0>();
+	    int featIndex = idx % featureDim; //t.get<1>(); 
+	    
+	    // point to the targets data x
+	    int pos_data = (layerSizeOut * timeStep)+startDOut+featIndex;
+		
+	    if (patTypes[timeStep] == PATTYPE_NONE)
+		return;
+	    *(target+idx) = *(output + pos_data);
+	    
+	}
+    };
+
+    // Shift the mean value u => u + w^To + b
+    struct ShiftBiasStep1
+    {
+	int featureDim;
+	int mixNum;
+	int totalTime;
+
+	real_t   *linearPart;   // Wx'
+	real_t   *biasPart;     // b
+	real_t   *mdnPara;      // 
+
+	// from 1 to timesteps * num_mixture
+	__host__ __device__ void operator() (const int idx) const
+	{
+	    
+	    int temp      = idx % (featureDim * mixNum); 
+	    int featIndex = temp % featureDim; 
+	    int timeStep  = idx / (featureDim * mixNum);
+	    int mixIndex  = temp / featureDim;
+
+	    int pos_mean;
+	    // Add to the mean value
+	    pos_mean = (totalTime * mixNum + 
+			timeStep  * featureDim * mixNum + 
+			mixIndex  * featureDim + featIndex); 
+		
+	    if (timeStep == 0){
+		// skip the first time step
+		return;
+	    }else{
+		*(mdnPara + pos_mean) = (*(mdnPara + pos_mean) + 
+					 *(linearPart + idx)   + 
+					 *(biasPart   + mixIndex * featureDim + featIndex)
+					 );
+	    }	    	    	    
+	}
+    };
+
+    // Accumulating the statistics for BP on the linear regression part W^T o+b
+    // -1 * posteriorP(k) * (O_t - (u + W_k ^ T O_t-1 + b_k)) / var^k_d / var^k_d
+    struct ShiftBiasStep2
+    {
+	int featureDim;
+	int mixNum;
+	int totalTime;
+	int startDOut;
+	int layerSizeOut;
+
+	real_t   *linearPart;   // Wx'
+	real_t   *biasPart;     // b
+	real_t   *target;       // x
+	real_t   *mdnPara;      // 
+	real_t   *postPbuff;
+	bool    tieVar;
+
+	// from 1 to timesteps * num_mixture
+	__host__ __device__ void operator() (const int idx) const
+	{
+	    
+	    int temp      = idx % (featureDim * mixNum); 
+	    int featIndex = temp % featureDim; 
+	    int timeStep  = idx / (featureDim * mixNum);
+	    int mixIndex  = temp / featureDim;
+
+	    // skip the first time step
+	    if (timeStep == 0)
+		return;
+	    
+	    // set the pointer
+	    int pos_mean, pos_var, pos_data;
+	    pos_mean = (totalTime * mixNum + 
+			timeStep  * featureDim * mixNum + 
+			mixIndex  * featureDim + featIndex); 
+	    pos_var  = (totalTime * (mixNum + mixNum * featureDim)      + 
+			timeStep  *  mixNum * (tieVar ? 1 : featureDim) + 
+			mixIndex  * (tieVar ? 1 : featureDim)           +
+			(tieVar ? 0 : featIndex)); 
+	    
+	    /*** FATAL ERROR **
+	     * Posterior probability should be updated 
+	     * Particularly, the size of the posterior probability buffer  will change !!!
+	     * Split ShiftBias into ShiftBiasStep1 and ShiftBiasStep2
+	     ******/
+	    // pointer to the posterior P and sum of posterior P
+	    const real_t *postP   = postPbuff + timeStep  * mixNum + mixIndex;
+	    const real_t *sumPost = postPbuff + totalTime * mixNum + timeStep;
+	    real_t posterior = helpers::safeExp((*postP) - (*sumPost));
+	    
+	    // point to the targets data x
+	    pos_data = (layerSizeOut * timeStep) + startDOut + featIndex;
+	    
+	    // save x - u - wx'-b to dataBuff now
+	    *(linearPart + idx) = (-1 * posterior * 
+				   (*(target + pos_data) - *(mdnPara + pos_mean)) /
+				   (*(mdnPara + pos_var)) / (*(mdnPara + pos_var)));
+	    // No need to re-order the data
+	    // save \phi(i)\sigma()(x-u-wx'-b) in time order
+	    // pos_data = (mixIndex * totalTime + timeStep) * featureDim + featIndex; 
+	    // *(tmpBuff+pos_data)=-1* posterior * (*(mdnPara + pos_var)) * (*(linearPart + idx));
+	    
+	}
+    };
+
+Block20170904x05
+
+    struct ShiftBiasStep1TiedCaseDimensionAxis
+    {
+	// Shift the mean value u => u + w^To + b
+	// This function is used by mixture_dyn and mixture_dynSqr
+	// The difference is the source of the parameter w and b
+	int startDOut;
+	int layerSizeOut;
+	int featureDim;
+	int mixNum;
+	int totalTime;
+	int trainableAPos;      // w, the w predicted by the network, I name it as a now
+	int trainableBPos;      // b, the b which is predicted by the network
+	int stepBack;           // how many steps to look back ?
+
+	real_t   *linearPart;   // w, where w is trainable but shared across time steps
+	real_t   *biasPart;     // b, where b is trainable but shared across time steps
+	real_t   *targets;      // o_t-1
+	real_t   *mdnPara;      // 
+	
+	bool      tieVar;
+
+	// from 1 to timesteps * num_mixture
+	__host__ __device__ void operator() (const int idx) const
+	{
+	    
+	    int timeStep  = idx  / (featureDim * mixNum);
+	    int temp      = idx  % (featureDim * mixNum); 
+	    int mixIndex  = temp /  featureDim;
+	    int featIndex = temp %  featureDim;
+	    
+	    if (featIndex < stepBack){
+		// skip the first dimension
+		return;
+	    }
+	    
+	    int pos_mean, pos_data;
+	    // Add to the mean value
+	    pos_mean = (totalTime * mixNum + 
+			timeStep  * featureDim * mixNum + 
+			mixIndex  * featureDim + featIndex); 
+	    pos_data = (timeStep  * layerSizeOut) + startDOut + featIndex - stepBack;
+	    
+	    if (linearPart != NULL && biasPart != NULL){
+		*(mdnPara + pos_mean) = ((*(mdnPara      + pos_mean))  + 
+					 ((*(linearPart)) * (*(targets+pos_data))) + 
+					 ((stepBack==1)  ? (*(biasPart)):0)
+					 );
+	    }else{
+		/* not implemented for context-dependent case */
+	    }
+	}
+    };
+
+Block20170904x06
+    struct TanhAutoRegWeightStep1
+    {
+	int     featureDim;
+	int     backOrder;
+	real_t *weight;
+	real_t *weightOut;
+        __host__ __device__ void operator() (const int &Idx) const
+        {
+            *(weightOut + Idx) =  (Idx < (backOrder * featureDim))? 
+		(activation_functions::Tanh::fn(*(weight+Idx))):0;
+        }
+    };
+
+    struct TanhAutoRegWeightStep2
+    {
+	int     featureDim;
+	real_t *weight;
+	real_t *weightOut;
+        __host__ __device__ void operator() (const int &idx) const
+        {
+	    *(weightOut + idx) = (idx < featureDim) ? 
+		((*(weight + idx)) + (*(weight + idx + featureDim))) : 
+		(-1 * (*(weight + idx - featureDim)) * (*(weight + idx)));
+        }
+    };
+
+
+# Block20180612#1
+
+	/*
+	// do the a part
+	// the mean part (unnessary to change anything. But need to copy from NN output to MDN)
+	if (this->m_tanhReg && this->m_backOrder < 3){
+	    
+	    internal::TanhAutoRegWeightTime fn1;
+	    
+	    fn1.backOrder    = this->m_backOrder;
+	    fn1.featureDim   = this->m_featureDim;
+	    fn1.NNOutputSize = this->m_precedingLayer.size();
+	    fn1.startD       = this->m_startDim + this->m_a_pos;
+	    
+	    fn1.patTypes     = helpers::getRawPointer(this->m_precedingLayer.patTypes());
+	    fn1.NNOutput     = helpers::getRawPointer(this->m_precedingLayer.outputs());
+
+	    // n:  number of timesteps
+	    // n2: number of the mean parameters  (time * featDim)
+	    int n  = this->m_precedingLayer.curMaxSeqLength();
+	    n      = n * this->m_precedingLayer.parallelSequences();
+	    int n2 = n * this->m_featureDim * this->m_backOrder;
+	    
+	    fn1.weightOut    = helpers::getRawPointer(this->m_paraVec) + n * this->m_a_pos;
+	    thrust::for_each(thrust::counting_iterator<int>(0),
+			     thrust::counting_iterator<int>(0)+n2,
+			     fn1);
+	    	    
+	}else{
+	    
+	    {{
+		internal::CopyMean fn;
+		fn.NNOutputSize = this->m_precedingLayer.size();
+		fn.featureDim   = this->m_featureDim * this->m_backOrder;
+		fn.startD       = this->m_startDim + this->m_a_pos;
+		fn.patTypes     = helpers::getRawPointer(this->m_precedingLayer.patTypes());
+		fn.NNOutput     = helpers::getRawPointer(this->m_precedingLayer.outputs());
+
+		// n:  number of timesteps
+		// n2: number of the mean parameters  (time * featDim)
+		int n  = this->m_precedingLayer.curMaxSeqLength();
+		n  = n * this->m_precedingLayer.parallelSequences();
+		int n2 = n * this->m_featureDim * this->m_backOrder;
+		
+		thrust::for_each(
+		    thrust::make_zip_iterator(
+			  thrust::make_tuple(this->m_paraVec.begin()+ n * this->m_a_pos,
+					     thrust::counting_iterator<int>(0))),
+		    thrust::make_zip_iterator(
+                          thrust::make_tuple(this->m_paraVec.begin()+ n * this->m_a_pos + n2, 
+					     thrust::counting_iterator<int>(0)+n2)),
+		    fn);
+	   }}
+	}
+	
+	// copy the b part
+	{{
+		internal::CopyMean fn;
+		fn.NNOutputSize = this->m_precedingLayer.size();
+		fn.featureDim   = this->m_featureDim;
+		fn.patTypes     = helpers::getRawPointer(this->m_precedingLayer.patTypes());
+		fn.NNOutput     = helpers::getRawPointer(this->m_precedingLayer.outputs());
+		fn.startD       = this->m_startDim + this->m_b_pos;
+		
+		// n:  number of timesteps
+		// n2: number of the mean parameters  (time * featDim)
+		int n  = this->m_precedingLayer.curMaxSeqLength();
+		    n  = n * this->m_precedingLayer.parallelSequences();
+		int n2 = n * this->m_featureDim;
+
+		thrust::for_each(
+		    thrust::make_zip_iterator(
+			  thrust::make_tuple(this->m_paraVec.begin()+ n * this->m_b_pos,
+					     thrust::counting_iterator<int>(0))),
+		    thrust::make_zip_iterator(
+                          thrust::make_tuple(this->m_paraVec.begin()+ n * this->m_b_pos + n2, 
+					     thrust::counting_iterator<int>(0)+n2)),
+		    fn);	
+	 }}
+	*/
+
+

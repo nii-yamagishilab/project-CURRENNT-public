@@ -1,0 +1,283 @@
+(venv220)wang@gpu05:/work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS$ perl 001_RUN.pl CONFIGPOOLS/config_ARRMDN_2.pm 
+
+====================================================================================
+------- 1 Skip preparing the training data ------- at Sun Oct 29 11:37:14 JST 2017
+====================================================================================
+
+
+======================================================================
+------- 2 Training the model ------- at Sun Oct 29 11:37:14 JST 2017
+======================================================================
+
+/work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN
+COMMANDLINE: cat ./config.cfg
+
+max_epochs_no_best   = 2
+max_epochs           = 5
+learning_rate        = 4e-8
+network              = ./network.jsn
+train                = true
+train_file           = ../../DATA/data.nc1
+val_file             = ../../DATA/data.nc1
+weights_dist         = normal
+weights_normal_sigma = 0.1
+weights_normal_mean  = 0
+stochastic           = true
+validate_every       = 1
+parallel_sequences   = 1
+input_noise_sigma    = 0.1
+shuffle_fractions    = true
+shuffle_sequences    = false
+momentum             = 0
+autosave             = true
+mdn_config           = ./mdn.config
+trainedModel         = ../RNN/trained_network.jsn
+trainedModelCtr      = 01100
+wInitPara            = 20 
+varInitPara          = 0.001 
+tieVariance          = 0
+
+	Please wait for several minutes.
+COMMANDLINE: currennt --options_file config.cfg > log_train 2>&1
+
+
+-------------------- CURRENNNT training log ----------------
+COMMANDLINE: cat ./log_train
+
+Configuration Infor:
+	Training Mode: Started in hybrid online/batch
+		Mini-batches (parallel 1 sequences each) will be shuffled during training.
+		Using input noise with std. of 0.1
+		Writting network  to 'trained_network.jsn'.
+	Validation every 1 epochs.
+
+	Training epoch number maximum: 5
+
+	Training epoch number no lowest validation error: 2
+	Autosave after EVERY EPOCH enabled.
+	Utilizing the GPU on 1 sequences in parallel.
+
+	Initialization method:
+		Normal dist. with mean, std:00.1
+		Random seed: 4170142877
+
+Using device #0 (Tesla K40c)
+Reading network from './network.jsn'... done.
+
+Loading training set '../../DATA/data.nc1' ...
+using cache file: /tmp/eb95-c6ec-f6e1-b437
+... done.
+Loaded fraction:  100%
+Sequences:        2
+Sequence lengths: 570..946
+Total timesteps:  1516
+
+Loading validation set '../../DATA/data.nc1' ...
+using cache file: /tmp/07c2-435a-c7c1-9482
+... done.
+Loaded fraction:  100%
+Sequences:        2
+Sequence lengths: 570..946
+Total timesteps:  1516
+
+Creating the neural network...
+Layer (0) [ input ]  input 
+Layer (1) [ fl1 ]  feedforward_tanh Trainable layer: initialize weight
+Layer (2) [ fl2 ]  blstm Trainable layer: initialize weight
+Layer (3) [ output ]  feedforward_identity Trainable layer: initialize weight
+Layer (4) [ postoutput ]  mdn 
+	MDN mixture: trainable:  0, tieVariance 0, #parameter 0
+	MDN sigmoid
+	MDN mixture: trainable:  0, tieVariance 0, #parameter 0
+	MDN mixture: trainable:  0, tieVariance 0, #parameter 0
+	MDN layer distribution parameter number: 888
+
+Network construction done.
+
+Network summary:
+     Name		Type
+(0) input		input [size: 382]
+(1) fl1		feedforward_tanh [size: 512, bias: 1.0, weights: 196096]
+(2) fl2		blstm [size: 256, bias: 1.0, weights: 657152]
+(3) output		feedforward_identity [size: 888, bias: 1.0, weights: 228216]
+(4) postoutput		mdn [size: 259]
+Total weights: 1081464
+
+MDN initialization 	using global zero mean and uni variance
+Creating the optimizer... 
+Optimization: plain SGD 
+Max training epochs:       5
+Max epochs until new best: 2
+Validation error every:    1
+Test error every:          1
+Learning rate:             4e-08
+Momentum:                  0
+Model Parameter:           ../RNN/trained_network.jsn
+
+Read NN parameter from ../RNN/trained_network.jsn
+
+	(1) read weight for layer fl1
+	(2) read weight for layer fl2
+	(3) not read weight for layer output	done
+
+Starting training...
+Print error per sequence / per timestep / secondary error (optional)
+ Epoch | Duration |           Training error         |           Validation error       |           Test error             |New best 
+-------+----------+----------------------------------+----------------------------------+----------------------------------+---------
+     1 |      0.5 |  277503.375 /   366.099/    0.000|  277502.531 /   366.098/    0.000|                                  |  yes SGD
+     2 |      0.4 |  277502.500 /   366.098/    0.000|  277501.625 /   366.097/    0.000|                                  |  yes SGD
+     3 |      0.4 |  277501.562 /   366.097/    0.000|  277500.688 /   366.096/    0.000|                                  |  yes SGD
+     4 |      0.4 |  277500.688 /   366.096/    0.000|  277499.781 /   366.095/    0.000|                                  |  yes SGD
+     5 |      0.4 |  277499.750 /   366.095/    0.000|  277498.875 /   366.094/    0.000|                                  |  yes Finished
+
+Maximum number of training epochs reached. Training stopped.
+Lowest validation error: 277498.875000
+
+Storing the trained network in 'trained_network.jsn'... done.
+Removing cache file(s) ...
+------------------------------------------------------------
+
+================================================================================
+------- 3 Skip preparing the test data ------- at Sun Oct 29 11:38:34 JST 2017
+================================================================================
+
+
+=================================================================================
+------- 4 Start synthesizing the speech ------- at Sun Oct 29 11:38:34 JST 2017
+=================================================================================
+
+Data to be generated data.nc1
+COMMANDLINE: rm -f /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN/output_trained_network_mdn0.001000/*
+
+COMMANDLINE: perl 04_synwav.pl /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/TESTDATA /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/TESTDATA/data.nc1 /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN/trained_network.jsn /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN/output_trained_network_mdn0.001000 /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN/output_trained_network_mdn0.001000 /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/nndata CONFIGPOOLS/config_ARRMDN_2.pm /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN/output_trained_network_mdn0.001000 /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN/output_trained_network_mdn0.001000 /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN/output_trained_network_mdn0.001000 1 1 0 0 NONE NONE NONE NONE NONE NONE 0.001
+
+
+========================================================================
+--- 4.1 generating from NN network --- at Sun Oct 29 11:38:34 JST 2017
+========================================================================
+
+COMMANDLINE: cp ./utilities/config_syn.cfg /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN/config_syn.cfg
+
+Entering /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN
+
+-------------------- CURRENNNT generating log ----------------
+COMMANDLINE: cat ./config_syn.cfg
+
+train                = false
+ff_output_format     = htk
+weights_dist         = normal
+weights_normal_sigma = 0.1
+weights_normal_mean  = 0
+stochastic           = true
+validate_every       = 1
+parallel_sequences   = 1
+input_noise_sigma    = 0
+shuffle_fractions    = true
+shuffle_sequences    = false
+momentum			 = 0
+autosave 			 = true
+revert_std			 = true
+
+currennt --options_file config_syn.cfg --ff_input_file /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/TESTDATA/data.nc1 --ff_output_file /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN/output_trained_network_mdn0.001000 --network /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN/trained_network.jsn --mdn_samplePara 0.001
+COMMANDLINE: currennt --options_file config_syn.cfg --ff_input_file /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/TESTDATA/data.nc1 --ff_output_file /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN/output_trained_network_mdn0.001000 --network /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN/trained_network.jsn --mdn_samplePara 0.001
+
+Configuration Infor:
+	Started in forward pass mode.
+	Writting output to '/work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN/output_trained_network_mdn0.001000'.
+		WARNING: overwriting '/work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN/output_trained_network_mdn0.001000
+	Autosave after EVERY EPOCH enabled.
+	Utilizing the GPU on 1 sequences in parallel.
+
+Using device #0 (Tesla K40c)
+Reading network from '/work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN/trained_network.jsn'... done.
+
+Loading feed forward input set '/work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/TESTDATA/data.nc1' ...
+using cache file: /tmp/cce9-4ecd-33b4-ce31
+... done.
+Loaded fraction:  100%
+Sequences:        4
+Sequence lengths: 494..1298
+Total timesteps:  3308
+
+Creating the neural network...
+Layer (0) [ input ]  input 
+Layer (1) [ fl1 ]  feedforward_tanh Trainable layer: re-read weight
+Layer (2) [ fl2 ]  blstm Trainable layer: re-read weight
+Layer (3) [ output ]  feedforward_identity Trainable layer: re-read weight
+Layer (4) [ postoutput ]  mdn 
+	MDN mixture: trainable:  0, tieVariance 0, #parameter 0
+	MDN sigmoid
+	MDN mixture: trainable:  0, tieVariance 0, #parameter 0
+	MDN mixture: trainable:  0, tieVariance 0, #parameter 0
+	MDN layer distribution parameter number: 888
+
+Network construction done.
+
+Network summary:
+     Name		Type
+(0) input		input [size: 382]
+(1) fl1		feedforward_tanh [size: 512, bias: 1.0, weights: 196096]
+(2) fl2		blstm [size: 256, bias: 1.0, weights: 657152]
+(3) output		feedforward_identity [size: 888, bias: 1.0, weights: 228216]
+(4) postoutput		mdn [size: 259]
+Total weights: 1081464
+
+
+Outputs from layer -1, MDN with para=0.001000
+	 de-normalization is skipped for dimension from 181 to 181
+, HTK format, de-normalized
+Computing outputs for data fraction 1...sampling with variance scaled by 0.001000 done.
+Computing outputs for data fraction 2...sampling with variance scaled by 0.001000 done.
+Computing outputs for data fraction 3...sampling with variance scaled by 0.001000 done.
+Computing outputs for data fraction 4...sampling with variance scaled by 0.001000 done.
+Removing cache file: /tmp/cce9-4ecd-33b4-ce31
+--------------------------------------------------------------
+Entering /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS
+
+===========================================================================
+--- 4.2 skip formmating output of NN  --- at Sun Oct 29 11:38:35 JST 2017
+===========================================================================
+
+
+==============================================================================
+--- 4.3 skip generating speech waveform  --- at Sun Oct 29 11:38:35 JST 2017
+==============================================================================
+
+Generating features to /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN/output_trained_network_mdn0.001000
+COMMANDLINE: perl 04_synwav.pl /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/TESTDATA DUMMY /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN/trained_network.jsn /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN/output_trained_network_mdn0.001000 /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN/output_trained_network_mdn0.001000 /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/nndata CONFIGPOOLS/config_ARRMDN_2.pm /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN/output_trained_network_mdn0.001000 /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN/output_trained_network_mdn0.001000 /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN/output_trained_network_mdn0.001000 1 0 1 1 NONE NONE NONE NONE NONE NONE NONE
+
+
+=============================================================================
+--- 4.1 skip generating from NN network --- at Sun Oct 29 11:38:35 JST 2017
+=============================================================================
+
+
+=====================================================================================
+--- 4.2 formmating output of NN to target data  --- at Sun Oct 29 11:38:35 JST 2017
+=====================================================================================
+
+COMMANDLINE: python ./utilities/GenSynData.py /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/TESTDATA/data_config.py /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN/output_trained_network_mdn0.001000 0 /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN/output_trained_network_mdn0.001000 NONE
+
+Writing acoustic data: BC2011_nancy_NYT096-008-00
+Writing acoustic data: BC2011_nancy_RURAL-02652
+Writing acoustic data: BC2011_nancy_SCIENCE-03888
+Writing acoustic data: BC2011_nancy_SLAT035-001-00
+
+==============================================================================
+--- 4.3 skip generating speech waveform  --- at Sun Oct 29 11:38:35 JST 2017
+==============================================================================
+
+Generating features to /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RMDN/output_trained_network_mdn0.001000
+
+=========================================================================
+------- 5 Skip calculating RMSE ------- at Sun Oct 29 11:38:35 JST 2017
+=========================================================================
+
+
+====================================================
+ --- All Done ---  at Sun Oct 29 11:38:35 JST 2017
+====================================================
+
+Ignore the synthetic waveforms
+ This script is only for testing
+ Use more data for speech synthesis

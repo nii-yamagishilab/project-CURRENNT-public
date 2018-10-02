@@ -1,0 +1,81 @@
+CURRENNT tools
+==============
+
+These tools are provided for convenience, in order to facilitate creation of
+NetCDF files for your own recognition tasks.
+
+They can be compiled with
+
+$ cc -ohtk2nc htk2nc.cpp -lnetcdf
+$ cc -onc-standardize nc-standardize.cpp -lnetcdf -lm
+$ ln -s nc-standardize nc-standardize-input
+
+Compilation on Windows should be possible since the code is designed to be
+platform-independent, but is untested.
+
+
+- htk2nc: Creates a NetCDF file for classification or regression.
+
+  This toolkit is mainly useful for speech processing purposes.  The input
+  features are given in the Hidden Markov Toolkit (HTK) format.  The targets
+  can be either labels in text format (for classification), or HTK files (for
+  regression).  Every sequence corresponds to an input and a target file.  In
+  case of classification, the labels must be specified as arbitrary non-empty
+  strings, one timestep per line.
+
+  The assignment of input features and targets is done via a mapping file,
+  which contains line of the format
+
+  <sequence_tag> <input_file> <target_file>
+
+  For example, to train a network for speech recognition, the mapping could
+  look like
+
+  speaker1/utterance1 speaker1/utterance1.fbk alignments/speaker1/utterance1.txt
+  speaker2/utterance3 speaker2/utterance3.fbk alignments/speaker2/utterance3.txt
+
+  where the text files could contain phoneme or HMM state labels, one frame per
+  line. 
+
+  For example, to train feature enhancement, the mapping could look like
+
+  speaker1/utterance1 noisy/speaker1/utterance1.fbk clean/speaker1/utterance1.fbk
+  speaker2/utterance3 noisy/speaker2/utterance3.fbk clean/speaker2/utterance3.fbk
+
+  The usage is as follows:
+  htk2nc <map_file> <nc_file>
+
+
+- nc-standardize: Standardizes the input and output features.
+
+  This is useful for obtaining better performance on virtually any recognition task.
+
+  The syntax is as follows:
+  nc-standardize <nc_file> <nc_param_file>
+
+  If nc_param_file is "-", the global means and variances of the features in
+  nc_file are computed, the features are standardized by subtracting the mean
+  and dividing by the standard deviation, and the standardized features are
+  written *in-place* into nc_file.  Furthermore, the computed means and
+  standard deviations are written as inputMeans, inputStdevs, outputMeans, and
+  outputStdevs fields into nc_file.
+
+  If nc_param_file is the name of a NetCDF file, then the inputMeans,
+  inputStdevs, outputMeans, and outputStdevs fields are read from that file
+  instead of computing them, and standardization is performed using these
+  parameters.  A typical usage is to simulate sequence-wise processing of a
+  test set where the standardization parameters are computed from training
+  data.
+
+  Example:
+
+  nc-standardize training_set.nc   -
+  nc-standardize validation_set.nc training_set.nc
+  nc-standardize test_set.nc       training_set.nc
+
+- nc-standardize-input: Same as nc-standardize*, but only standardizes input
+  features, not targets.  This can be useful, e.g., if your targets have a
+  meaningful range such as 0-1 for logistic output units.
+
+  *The binary is actually the same, and its behavior depends on the name of the
+  binary.

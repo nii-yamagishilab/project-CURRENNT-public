@@ -1,0 +1,366 @@
+This directory is for wavenet (conditioned on acoustic features)
+
+config.cfg            configuration for training
+config_syn.cfg        configuration for generation
+mdn.config	      configuration for the softmax output layer
+createMDNConfig.py    script to generate mdn.config
+network.jsn	      network
+data_mgcf0.mv.bin     mean and std vector to normalize the conditional acoustic features
+
+
+Note:
+0. Python scripts to extract the mu-law waveform and label index is in ../DATA_WAVENET/scripts
+
+1. If conditional acoustic features specified in config.cfg are not normalized,
+   they can be normalized during the training. To do this, a vector of mean and std
+   must be provided to the network, which is data_mgcf0.mv.bin in this case
+
+   How to generate data_mgcf0.mv.bin ?
+   1. Prepare a script to calculate the mean and std of the acoustic features.
+   2. Save the mean and std into data_mgcf0.mv.bin in this format:
+      [MEAN_VECTOR_FEATURE_1, MEAN_VECTOR_FEATURE_2, ... STD_VECTOR_FEATURE_1, STD_FEATURE_2]
+      
+      For example, this example use mgc (60 dimensions) and quantized F0 (1 dimension)
+      >> from ioTools import readwrite
+      >> data = readwrite.read_raw_mat('./data_mgcf0.mv.bin', 1)
+      >> data.shape
+      (122,)
+
+      data[0:60]:		mean of mgc
+      data[60:61]: 		mean of quantized F0 (here it is 0)
+      data[61:61+60]:		std of mgc
+      data[61+60:61+60+1]	std of quantized F0 (here it is 1)
+      
+      As you may see, quantized F0 is actually not normalized since std = 1 and mean = 0
+
+   After data_mgcf0.mv.bin is acquired, specify its path in network.jsn. In this example network.jsn,
+   these acoustic features will be loaded by the layer called "exInputL1". So, specify the path of
+   as "externalDataMV" in this layer:
+   	{
+	    "size": 61,
+	    "name": "exInputL1",
+	    "type": "externalloader",
+	    "bias": 1.0,
+	    "externalDataMV": "./data_mgcf0.mv.bin",
+	    "resolution": 80
+	},
+
+
+
+
+
+2. Explaination on the network.jsn, which is a little bit complex.
+   CURRENNT is not tensorflow, a large wavenet is not easy to write in network.jsn.
+   Anyway, let's check the network.jsn
+
+   1. Dummy input layer:
+        {
+            "size": 1,
+            "name": "input",
+            "type": "input"
+        },
+      
+      You may have noticed that ../DATA_WAVENET/lab.scp lists something called ***.labindx.
+      Remember that wavenet models sampling points, not frames. However, acoustic features
+      or linguistic features are at the frame level. ***.labindx just tells the network what is
+      the frame index of the t-th sampling point. ***.labindx's length is equal to the number
+      of sampling point in this utterance, and its dimension is 1 
+      
+      In this example, ***.labindx
+      it is very simple: remember that the sampling rate of the
+      example waveforms is 16000 Hz while the frame rate of linguistic/acoustic features is
+      200 Hz (5ms frame shift). Thus, every 80 = (16000 * 0.005) sampling points will have the
+      same frame index. 
+       
+      >> data = readwrite.read_raw_mat('../RAWDATA/BC2011_nancy_NYT096-008-00.labindx', 1)
+      >> data.shape
+      (75680,)
+      >> data[0:80]
+      array([ 0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,
+              0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,
+	      0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,
+	      0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,
+	      0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,
+	      0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,
+	      0.,  0.], dtype=float32)
+      >> frame_indx = 10
+      >> data[frame_index*80:(frame_index+1)*80]
+      array([ 10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,
+              10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,
+	      10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,
+	      10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,
+	      10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,
+	      10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,
+	      10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,  10.,
+	      10.,  10.,  10.], dtype=float32)
+      >> data[::80]
+      array([   0.,    1.,    2.,    3.,    4.,    5.,    6.,    7.,    8.,
+                9.,   10.,   11.,   12.,   13.,   14.,   15.,   16.,   17.
+      ....
+
+      The task of "input" layer is just to load this ***.labindx
+
+
+   2. Subnetwork to load conditional features
+      It is better to use an RNN network to process the conditional features before
+      they are fed into the wavenet blocks.
+      Here, I use a bi-LSTM RNN + skip-connection. The skip-connection is only used
+      to skip the quantized F0, which is unnecessay to be processed by RNN
+      
+      	{
+	    "size": 61,          
+	    "name": "exInputL1",
+	    "type": "externalloader",
+	    "bias": 1.0,
+	    "externalDataMV": "./data_mgcf0.mv.bin",
+	    "resolution": 80
+
+	    # size should be equal to the sum of ExtInputDims in config.cfg
+	    # externalDataMV is the mean_std vector
+	    # resolution = sampling_rate * frame_shift = 16000 * 0.005
+	},
+	{
+	    "size": 61,
+	    "name":  "exInputSkip",
+	    "bias":  1.0,
+	    "type":  "skipini",
+    	    "resolution": 80
+
+	    # The start of the skip-connection. It behaves in this way:
+	    #  1. it loads the output of exInputL1
+	    #  2. it feeds the output of exInputL1 to the next layer exInputL2
+	    #  3. it waits for skipadd, skipcat, or skippara blocks and feeds
+	    #     the output of exInputL1 to these blocks
+	    #  4. if necessary, it will accumulate the gradients from every layer that
+	    #     used the output of  exInputl1
+	    # In this network.jsn, exInputSkip will wait for the block below called "exInputAdd"
+	},
+	{
+	    "size":  64,
+	    "name":  "exInputL2",
+	    "bias":  1.0,
+	    "type":  "blstm",
+    	    "resolution": 80
+	    
+	    # a normal bi-LSTM layer
+	},
+	{
+	    "size":  60,
+	    "name":  "exInputL3",
+	    "bias":  1.0,
+	    "type":  "cnn",
+	    "window_width":        "60*1",
+	    "window_tap_interval": "60*1",
+	    "outputTanh": 0,
+	    "resolution": 80
+
+	    # a simple 1D CNN layer,
+	    # outputTanh: 0, use linear output activation function
+	    # please refer to ../MODEL_CNN/README for other options 
+	},
+	{
+	    "size": 61,
+	    "name":  "exInputAdd",
+	    "bias":  1.0,
+	    "type":  "skipcat",
+    	    "resolution": 80,
+	    "preSkipLayer": "exInputL3,exInputSkip",
+	    "preSkipLayerDim": "0_60_60_61",
+	    "layerFlag": "wavenetConditionInputLayer"
+
+	    # A simple skip-connection block that concatente the output from layer "exInputL3"
+	    # and the quantized F0 loaded by exInputL1
+	    #   preSkipLayer: "exInputL3,exInputSkip" tells the block to concatenate the output
+	    #                  from these two layers
+            #   preSkipLayerDim: "0_60_60_61" tells the block to concatente [0,60] dimensions 
+	    #                    from exInputL3, and [60,61] dimensions from exInputSkip
+	    #                    This is numpy-style notation. Suppose 0 is the first dimension,
+	    #                    for [A, B], it will read the A to B-1 dimensions.
+	    #                    In this example, [60, 61] of exInputSkip is the quantized F0
+	    #			 loaded by exInputL1
+	    # 
+	    # "layerFlag": "wavenetConditionInputLayer" tells the wavenet blocks to use the output
+	    #              of this layer as the conditional features
+	},
+
+	Pay special attention to the "resolution" and "layerFlag" !
+	"resolution" here should be equal to the "resolutions" in config.cfg and config_syn.cfg
+
+    3. 	wavenet pre-processing network
+    
+        {
+	    "size": 256,
+       	    "name": "feedbackBottom",
+            "bias": 1.0,
+            "type": "feedback",
+	    "previousDimEnd": 0,
+	    "previousDimStart": 0
+
+	    # Wavenet is an autoregressive network.
+	    # "feedbackBottom" reads the waveform shifted by 1 sampling point as input
+	    # In training stage, it will read the natural waveform
+	    # In generation, it will read the generated waveform
+
+	    # "size": 256
+	    #     because each waveform point is a one-hot vector of 256 dim, this size
+	    #     of this layer should be 256
+	    # 
+	    # "previousDimEnd": 0 & "previousDimStart": 0:
+	    # 	  feedback layer can load the output of the physical previous layer as input.
+	    #     here, it doesn't need  the output from the physical previous layer "exInputAdd".
+	    #     thus, set previousDimEnd and previousDimStart to 0
+
+        },
+	{
+	    "size": 64,
+	    "name": "causalEmbedding",
+	    "bias": 1.0,
+	    "type": "feedforward_identity"
+
+	    # This layer takes in the one-hot vector of waveform and generates embedded vectors
+	    # "size" determins the size of the network's spine
+	},
+
+
+    4. wavenet blocks
+       Let's look at the first block, which contains several layers with the name of "diluteB1L1"
+       	
+       	{
+	    "size":  64,
+	    "name":  "causalSkip",
+	    "bias":  1.0,
+	    "type":  "skipini"
+
+	    # This is the initial skip-connection block,
+	    # This is only necessary at the begining of the chain of skip-connection
+	    # the second wavenet block doesn't requires it
+	},
+	{
+	    "size":  128,
+	    "name":  "diluteB1L1cnn",
+	    "bias":  1.0,
+	    "type":  "cnn",
+	    "window_width": "128*1",
+	    "window_tap_interval": "128*1",
+	    "causal": 1,
+	    "outputTanh": 0
+
+	    # diluted CNN
+	    # "window_width": 128*1,       128 output channels, each filter has width = "1"*2+1 = 3
+	    # "window_tap_interval" 128*1, 128 output channels, each filter use dilution size = 1
+	    # "causal": 1, wavenet uses causal CNN. Although width of the filter is 3, only two
+	    #              the currennt time and previous time will be computed
+	    #  "outputTanh": linear output activation function
+	    #
+	    # to increase the dilution size, just change window_tap_interval
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L1wavc",
+	    "bias": 1.0,
+	    "type": "wavnetc",
+	    "contextDim": 61,
+	    "contextMV": ""
+
+	    # gated activation function tanh(...) * sig(...)
+	    # "size": 64, should be equal to 1/2 of the diluated CNN's size
+	    #             and the embedding size
+	    #
+	    # "contextDim": 61, the dimension of the conditiona features
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L1out",
+	    "bias": 1.0,
+	    "type": "feedforward_identity"
+
+	    # linear transformation
+	},
+	{ 
+	    "size": 64,                                       
+	    "name": "diluteB1L1skipadd",
+	    "bias": 1.000000,                                  
+	    "type": "skipadd",                                 
+	    "preSkipLayer": "causalSkip,diluteB1L1out"
+	    
+	    # add the input of this wavenet block with the output from diluteB1L1out
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L1temp",
+	    "bias": 1.0,
+	    "type": "skipini"
+
+	    # the start of a skip-connection, which jumps over the linear transformation
+	    # in the next layer
+	},
+	{
+	    "size": 256,
+	    "name": "diluteB1L1skipouttrans",
+	    "bias": 1.0,
+	    "type": "feedforward_identity"
+
+	    # linear transformation. This output will be used by the post-processing block
+	    # "size": 256,   the size is equal to the dimension of the post-processing block
+	},
+	{
+	    "size": 256,
+	    "name": "diluteB1L1skip",
+	    "bias": 1.0,
+	    "type": "skipini"
+
+	    # the start of skip-connection, which waits for the post-processing block
+	},
+	{
+	    "size": 64,
+	    "name": "diluteB1L1temp2",
+	    "bias": 1.0,
+	    "type": "skipadd",
+	    "preSkipLayer": "diluteB1L1temp"
+
+	    # read the output from diluteB1L1temp and feeds it to the next wavenet block
+	},
+
+	The wavenet block may be confusing because of the skipconnections. Please check the
+	tutorial slides of wavenet on tonywangx.github.io. It is easy to understand
+
+	Multiple wavenet blocks can be added. In this toy network.jsn, 10 blocks are used.
+	In my experiment, 40 wavenet blocks were used.	Please check the network.jsn
+	for the wavenet experiment on tonywangx.github.io
+
+     5. post-processing blocks
+        { 
+	    "size": 256,                                       
+	    "name": "postprocessingAdd",
+	    "bias": 1.000000,                                  
+	    "type": "skipadd",                                 
+	    "preSkipLayer": "diluteB1L1skip,diluteB1L2skip,diluteB1L3skip,diluteB1L4skip,diluteB1L5skip,diluteB1L6skip,diluteB1L7skip,diluteB1L8skip,diluteB1L9skip,diluteB1L10skip"
+
+	    # sum up the output of every wavenet block
+	},
+	{
+	    "size": 256,
+	    "name": "postprocessingL1",
+	    "bias": 1.0,
+	    "type": "feedforward_tanh"
+
+	    
+	},
+	{
+	    "size": 256,
+            "name": "output",
+            "bias": 1.0,
+            "type": "feedforward_identity"
+
+	    # generate the activation to the softmax layer
+    	},
+	{
+	    "size": 1,
+            "name": "postoutput",
+            "type": "mdn"
+
+	    # softmax layer
+    	}
+
+
+

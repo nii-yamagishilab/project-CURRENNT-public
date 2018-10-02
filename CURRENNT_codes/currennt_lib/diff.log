@@ -1,0 +1,2135 @@
+[1mdiff --git a/Configuration.cpp b/Configuration.cpp[m
+[1mindex 796dcab..4f7e336 100644[m
+[1m--- a/Configuration.cpp[m
+[1m+++ b/Configuration.cpp[m
+[36m@@ -377,7 +377,10 @@[m [mConfiguration::Configuration(int argc, const char *argv[])[m
+	("mdnVarFixEpochNum",[m
+	 po::value(&m_mdnVarFixEpochNum)->default_value(-1),[m
+	 "Fix the variance of mdn (GMM) as 1 for this number of epochs. Default (not use)")[m
+	[32m("resolutions",[m
+[32m	 po::value(&m_resolutions)->default_value(""),[m
+[32m	 "resolution defined in network.jsn. Format: res1_res2_res3")[m
+	;
+[m
+    po::options_description autosaveOptions("Autosave options");[m
+    autosaveOptions.add_options()[m
+[36m@@ -1394,3 +1397,8 @@[m [mconst int& Configuration::vaePlotManifold() const[m
+{[m
+    return m_vaePlotManifold;[m
+}[m
+
+[32mconst std::string& Configuration::resolutions() const[m
+[32m{[m
+[32m    return m_resolutions;[m
+[32m}[m
+[1mdiff --git a/Configuration.hpp b/Configuration.hpp[m
+[1mindex b8f7203..b4009f7 100644[m
+[1m--- a/Configuration.hpp[m
+[1m+++ b/Configuration.hpp[m
+[36m@@ -185,6 +185,9 @@[m [mprivate:[m
+[m
+    /* Add 20170711 */[m
+    int         m_vaePlotManifold;[m
+
+    [32m/* Add 20171007 */[m
+[32m    std::string m_resolutions;[m
+    [m
+    unsigned m_truncSeqLength;[m
+    unsigned m_parallelSequences;[m
+[36m@@ -223,7 +226,7 @@[m [mprivate:[m
+    std::vector<std::string> m_validationFiles;[m
+    std::vector<std::string> m_testFiles;[m
+    std::vector<std::string> m_feedForwardInputFiles;[m
+    
+public:[m
+    /**[m
+     * Parses the command line[m
+[36m@@ -699,6 +702,8 @@[m [mpublic:[m
+    const int& mdnVarUpdateEpoch() const;[m
+[m
+    const int& vaePlotManifold() const;[m
+
+    [32mconst std::string& resolutions() const;[m
+};[m
+[m
+[m
+[1mdiff --git a/LayerFactory.cu b/LayerFactory.cu[m
+[1mindex 3f89e74..b2318ad 100644[m
+[1m--- a/LayerFactory.cu[m
+[1m+++ b/LayerFactory.cu[m
+[36m@@ -55,6 +55,7 @@[m
+#include "layers/ParaLayer.hpp"[m
+#include "layers/FeedBackLayer.hpp"[m
+#include "layers/wavNetCore.hpp"[m
+[32m#include "layers/ExternalLoader.hpp"[m
+#include <stdexcept>[m
+[m
+[m
+[36m@@ -73,43 +74,62 @@[m [mlayers::Layer<TDevice>* LayerFactory<TDevice>::createLayer([m
+    if (layerType == "input")[m
+    	return new InputLayer<TDevice>(layerChild, parallelSequences, maxSeqLength);[m
+    else if (layerType == "feedforward_tanh")[m
+    	return new FeedForwardLayer<TDevice, Tanh>(layerChild, weightsSection,
+						   [31m*precedingLayer);[m[32m*precedingLayer, maxSeqLength);[m
+    else if (layerType == "feedforward_logistic")[m
+    	return new FeedForwardLayer<TDevice, Logistic>(layerChild, weightsSection,
+						       [31m*precedingLayer);[m[32m*precedingLayer, maxSeqLength);[m
+    else if (layerType == "feedforward_identity")[m
+    	return new FeedForwardLayer<TDevice, Identity>(layerChild, weightsSection,
+						       [31m*precedingLayer);[m[32m*precedingLayer, maxSeqLength);[m
+    else if (layerType == "feedforward_relu")[m
+    	return new FeedForwardLayer<TDevice, Relu>(layerChild, weightsSection,
+						   [31m*precedingLayer);[m[32m*precedingLayer, maxSeqLength);[m
+    else if (layerType == "paralayer")[m
+    	return new ParaLayer<TDevice, Identity>(layerChild, weightsSection,
+						[31m*precedingLayer);[m[32m*precedingLayer, maxSeqLength);[m    
+    else if (layerType == "softmax")[m
+    	return new SoftmaxLayer<TDevice, Identity>(layerChild, weightsSection,
+						   [31m*precedingLayer);[m[32m*precedingLayer, maxSeqLength);[m
+    else if (layerType == "lstm")[m
+    	return new LstmLayer<TDevice>(layerChild, weightsSection,
+				      *precedingLayer, [32mmaxSeqLength,[m false);
+    else if (layerType == "blstm")[m
+    	return new LstmLayer<TDevice>(layerChild, weightsSection,
+				      *precedingLayer, [32mmaxSeqLength,[m true);
+    else if (layerType == "rnn")[m
+    	return new RnnLayer<TDevice>(layerChild, weightsSection,
+				     *precedingLayer, [32mmaxSeqLength,[m false);
+    else if (layerType == "brnn")[m
+    	return new RnnLayer<TDevice>(layerChild, weightsSection,
+				     *precedingLayer, [32mmaxSeqLength,[m true);
+    else if (layerType == "feedback")[m
+    	return new FeedBackLayer<TDevice>(layerChild, weightsSection,
+					  [31m*precedingLayer);[m[32m*precedingLayer, maxSeqLength);[m
+    else if (layerType == "batchnorm")[m
+    	return new BatchNormLayer<TDevice>(layerChild, weightsSection,
+					   [31m*precedingLayer);[m[32m*precedingLayer, maxSeqLength);[m
+    else if (layerType == "cnn")[m
+        return new CNNLayer<TDevice>(layerChild, weightsSection,
+				     [31m*precedingLayer);[m[32m*precedingLayer, maxSeqLength);[m    
+    else if (layerType == "maxpooling")[m
+        return new MaxPoolingLayer<TDevice>(layerChild, weightsSection,
+					    [31m*precedingLayer);[m[32m*precedingLayer, maxSeqLength);[m    
+    else if (layerType == "middleoutput")[m
+        return new MiddleOutputLayer<TDevice>(layerChild, [31m*precedingLayer);[m[32m*precedingLayer, maxSeqLength);[m    
+    else if (layerType == "operator")[m
+        return new OperationLayer<TDevice>(layerChild, weightsSection,
+					   [31m*precedingLayer);[m[32m*precedingLayer, maxSeqLength);[m    
+    else if (layerType == "featmatch")[m
+        return new FeatMatchLayer<TDevice>(layerChild, [31m*precedingLayer);[m[32m*precedingLayer, maxSeqLength);[m    
+    else if (layerType == "vae")[m
+        return new VaeMiddleLayer<TDevice>(layerChild, [31m*precedingLayer);[m[32m*precedingLayer, maxSeqLength);[m    
+    else if (layerType == "wavnetc")[m
+    	return new WavNetCore<TDevice>(layerChild, weightsSection,
+				       [31m*precedingLayer);[m[32m*precedingLayer, maxSeqLength);[m
+[32m    else if (layerType == "externalloader")[m
+[32m    	return new ExternalLoader<TDevice>(layerChild, weightsSection,[m
+[32m					   *precedingLayer, maxSeqLength);[m
+    /*[m
+    // not implemented yet[m
+    else if (layerType == "lstmw")[m
+[36m@@ -129,24 +149,28 @@[m [mlayers::Layer<TDevice>* LayerFactory<TDevice>::createLayer([m
+        //if (!precedingTrainableLayer)[m
+    	//    throw std::runtime_error("Cannot add post output layer after a non trainable layer");[m
+        if (layerType == "sse")[m
+    	    return new SsePostOutputLayer<TDevice>(layerChild, [31m*precedingLayer);[m[32m*precedingLayer, maxSeqLength);[m
+        else if (layerType == "kld")[m
+    	    return new KLPostOutputLayer<TDevice>(layerChild, [31m*precedingLayer);[m[32m*precedingLayer, maxSeqLength);[m
+	else if (layerType == "weightedsse")[m
+    	    return new WeightedSsePostOutputLayer<TDevice>(layerChild,
+							   [31m*precedingLayer);[m[32m*precedingLayer, maxSeqLength);[m
+        else if (layerType == "rmse")[m
+            return new RmsePostOutputLayer<TDevice>(layerChild, [31m*precedingLayer);[m[32m*precedingLayer, maxSeqLength);[m
+        else if (layerType == "ce")[m
+            return new CePostOutputLayer<TDevice>(layerChild, [31m*precedingLayer);[m[32m*precedingLayer, maxSeqLength);[m
+        if (layerType == "sse_mask" || layerType == "wf") [m
+	    // wf provided for compat. with dev. version[m
+    	    return new SseMaskPostOutputLayer<TDevice>(layerChild, [31m*precedingLayer);[m[32m*precedingLayer, maxSeqLength);[m
+        else if (layerType == "binary_classification")[m
+    	    return new BinaryClassificationLayer<TDevice>(layerChild,
+							  [31m*precedingLayer);[m[32m*precedingLayer, maxSeqLength);[m
+	else if (layerType == "mdn")[m
+	    return new MDNLayer<TDevice>(layerChild, weightsSection,
+					 [31m*precedingLayer);[m[32m*precedingLayer, maxSeqLength);[m
+        else // if (layerType == "multiclass_classification")[m
+    	    return new MulticlassClassificationLayer<TDevice>(layerChild,
+							      [31m*precedingLayer);[m[32m*precedingLayer, maxSeqLength);[m
+    }[m
+    else[m
+        throw std::runtime_error(std::string("Error in network.jsn: unknown type'") +[m
+[36m@@ -169,9 +193,11 @@[m [mlayers::Layer<TDevice>* LayerFactory<TDevice>::createSkipAddLayer([m
+	throw std::runtime_error(std::string("The layer is not skipadd"));[m
+    }[m
+    if (layerType == "skipadd" || layerType == "skipini"){[m
+	return new SkipAddLayer<TDevice>(layerChild, weightsSection,
+					 [31mprecedingLayers);[m[32mprecedingLayers, maxSeqLength);[m
+    }else{[m
+	return new SkipCatLayer<TDevice>(layerChild, weightsSection,
+					 [31mprecedingLayers);[m[32mprecedingLayers, maxSeqLength);[m
+    }[m
+}[m
+[m
+[36m@@ -194,13 +220,17 @@[m [mlayers::Layer<TDevice>* LayerFactory<TDevice>::createSkipParaLayer([m
+	throw std::runtime_error(std::string("Error in network.jsn"));[m
+    }else{[m
+	if (layerType == "skippara_tanh"){[m
+	    return new SkipParaLayer<TDevice, [31mTanh>(layerChild,weightsSection,precedingLayers);[m[32mTanh>(layerChild, weightsSection,[m
+[32m						    precedingLayers, maxSeqLength);[m
+	}else if(layerType == "skippara_logistic"){[m
+	    return new SkipParaLayer<TDevice, [31mLogistic>(layerChild,weightsSection,precedingLayers);[m[32mLogistic>(layerChild, weightsSection,[m
+[32m							precedingLayers, maxSeqLength);[m
+	}else if(layerType == "skippara_identity"){[m
+	    return new SkipParaLayer<TDevice, [31mIdentity>(layerChild,weightsSection,precedingLayers);[m[32mIdentity>(layerChild, weightsSection,[m
+[32m							precedingLayers, maxSeqLength);[m	    
+	}else if(layerType == "skippara_relu"){[m
+	    return new SkipParaLayer<TDevice, Relu>(layerChild, weightsSection,
+						    [31mprecedingLayers);[m[32mprecedingLayers, maxSeqLength);[m
+	}else{[m
+	    printf("Type of Skippara can only be: skippara_tanh, skippara_logistic,");[m
+	    printf("skippara_identity, skippara_relu\n");[m
+[1mdiff --git a/NeuralNetwork.cpp b/NeuralNetwork.cpp[m
+[1mindex 7b99a30..9e4b6d3 100644[m
+[1m--- a/NeuralNetwork.cpp[m
+[1m+++ b/NeuralNetwork.cpp[m
+[36m@@ -797,6 +797,15 @@[m [mNeuralNetwork<TDevice>::NeuralNetwork([m
+		    m_layers[i]->linkTargetLayer(*(m_layers[tmp_wavNetCore].get()));[m
+		}[m
+	    }[m
+	    [32m// link the external trainable input, if exist[m
+[32m	    for (size_t i = 0; i < m_layers.size(); ++i) {[m
+[32m		if (m_layers[i]->getLayerFlag() == std::string("wavenetConditionInputLayer")){[m
+[32m		    if (m_layers[i]->type() == std::string("wavenetc"))[m
+[32m			throw std::runtime_error("External input cannot be from wavenetc");[m
+[32m		    m_layers[tmp_wavNetCore]->linkTargetLayer(*(m_layers[i].get()));[m
+[32m		    break;[m
+[32m		}[m
+[32m	    }[m
+	}[m
+	[m
+    }[m
+[36m@@ -1361,7 +1370,7 @@[m [mvoid NeuralNetwork<TDevice>::computeBackwardPass()[m
+	    // Stop the backpropagation when the layer's learning rate is specified as 0[m
+	    layers::TrainableLayer<TDevice> *trainableLayer = [m
+		dynamic_cast<layers::TrainableLayer<TDevice>*>(layer.get());[m
+	    if (trainableLayer && [31mcloseToZero(trainableLayer->learningRate()))[m[32mmisFuncs::closeToZero(trainableLayer->learningRate()))[m
+		break;[m
+
+	    // Or, stop if it is a mdn output layer in acoustic model[m
+[1mdiff --git a/data_sets/DataSet.cpp b/data_sets/DataSet.cpp[m
+[1mindex a6430c5..90b51be 100644[m
+[1m--- a/data_sets/DataSet.cpp[m
+[1m+++ b/data_sets/DataSet.cpp[m
+[36m@@ -543,6 +543,13 @@[m [mnamespace data_sets {[m
+        int context_length = context_left + context_right + 1;[m
+        int output_lag     = Configuration::instance().outputTimeLag();[m
+[m
+	[32mCpu::int_vector resolutionBuf;[m
+[32m	if (Configuration::instance().resolutions().size())[m
+[32m	    misFuncs::ParseIntOpt(Configuration::instance().resolutions(), resolutionBuf);[m
+[32m	else[m
+[32m	    resolutionBuf.clear();[m
+	
+	
+        //printf("(%d) Making task firstSeqIdx=%d...\n", (int)m_sequences.size(), firstSeqIdx);[m
+        boost::shared_ptr<DataSetFraction> frac(new DataSetFraction);[m
+[m
+[36m@@ -555,7 +562,7 @@[m [mnamespace data_sets {[m
+	// Add 0815: info of the external input data[m
+	if (m_exInputFlag){[m
+	    if (m_exInputDims.size())[m
+		frac->m_exInputDim        = [31mSumCpuIntVec(m_exInputDims);[m[32mmisFuncs::SumCpuIntVec(m_exInputDims);[m
+	    else[m
+		frac->m_exInputDim        = m_exInputDim;[m
+	}[m
+[36m@@ -583,7 +590,7 @@[m [mnamespace data_sets {[m
+                seqInfo.originalSeqIdx = m_sequences[seqIdx].originalSeqIdx;[m
+                seqInfo.length         = m_sequences[seqIdx].length;[m
+                seqInfo.seqTag         = m_sequences[seqIdx].seqTag;[m
+		[32mseqInfo.exInputLength  = m_sequences[seqIdx].exInputLength;[m
+		/*frac->m_maxTxtLength   = m_hasTxtData ?[m
+		    std::max(frac->m_maxTxtLength, m_sequences[seqIdx].txtLength) : [m
+		    frac->m_maxTxtLength;    [m
+[36m@@ -599,12 +606,26 @@[m [mnamespace data_sets {[m
+        frac->m_patTypes.resize(frac->m_maxSeqLength * m_parallelSequences,[m
+				PATTYPE_NONE);[m
+	frac->m_fracTotalLength = 0;[m
+
+	if (m_exInputFlag)[m
+	    frac->m_exInputData.resize(frac->m_maxExInputLength * m_parallelSequences *[m
+				       frac->m_exInputDim, 0);[m
+	else[m
+	    frac->m_exInputData.clear();[m
+
+	[32m// prepare the resolution information buffer[m
+[32m	int patTypesResoLength = 0;[m
+[32m	for (int resoIdx = 0; resoIdx < resolutionBuf.size(); resoIdx++){[m
+[32m	    DataSetFraction::reso_info tempResoBuf;[m
+[32m	    tempResoBuf.resolution = resolutionBuf[resoIdx];[m
+[32m	    tempResoBuf.bufferPos  = patTypesResoLength;[m
+[32m	    tempResoBuf.length     = misFuncs::getResoLength(frac->m_patTypes.size(),[m
+[32m							     resolutionBuf[resoIdx]);[m
+[32m	    patTypesResoLength += tempResoBuf.length;[m
+[32m	    frac->m_resolutionBuffer.push_back(tempResoBuf);[m
+[32m	}[m
+[32m	frac->m_patTypesLowTimeRes.resize(patTypesResoLength, PATTYPE_NONE);[m
+	
+	// Add 0620 Wang[m
+	/*if (m_hasTxtData)[m
+	    frac->m_txtData.resize((frac->m_maxTxtLength * m_parallelSequences* [m
+[36m@@ -788,6 +809,15 @@[m [mnamespace data_sets {[m
+[m
+                frac->m_patTypes[timestep * m_parallelSequences + i] = patType;[m
+		frac->m_fracTotalLength = frac->m_fracTotalLength+1;[m
+
+		[32m// also fill in the resolution buffer[m
+[32m		for (int resoIdx = 0; resoIdx < frac->m_resolutionBuffer.size(); resoIdx++){[m
+[32m		    int dataPos = timestep / frac->m_resolutionBuffer[resoIdx].resolution;[m
+[32m		    dataPos  = dataPos * m_parallelSequences + i;[m
+[32m		    dataPos += frac->m_resolutionBuffer[resoIdx].bufferPos;[m
+[32m		    frac->m_patTypesLowTimeRes[dataPos] =[m
+[32m			(frac->m_patTypesLowTimeRes[dataPos]==PATTYPE_FIRST?PATTYPE_FIRST:patType);[m
+[32m		}[m
+            }[m
+        }[m
+[m
+[36m@@ -870,9 +900,9 @@[m [mnamespace data_sets {[m
+		m_exInputExts.clear();[m
+		m_exInputDims.clear();[m
+	    }else if (config.exInputDims().size() > 0){[m
+		[31mParseStrOpt(config.exInputDirs(),[m[32mmisFuncs::ParseStrOpt(config.exInputDirs(),[m m_exInputDirs, ",");
+		[31mParseStrOpt(config.exInputExts(),[m[32mmisFuncs::ParseStrOpt(config.exInputExts(),[m m_exInputExts, ",");
+		[31mParseIntOpt(config.exInputDims(),[m[32mmisFuncs::ParseIntOpt(config.exInputDims(),[m m_exInputDims);
+		if (m_exInputDirs.size() != m_exInputExts.size() ||[m
+		    m_exInputDirs.size() != m_exInputDims.size())[m
+		    throw std::runtime_error("ExtInput options unequal length");[m
+[36m@@ -1150,7 +1180,7 @@[m [mnamespace data_sets {[m
+				   (seq->exInputDim * seq->exInputLength * sizeof(real_t)));[m
+			}else if (config.exInputDims().size() > 0){[m
+			    // load multiple files[m
+			    seq->exInputDim    = [31mSumCpuIntVec(m_exInputDims);[m[32mmisFuncs::SumCpuIntVec(m_exInputDims);[m
+			    seq->exInputLength = seq->exInputEndPos - seq->exInputStartPos;[m
+			    Cpu::real_vector exDataBuf(seq->exInputDim *[m
+						       (seq->exInputEndPos - seq->exInputStartPos),[m
+[1mdiff --git a/data_sets/DataSetFraction.cpp b/data_sets/DataSetFraction.cpp[m
+[1mindex c7ec00f..0d20448 100644[m
+[1m--- a/data_sets/DataSetFraction.cpp[m
+[1m+++ b/data_sets/DataSetFraction.cpp[m
+[36m@@ -138,4 +138,28 @@[m [mnamespace data_sets {[m
+	return m_fracTotalLength;[m
+    }[m
+[m
+
+    [32mconst Cpu::pattype_vector& DataSetFraction::patTypesLowTimeRes() const[m
+[32m    {[m
+[32m	return m_patTypesLowTimeRes;[m
+[32m    }[m
+[32m    [m
+[32m    int   DataSetFraction::patTypesLowTimesResPos(const int resolution) const[m
+[32m    {[m
+[32m	for (int i = 0; i < m_resolutionBuffer.size(); i++){[m
+[32m	    if (m_resolutionBuffer[i].resolution == resolution)[m
+[32m		return m_resolutionBuffer[i].bufferPos;[m
+[32m	}[m
+[32m	return -1;[m
+[32m    }[m
+[32m    [m
+[32m    int   DataSetFraction::patTypesLowTimesResLen(const int resolution) const[m
+[32m    {[m
+[32m	for (int i = 0; i < m_resolutionBuffer.size(); i++){[m
+[32m	    if (m_resolutionBuffer[i].resolution == resolution)[m
+[32m		return m_resolutionBuffer[i].length;[m
+[32m	}[m
+[32m	return -1;[m
+[32m    }[m
+    
+} // namespace data_sets[m
+[1mdiff --git a/data_sets/DataSetFraction.hpp b/data_sets/DataSetFraction.hpp[m
+[1mindex b70f5b0..ab69865 100644[m
+[1m--- a/data_sets/DataSetFraction.hpp[m
+[1m+++ b/data_sets/DataSetFraction.hpp[m
+[36m@@ -48,7 +48,12 @@[m [mnamespace data_sets {[m
+	    [m
+	    //int         txtLength;[m
+        };[m
+	
+	[32mstruct reso_info {[m
+[32m            int         resolution;  //[m
+[32m	    int         bufferPos;   //[m
+[32m	    int         length;[m
+[32m        };[m
+    private:[m
+        int m_inputPatternSize;[m
+        int m_outputPatternSize;[m
+[36m@@ -82,6 +87,9 @@[m [mnamespace data_sets {[m
+	int                 m_minExInputLength;[m
+	Cpu::real_vector    m_exInputData;[m
+[m
+	[32m// Add 1007[m
+[32m        Cpu::pattype_vector    m_patTypesLowTimeRes;[m
+[32m	std::vector<reso_info> m_resolutionBuffer;[m
+	[m
+    private:[m
+        /**[m
+[36m@@ -202,7 +210,18 @@[m [mnamespace data_sets {[m
+	 * Return the number of valid frames for this current fraction[m
+	 */[m
+	int fracTimeLength() const;[m
+
+
+	[32m/*[m
+[32m	 * Return the pattypes of low time resolution track[m
+[32m	 */[m
+[32m	const Cpu::pattype_vector& patTypesLowTimeRes() const;[m
+[32m[m
+[32m	int   patTypesLowTimesResPos(const int resolution) const;[m
+[32m	int   patTypesLowTimesResLen(const int resolution) const;[m
+	
+    };[m
+    
+[m
+} // namespace data_sets[m
+[m
+[1mdiff --git a/helpers/misFuncs.cpp b/helpers/misFuncs.cpp[m
+[1mindex b09d0dc..cb101bf 100644[m
+[1m--- a/helpers/misFuncs.cpp[m
+[1m+++ b/helpers/misFuncs.cpp[m
+[36m@@ -43,9 +43,17 @@[m
+#include <fstream>[m
+
+/* ***** Functions for string process ***** */[m
+[32mnamespace misFuncs {[m
+    
+void ParseStrOpt(const std::string stringOpt, std::vector<std::string> &optVec,[m
+		 const std::string para){[m
+    std::vector<std::string> tempArgs;[m
+    
+    [32mif (stringOpt.size()==0){[m
+[32m	optVec.clear();[m
+[32m	return;[m
+[32m    }[m
+    
+    boost::split(tempArgs, stringOpt, boost::is_any_of(para));[m
+    for (int i =0 ; i<tempArgs.size(); i++)[m
+	optVec.push_back(tempArgs[i]);[m
+[36m@@ -57,6 +65,11 @@[m [mvoid ParseIntOpt(const std::string stringOpt, Cpu::int_vector &optVec){[m
+    std::vector<std::string> tempArgs2;[m
+    std::vector<int> tmpresult;[m
+    [m
+    [32mif (stringOpt.size()==0){[m
+[32m	optVec.clear();[m
+[32m	return;[m
+[32m    }[m
+    
+    boost::split(tempArgs, stringOpt, boost::is_any_of("_"));[m
+    for (int i =0 ; i<tempArgs.size(); i++){[m
+	boost::split(tempArgs2, tempArgs[i], boost::is_any_of("*"));[m
+[36m@@ -77,6 +90,11 @@[m [mvoid ParseFloatOpt(const std::string stringOpt, Cpu::real_vector &optVec){[m
+    std::vector<std::string> tempArgs;[m
+    std::vector<std::string> tempArgs2;[m
+    std::vector<real_t> tmpresult;[m
+
+    [32mif (stringOpt.size()==0){[m
+[32m	optVec.clear();[m
+[32m	return;[m
+[32m    }[m
+    [m
+    boost::split(tempArgs, stringOpt, boost::is_any_of("_"));[m
+    for (int i =0 ; i<tempArgs.size(); i++){[m
+[36m@@ -171,3 +189,43 @@[m [mbool closeToZero(const real_t t1, const real_t lowBound, const real_t upBound)[m
+{[m
+    return ((t1 > lowBound) && (t1 < upBound));[m
+}[m
+
+[32mint ReadRealData(const std::string dataPath, Cpu::real_vector &data)[m
+[32m{[m
+[32m    // [m
+[32m    std::ifstream ifs(dataPath.c_str(), std::ifstream::binary | std::ifstream::in);[m
+[32m    if (!ifs.good())[m
+[32m	throw std::runtime_error(std::string("Fail to open ")+dataPath);[m
+[32m    [m
+[32m    // get the number of we data[m
+[32m    std::streampos numEleS, numEleE;[m
+[32m    long int numEle;[m
+[32m    numEleS = ifs.tellg();[m
+[32m    ifs.seekg(0, std::ios::end);[m
+[32m    numEleE = ifs.tellg();[m
+[32m    numEle  = (numEleE-numEleS)/sizeof(real_t);[m
+[32m    ifs.seekg(0, std::ios::beg);[m
+[32m    [m
+[32m    // read in the data[m
+[32m    if (data.size() < numEle)[m
+[32m	data.resize(numEle, 0);[m
+[32m    [m
+[32m    real_t tempVal;[m
+[32m    for (unsigned int i = 0; i<numEle; i++){[m
+[32m	ifs.read ((char *)&tempVal, sizeof(real_t));[m
+[32m	data[i] = tempVal;[m
+[32m    }[m
+[32m    //thrust::copy(tempVec.begin(), tempVec.end(), data.begin());[m
+[32m    ifs.close();[m
+[32m    return numEle;[m
+[32m}[m
+
+[32mint getResoLength(const int maxSeqLength, const int timeResolution)[m
+[32m{[m
+[32m    if (timeResolution == 1)[m
+[32m	return maxSeqLength;[m
+[32m    else[m
+[32m	return maxSeqLength / timeResolution + ((maxSeqLength % timeResolution>0)?1:0);[m
+[32m}[m
+
+[32m}[m
+[1mdiff --git a/helpers/misFuncs.hpp b/helpers/misFuncs.hpp[m
+[1mindex 9da2729..48f08b5 100644[m
+[1m--- a/helpers/misFuncs.hpp[m
+[1m+++ b/helpers/misFuncs.hpp[m
+[36m@@ -34,6 +34,8 @@[m
+#include <string>[m
+#include "../Types.hpp"[m
+
+
+[32mnamespace misFuncs{[m
+/* ***** Functions for string process ***** */[m
+void   ParseStrOpt(const std::string stringOpt, std::vector<std::string> &optVec,[m
+		   const std::string para="_");[m
+[36m@@ -51,8 +53,14 @@[m [mvoid   PrintVecBinH(Cpu::int_vector &temp);[m
+int    flagUpdateDiscriminator(const int epoch, const int frac);[m
+
+/* ***** Functions for numerical process ***** */[m
+
+real_t GetRandomNumber();[m
+bool   closeToZero(const real_t t1, const real_t lowBound = -0.0001,[m
+		   const real_t upBound = 0.0001);[m
+
+[32mint getResoLength(const int maxSeqLength, const int timeResolution);[m
+
+[32m/* ***** Function for I/O ****** */[m
+[32mint ReadRealData(const std::string dataPath, Cpu::real_vector &data);[m
+
+[32m}[m
+#endif[m
+[1mdiff --git a/layers/BatchNorm.cu b/layers/BatchNorm.cu[m
+[1mindex a7095c1..87932b6 100644[m
+[1m--- a/layers/BatchNorm.cu[m
+[1m+++ b/layers/BatchNorm.cu[m
+[36m@@ -319,8 +319,9 @@[m [mnamespace layers{[m
+    template <typename TDevice>[m
+    BatchNormLayer<TDevice>::BatchNormLayer(const helpers::JsonValue &layerChild, [m
+					    const helpers::JsonValue &weightsSection, [m
+					    Layer<TDevice> [31m&precedingLayer)[m[32m&precedingLayer,[m
+[32m					    int maxSeqLength)[m
+        : TrainableLayer<TDevice>(layerChild, weightsSection, 0, 4, [31mprecedingLayer)[m[32mprecedingLayer, maxSeqLength)[m
+    {[m
+	// Trainable parameters: alpha + beta, for each dimension of previous output[m
+	if (this->size() != precedingLayer.size()){[m
+[1mdiff --git a/layers/BatchNorm.hpp b/layers/BatchNorm.hpp[m
+[1mindex 0f322c4..0245b65 100644[m
+[1m--- a/layers/BatchNorm.hpp[m
+[1m+++ b/layers/BatchNorm.hpp[m
+[36m@@ -58,7 +58,8 @@[m [mnamespace layers{[m
+	BatchNormLayer([m
+		const helpers::JsonValue &layerChild, [m
+		const helpers::JsonValue &weightsSection,[m
+		Layer<TDevice>           [31m&precedingLayer);[m[32m&precedingLayer,[m
+[32m		int                       maxSeqLength);[m
+
+	virtual ~BatchNormLayer();[m
+
+[1mdiff --git a/layers/BinaryClassificationLayer.cu b/layers/BinaryClassificationLayer.cu[m
+[1mindex e6f43a2..c147722 100644[m
+[1m--- a/layers/BinaryClassificationLayer.cu[m
+[1m+++ b/layers/BinaryClassificationLayer.cu[m
+[36m@@ -118,8 +118,8 @@[m [mnamespace {[m
+namespace layers {[m
+
+    template <typename TDevice>[m
+    BinaryClassificationLayer<TDevice>::BinaryClassificationLayer(const helpers::JsonValue &layerChild, Layer<TDevice> [31m&precedingLayer)[m[32m&precedingLayer, int maxSeqLength)[m
+        : PostOutputLayer<TDevice>(layerChild, precedingLayer, [31mprecedingLayer.size())[m[32mprecedingLayer.size(), maxSeqLength)[m
+    {[m
+        if (this->size() != 1)[m
+            throw std::runtime_error("The binary classification post output layer cannot be used for an output layer size != 1");[m
+[36m@@ -158,10 +158,13 @@[m [mnamespace layers {[m
+    template <typename TDevice>[m
+    void BinaryClassificationLayer<TDevice>::loadSequences(const data_sets::DataSetFraction &fraction, const int nnState)[m
+    {[m
+	
+        PostOutputLayer<TDevice>::loadSequences(fraction, nnState);[m
+        // In this case, we can copy the integer vector of target classes,
+	[32m//[m since they are equal to the real target values (0/1)
+        thrust::copy(fraction.targetClasses().begin(),
+		     fraction.targetClasses().end(),
+		     this->_targets().begin());
+    }[m
+
+    template <typename TDevice>[m
+[1mdiff --git a/layers/BinaryClassificationLayer.hpp b/layers/BinaryClassificationLayer.hpp[m
+[1mindex fd88249..5238ff5 100644[m
+[1m--- a/layers/BinaryClassificationLayer.hpp[m
+[1m+++ b/layers/BinaryClassificationLayer.hpp[m
+[36m@@ -45,7 +45,7 @@[m [mnamespace layers {[m
+         */[m
+        BinaryClassificationLayer([m
+            const helpers::JsonValue &layerChild, [m
+            Layer<TDevice>  [31m&precedingLayer[m[32m&precedingLayer, int maxSeqLength[m
+            );[m
+[m
+        /**[m
+[1mdiff --git a/layers/CNNLayer.cu b/layers/CNNLayer.cu[m
+[1mindex 43747ff..05b2cb2 100644[m
+[1m--- a/layers/CNNLayer.cu[m
+[1m+++ b/layers/CNNLayer.cu[m
+[36m@@ -489,7 +489,7 @@[m [mnamespace CNNTools{[m
+    void ParseCNNOpt(const std::string cnnOpt, int layerSize, Cpu::int_vector &dupOpt,[m
+		     Cpu::int_vector  &outOpt){[m
+
+	[31mParseIntOpt(cnnOpt,[m[32mmisFuncs::ParseIntOpt(cnnOpt,[m outOpt);
+	if (dupOpt.size()<1)[m
+	    return;[m
+		[m
+[36m@@ -539,10 +539,10 @@[m [mnamespace CNNTools{[m
+	    Cpu::int_vector height;[m
+	    Cpu::int_vector stride;[m
+		[m
+	    [31mParseIntOpt(winHeightOpt,[m[32mmisFuncs::ParseIntOpt(winHeightOpt,[m height);
+	    [31mParseIntOpt(winWidthOpt,[m[32mmisFuncs::ParseIntOpt(winWidthOpt,[m  width);
+	    if (winStrideOpt.size() > 0)[m
+		[31mParseIntOpt(winStrideOpt,[m[32mmisFuncs::ParseIntOpt(winStrideOpt,[m  stride);
+	    else[m
+		stride.resize(width.size(), 1);[m
+		[m
+[36m@@ -611,7 +611,7 @@[m [mnamespace CNNTools{[m
+	    wCopyInfo.resize(thisLayerSize, 0);[m
+	   [m
+	    Cpu::int_vector width;[m
+	    [31mParseIntOpt(winWidthOpt,[m[32mmisFuncs::ParseIntOpt(winWidthOpt,[m  width);
+	    if (width.size() != thisLayerSize)[m
+		throw std::runtime_error("Unequal length of width and layer size");[m
+
+[36m@@ -644,11 +644,11 @@[m [mnamespace CNNTools{[m
+	if (winHeightOpt.size() > 0){[m
+	    // 2-D convolution[m
+
+	    [31mParseIntOpt(winHeightOpt,[m[32mmisFuncs::ParseIntOpt(winHeightOpt,[m height);
+	    [31mParseIntOpt(winWidthOpt,[m[32mmisFuncs::ParseIntOpt(winWidthOpt,[m  width);
+
+	    if (winStrideOpt.size() > 0)[m
+		[31mParseIntOpt(winStrideOpt,[m[32mmisFuncs::ParseIntOpt(winStrideOpt,[m  stride);
+	    else[m
+		stride.resize(width.size(), 1);[m
+		[m
+[36m@@ -699,7 +699,7 @@[m [mnamespace CNNTools{[m
+
+	    // default 1-D convolution[m
+	    [m
+	    [31mParseIntOpt(winWidthOpt,[m[32mmisFuncs::ParseIntOpt(winWidthOpt,[m width);
+	    if (width.size() > 0){[m
+		// count the total number of filter widths[m
+		// parameter = width * pre_layer_size + #filter[m
+[36m@@ -789,8 +789,8 @@[m [mnamespace CNNTools{[m
+	Cpu::int_vector height;[m
+	filterWeightMap.resize(weightNum, 0);[m
+	[m
+	[31mParseIntOpt(winHeightOpt,[m[32mmisFuncs::ParseIntOpt(winHeightOpt,[m height);
+	[31mParseIntOpt(winWidthOpt,[m[32mmisFuncs::ParseIntOpt(winWidthOpt,[m  width);
+	if (height.size() != width.size())[m
+	    throw std::runtime_error("Error height width unequal length");[m
+
+[36m@@ -862,7 +862,7 @@[m [mnamespace layers {[m
+    CNNLayer<TDevice>::CNNLayer([m
+        const helpers::JsonValue &layerChild, [m
+        const helpers::JsonValue &weightsSection,[m
+        Layer<TDevice> [31m&precedingLayer)[m[32m&precedingLayer, int maxSeqLength)[m
+	: m_winWidth_Opt    ((layerChild->HasMember("window_width")) ? [m
+			     ((*layerChild)["window_width"].GetString()) : (""))[m
+	, m_winInterval_Opt ((layerChild->HasMember("window_tap_interval")) ? [m
+[36m@@ -883,7 +883,7 @@[m [mnamespace layers {[m
+					(layerChild->HasMember("size")) ? [m
+					((*layerChild)["size"].GetInt()) : (0),[m
+					precedingLayer.size(), false, false),[m
+				    [31mprecedingLayer)[m[32mprecedingLayer, maxSeqLength)[m
+	, m_outputTanh(1)[m
+    {[m
+	[m
+[36m@@ -995,7 +995,7 @@[m [mnamespace layers {[m
+	*/[m
+	[m
+	// allocate memory for convolution buffer (\sum_window_Length * Time)[m
+	[31mm_conBuffer.resize(this->precedingLayer().patTypes().size()[m[32mm_conBuffer.resize(this->patTypes().size()[m * m_winTotalL, 0);
+
+	// allocate memmory for weight buffer[m
+	m_weightBuffer.resize(precedingLayer.size() * m_winTotalL + this->size(), 0.0);[m
+[1mdiff --git a/layers/CNNLayer.hpp b/layers/CNNLayer.hpp[m
+[1mindex 9244b0d..c79e365 100644[m
+[1m--- a/layers/CNNLayer.hpp[m
+[1m+++ b/layers/CNNLayer.hpp[m
+[36m@@ -111,7 +111,7 @@[m [mnamespace layers {[m
+	// initializer and destructor[m
+	CNNLayer(const helpers::JsonValue &layerChild,[m
+		 const helpers::JsonValue &weightsSection,[m
+		 Layer<TDevice> [31m&precedingLayer);[m[32m&precedingLayer, int maxSeqLength);[m
+
+	virtual ~CNNLayer();[m
+
+[1mdiff --git a/layers/CePostOutputLayer.cu b/layers/CePostOutputLayer.cu[m
+[1mindex 6de36e8..8f04fd3 100644[m
+[1m--- a/layers/CePostOutputLayer.cu[m
+[1m+++ b/layers/CePostOutputLayer.cu[m
+[36m@@ -107,8 +107,9 @@[m [mnamespace layers {[m
+
+    template <typename TDevice>[m
+    CePostOutputLayer<TDevice>::CePostOutputLayer(const helpers::JsonValue &layerChild, [m
+						  Layer<TDevice> [31m&precedingLayer)[m[32m&precedingLayer,[m
+[32m						  int maxSeqLength)[m
+        : PostOutputLayer<TDevice>(layerChild, precedingLayer, [31mprecedingLayer.size())[m[32mprecedingLayer.size(), maxSeqLength)[m
+    {[m
+    }[m
+
+[1mdiff --git a/layers/CePostOutputLayer.hpp b/layers/CePostOutputLayer.hpp[m
+[1mindex eeb3fd1..379b7b3 100644[m
+[1m--- a/layers/CePostOutputLayer.hpp[m
+[1m+++ b/layers/CePostOutputLayer.hpp[m
+[36m@@ -47,7 +47,7 @@[m [mnamespace layers {[m
+         */[m
+        CePostOutputLayer([m
+            const helpers::JsonValue &layerChild, [m
+            Layer<TDevice> [31m&precedingLayer[m[32m&precedingLayer, int maxSeqLength[m
+            );[m
+[m
+        /**[m
+[1mdiff --git a/layers/FeatMatch.cu b/layers/FeatMatch.cu[m
+[1mindex edc0c49..d92f795 100644[m
+[1m--- a/layers/FeatMatch.cu[m
+[1m+++ b/layers/FeatMatch.cu[m
+[36m@@ -127,8 +127,10 @@[m [mnamespace layers{[m
+    [m
+    template <typename TDevice>[m
+    FeatMatchLayer<TDevice>::FeatMatchLayer(const helpers::JsonValue &layerChild,[m
+					    Layer<TDevice> [31m&precedingLayer)[m[32m&precedingLayer,[m
+[32m					    int maxSeqLength)[m
+	: PostOutputLayer<TDevice> (layerChild, precedingLayer, precedingLayer.size(),
+				    [32mmaxSeqLength,[m true)
+	, m_ganRatio (1.0)[m
+    {[m
+	m_ganRatio  = (layerChild->HasMember("ganRatioGen") ? [m
+[1mdiff --git a/layers/FeatMatch.hpp b/layers/FeatMatch.hpp[m
+[1mindex a93dd43..1a92392 100644[m
+[1m--- a/layers/FeatMatch.hpp[m
+[1m+++ b/layers/FeatMatch.hpp[m
+[36m@@ -51,7 +51,8 @@[m [mnamespace layers {[m
+	[m
+    public:[m
+	FeatMatchLayer(const helpers::JsonValue &layerChild, [m
+		       Layer<TDevice>  [31m&precedingLayer);[m[32m&precedingLayer,[m
+[32m		       int maxSeqLength);[m
+	[m
+	virtual ~FeatMatchLayer();[m
+
+[1mdiff --git a/layers/FeedBackLayer.cu b/layers/FeedBackLayer.cu[m
+[1mindex 96ede7e..7a55ebe 100644[m
+[1m--- a/layers/FeedBackLayer.cu[m
+[1m+++ b/layers/FeedBackLayer.cu[m
+[36m@@ -399,9 +399,10 @@[m [mnamespace layers{[m
+    template <typename TDevice>[m
+    FeedBackLayer<TDevice>::FeedBackLayer(const helpers::JsonValue &layerChild,[m
+					  const helpers::JsonValue &weightsSection,[m
+					  Layer<TDevice>           [31m&precedingLayer[m[32m&precedingLayer,[m
+[32m					  int                        maxSeqLength[m
+					  )[m
+	: TrainableLayer<TDevice>(layerChild, weightsSection, 0, 0, [31mprecedingLayer)[m[32mprecedingLayer, maxSeqLength)[m
+	, m_targetDim   (-1)[m
+	, m_targetLayer (NULL)[m
+    {[m
+[36m@@ -543,6 +544,9 @@[m [mnamespace layers{[m
+
+	// read in the boundary information[m
+	if (m_aggStr.size()){[m
+
+	    [32mif (this->getResolution() != 1)[m
+[32m		throw std::runtime_error("Feedback layer is ready for resolution option");[m
+	    //[m
+	    if (this->parallelSequences()>1){[m
+		printf("Please use parallel_sequences = 1\n");[m
+[1mdiff --git a/layers/FeedBackLayer.hpp b/layers/FeedBackLayer.hpp[m
+[1mindex 5f480b4..ec412cd 100644[m
+[1m--- a/layers/FeedBackLayer.hpp[m
+[1m+++ b/layers/FeedBackLayer.hpp[m
+[36m@@ -73,7 +73,8 @@[m [mnamespace layers {[m
+	FeedBackLayer([m
+	    const helpers::JsonValue &layerChild,[m
+	    const helpers::JsonValue &weightsSection,[m
+            Layer<TDevice>           [31m&precedingLayer[m[32m&precedingLayer,[m
+[32m	    int                        maxSeqLength[m
+	);[m
+
+	virtual ~FeedBackLayer();[m
+[1mdiff --git a/layers/FeedForwardLayer.cu b/layers/FeedForwardLayer.cu[m
+[1mindex bc301ac..9a8ad68 100644[m
+[1m--- a/layers/FeedForwardLayer.cu[m
+[1m+++ b/layers/FeedForwardLayer.cu[m
+[36m@@ -288,9 +288,10 @@[m [mnamespace layers {[m
+    template <typename TDevice, typename TActFn>[m
+    FeedForwardLayer<TDevice, TActFn>::FeedForwardLayer(const helpers::JsonValue &layerChild, [m
+							const helpers::JsonValue &weightsSection, [m
+							Layer<TDevice> [31m&precedingLayer)[m[32m&precedingLayer,[m
+[32m							int maxSeqLength)[m
+        : TrainableLayer<TDevice>(layerChild, weightsSection, 1, weightForBatchNorm(layerChild),[m
+				  [31mprecedingLayer)[m[32mprecedingLayer, maxSeqLength)[m
+    {[m
+	[m
+	// Initialization for batch normalization[m
+[1mdiff --git a/layers/FeedForwardLayer.hpp b/layers/FeedForwardLayer.hpp[m
+[1mindex 057c9b4..f775631 100644[m
+[1m--- a/layers/FeedForwardLayer.hpp[m
+[1m+++ b/layers/FeedForwardLayer.hpp[m
+[36m@@ -66,7 +66,8 @@[m [mnamespace layers {[m
+        FeedForwardLayer([m
+            const helpers::JsonValue &layerChild, [m
+            const helpers::JsonValue &weightsSection,[m
+            Layer<TDevice>           [31m&precedingLayer[m[32m&precedingLayer,[m
+[32m	    int                       maxSeqLength[m
+            );[m
+[m
+        /**[m
+[1mdiff --git a/layers/InputLayer.cpp b/layers/InputLayer.cpp[m
+[1mindex ad9ae9d..387afb2 100644[m
+[1m--- a/layers/InputLayer.cpp[m
+[1m+++ b/layers/InputLayer.cpp[m
+[36m@@ -68,6 +68,8 @@[m [mnamespace layers {[m
+	m_weMask.clear();[m
+	m_weMaskFlag = false;[m
+
+	[32mif (this->getResolution() > 1)[m
+[32m	    throw std::runtime_error("Resolution for input layer should be 1");[m
+    }[m
+
+    template <typename TDevice>[m
+[1mdiff --git a/layers/KLPostOutputLayer.cu b/layers/KLPostOutputLayer.cu[m
+[1mindex 98a03a4..a7b951e 100644[m
+[1m--- a/layers/KLPostOutputLayer.cu[m
+[1m+++ b/layers/KLPostOutputLayer.cu[m
+[36m@@ -167,8 +167,9 @@[m [mnamespace layers {[m
+
+    template <typename TDevice>[m
+    KLPostOutputLayer<TDevice>::KLPostOutputLayer(const helpers::JsonValue &layerChild, [m
+						  Layer<TDevice> [31m&precedingLayer)[m[32m&precedingLayer,[m
+[32m						  int maxSeqLength)[m
+        : PostOutputLayer<TDevice>(layerChild, precedingLayer, [31mprecedingLayer.size())[m[32mprecedingLayer.size(), maxSeqLength)[m
+    {[m
+	const Configuration &config = Configuration::instance();[m
+	m_dataType = config.KLDOutputDataType();[m
+[1mdiff --git a/layers/KLPostOutputLayer.hpp b/layers/KLPostOutputLayer.hpp[m
+[1mindex 0af5bb4..51f9853 100644[m
+[1m--- a/layers/KLPostOutputLayer.hpp[m
+[1m+++ b/layers/KLPostOutputLayer.hpp[m
+[36m@@ -58,7 +58,8 @@[m [mnamespace layers {[m
+         */[m
+        KLPostOutputLayer([m
+            const helpers::JsonValue &layerChild, [m
+            Layer<TDevice> [31m&precedingLayer[m[32m&precedingLayer,[m
+[32m	    int maxSeqLength[m
+            );[m
+[m
+        /**[m
+[1mdiff --git a/layers/Layer.cpp b/layers/Layer.cpp[m
+[1mindex bf1bb1c..5550ec2 100644[m
+[1m--- a/layers/Layer.cpp[m
+[1m+++ b/layers/Layer.cpp[m
+[36m@@ -25,6 +25,7 @@[m
+#endif[m
+
+#include "Layer.hpp"[m
+[32m#include "../helpers/misFuncs.hpp"[m
+#include "../helpers/JsonClasses.hpp"[m
+
+#include <sstream>[m
+[36m@@ -33,6 +34,8 @@[m
+
+namespace layers {[m
+
+    
+    
+    template <typename TDevice>[m
+    typename Layer<TDevice>::real_vector& Layer<TDevice>::_outputs()[m
+    {[m
+[36m@@ -61,8 +64,12 @@[m [mnamespace layers {[m
+			      (*layerChild)["name"].GetString()  : "")[m
+        , m_size             (layerChild->HasMember("size") ? [m
+			      (*layerChild)["size"].GetInt()     : 0)[m
+	[32m, m_timeResolution   (layerChild->HasMember("resolution") ? [m
+[32m			      (*layerChild)["resolution"].GetInt() : 1)[m
+        , m_parallelSequences(parallelSequences)[m
+        , m_maxSeqLength     [31m(maxSeqLength)[m[32m(misFuncs::getResoLength(maxSeqLength,[m
+[32m						      (layerChild->HasMember("resolution") ? [m
+[32m						       (*layerChild)["resolution"].GetInt() : 1)))[m
+        , m_curMaxSeqLength  (0)[m
+        , m_curMinSeqLength  (0)[m
+        , m_curNumSeqs       (0)[m
+[36m@@ -78,6 +85,12 @@[m [mnamespace layers {[m
+        if (!layerChild->HasMember("size"))[m
+            throw std::runtime_error(std::string("Missing value 'size' in layer '") + m_name + "'");[m
+
+	[32mif (m_timeResolution > 1){[m
+[32m	    printf("\n\tLayer resolution %d ", m_timeResolution);[m
+[32m	}else if (m_timeResolution < 1){[m
+[32m	    throw std::runtime_error("resolution cannot be less than 1");[m
+[32m	}[m
+	
+        // allocate memory for output[m
+        if (createOutputs)[m
+            m_outputs = Cpu::real_vector(m_parallelSequences * m_maxSeqLength * m_size);[m
+[36m@@ -97,6 +110,12 @@[m [mnamespace layers {[m
+
+	// set the flag[m
+	m_flagTrainingMode  = (flagTrainingMode ? true : false);[m
+
+	
+	[32mm_layerFlag = (layerChild->HasMember("layerFlag") ? [m
+[32m		       (*layerChild)["layerFlag"].GetString() : "");[m
+	
+
+    }[m
+
+    template <typename TDevice>[m
+[36m@@ -117,6 +136,12 @@[m [mnamespace layers {[m
+    }[m
+
+    template <typename TDevice>[m
+    [32mconst std::string& Layer<TDevice>::getLayerFlag()[m
+[32m    {[m
+[32m	return m_layerFlag;[m
+[32m    }[m
+
+[32m    template <typename TDevice>[m
+    int Layer<TDevice>::parallelSequences() const[m
+    {[m
+        return m_parallelSequences;[m
+[36m@@ -147,6 +172,12 @@[m [mnamespace layers {[m
+    }[m
+
+    template <typename TDevice>[m
+    [32mconst int& Layer<TDevice>::getResolution()[m
+[32m    {[m
+[32m	return m_timeResolution;[m
+[32m    }[m
+[32m    [m
+[32m    template <typename TDevice>[m
+    const typename Layer<TDevice>::pattype_vector& Layer<TDevice>::patTypes() const[m
+    {[m
+        return m_patTypes;[m
+[36m@@ -177,10 +208,27 @@[m [mnamespace layers {[m
+    void Layer<TDevice>::loadSequences(const data_sets::DataSetFraction &fraction,[m
+				       const int nnState)[m
+    {[m
+	m_curMaxSeqLength = [31mfraction.maxSeqLength();[m[32mmisFuncs::getResoLength(fraction.maxSeqLength(), m_timeResolution);[m
+	m_curMinSeqLength = [31mfraction.minSeqLength();[m[32mmisFuncs::getResoLength(fraction.minSeqLength(), m_timeResolution);[m
+	m_curNumSeqs      = fraction.numSequences();
+	    
+	[32mif (m_timeResolution == 1){[m
+	    m_patTypes    = fraction.patTypes();
+	[32m}else{[m
+[32m	    // stupid method here[m
+[32m	    int buffPos   = fraction.patTypesLowTimesResPos(m_timeResolution);[m
+[32m	    int buffLen   = fraction.patTypesLowTimesResLen(m_timeResolution);[m
+[32m	    if (buffPos < 0 || buffLen < 0){[m
+[32m		printf(" %s resolution not found in --resolutions", this->name().c_str());[m
+[32m		throw std::runtime_error("Resolution error");[m
+[32m	    }[m
+[32m	    //m_patTypes.resize(buffLen, PATTYPE_NONE);[m
+[32m	    //thrust::fill(m_patTypes.begin(), m_patTypes.end(), PATTYPE_NONE);[m
+[32m	    thrust::copy(fraction.patTypesLowTimeRes().begin() + buffPos,[m
+[32m			 fraction.patTypesLowTimeRes().begin() + buffPos + buffLen,[m
+[32m			 m_patTypes.begin());[m
+[32m	    	[m
+[32m	}[m
+    }[m
+    [m
+    template <typename TDevice>[m
+[36m@@ -196,6 +244,11 @@[m [mnamespace layers {[m
+        layerObject.AddMember("type", type().c_str(), allocator);[m
+        layerObject.AddMember("size", size(),         allocator);[m
+
+	[32mif (m_timeResolution > 1)[m
+[32m	    layerObject.AddMember("resolution", m_timeResolution, allocator);[m
+[32m	if (m_layerFlag.size() > 0)[m
+[32m	    layerObject.AddMember("layerFlag", m_layerFlag.c_str(), allocator);[m
+	
+        // add the layer object to the layers array[m
+        layersArray->PushBack(layerObject, allocator);[m
+    }[m
+[1mdiff --git a/layers/Layer.hpp b/layers/Layer.hpp[m
+[1mindex 0044305..d6946e6 100644[m
+[1m--- a/layers/Layer.hpp[m
+[1m+++ b/layers/Layer.hpp[m
+[36m@@ -43,20 +43,22 @@[m [mnamespace layers {[m
+        typedef typename TDevice::real_vector    real_vector;[m
+        typedef typename TDevice::pattype_vector pattype_vector;[m
+	typedef typename Cpu::real_vector        cpu_real_vector;[m
+	[32mtypedef typename Cpu::pattype_vector     cpu_pattype_vector;[m
+	[m
+    private:[m
+        const std::string m_name;[m
+        const int         m_size;[m
+        const int         m_parallelSequences;[m
+        const int         m_maxSeqLength;[m
+	[32mconst int         m_timeResolution;    // time resolution, >= 1[m
+	
+        int               m_curMaxSeqLength;[m
+        int               m_curMinSeqLength;[m
+        int               m_curNumSeqs;[m
+        real_vector       m_outputs;[m
+        real_vector       m_outputErrors;[m
+        pattype_vector    m_patTypes;[m
+
+	/* Add 16-02-22 Wang: for WE updating */[m
+	bool              m_InputWeUpdate;     // the whether layer is the input layer with WE [m
+	                                       // to be updated ?[m
+[36m@@ -72,7 +74,8 @@[m [mnamespace layers {[m
+	bool              m_flagTrainingMode;[m
+	/* Add 17-09-06 Wang: for optimizing the memory usage during generation */[m
+	bool              m_flagSaveOutputMemory;[m
+
+	[32mstd::string       m_layerFlag;          // a general flag[m
+    protected:[m
+        real_vector& _outputs();[m
+	[m
+[36m@@ -278,7 +281,10 @@[m [mnamespace layers {[m
+	void setSaveMemoryFlag(const bool newFlag);[m
+[m
+	bool getSaveMemoryFlag() const;[m
+
+	[32mconst int& getResolution();[m
+[32m[m
+[32m	virtual const std::string& getLayerFlag();[m
+    };[m
+[m
+} // namespace layers[m
+[1mdiff --git a/layers/LstmLayer.cu b/layers/LstmLayer.cu[m
+[1mindex 7f72b95..ddc4958 100644[m
+[1m--- a/layers/LstmLayer.cu[m
+[1m+++ b/layers/LstmLayer.cu[m
+[36m@@ -799,11 +799,12 @@[m [mnamespace layers {[m
+    LstmLayer<TDevice>::LstmLayer(const helpers::JsonValue &layerChild, [m
+                                  const helpers::JsonValue &weightsSection,[m
+                                  Layer<TDevice> &precedingLayer,[m
+				  [32mint maxSeqLength,[m
+                                  bool bidirectional)[m
+        : TrainableLayer<TDevice>([m
+		layerChild, weightsSection, 4,[m
+		(bidirectional ? 2 : 4) * helpers::safeJsonGetInt(layerChild, "size") + 3,[m
+		[31mprecedingLayer)[m[32mprecedingLayer, maxSeqLength)[m
+        , m_isBidirectional      (bidirectional)[m
+    {[m
+        if (m_isBidirectional && this->size() % 2 != 0)[m
+[1mdiff --git a/layers/LstmLayer.hpp b/layers/LstmLayer.hpp[m
+[1mindex ebd8b35..aeda148 100644[m
+[1m--- a/layers/LstmLayer.hpp[m
+[1m+++ b/layers/LstmLayer.hpp[m
+[36m@@ -165,6 +165,7 @@[m [mnamespace layers {[m
+            const helpers::JsonValue &layerChild, [m
+            const helpers::JsonValue &weightsSection,[m
+            Layer<TDevice>           &precedingLayer,[m
+	    [32mint                       maxSeqLength,[m
+            bool                      bidirectional = false[m
+            );[m
+
+[1mdiff --git a/layers/LstmLayerCharW.cu b/layers/LstmLayerCharW.cu[m
+[1mindex 69a26d5..87fbcf5 100644[m
+[1m--- a/layers/LstmLayerCharW.cu[m
+[1m+++ b/layers/LstmLayerCharW.cu[m
+[36m@@ -1330,7 +1330,7 @@[m [mnamespace layers {[m
+		(CPNUM * helpers::safeJsonGetInt(layerChild, "mixNum")) +   [m
+		(blstm?2:1)*internal::tempSize(chaDim,helpers::safeJsonGetInt(layerChild,"size"))+ [m
+		(chaDim * 4),[m
+		[31mprecedingLayer)[m[32mprecedingLayer, precedingLayer.maxSeqLength())[m
+    {[m
+
+	// Initialize CharW[m
+[1mdiff --git a/layers/MDNLayer.cu b/layers/MDNLayer.cu[m
+[1mindex 0fe9e64..b052085 100644[m
+[1m--- a/layers/MDNLayer.cu[m
+[1m+++ b/layers/MDNLayer.cu[m
+[36m@@ -91,8 +91,8 @@[m [mnamespace layers {[m
+    template <typename TDevice>[m
+    MDNLayer<TDevice>::MDNLayer(const helpers::JsonValue &layerChild, [m
+				const helpers::JsonValue &weightsSection, [m
+				Layer<TDevice> [31m&precedingLayer)[m[32m&precedingLayer, int maxSeqLength)[m
+	: PostOutputLayer<TDevice>(layerChild, precedingLayer, [31m-1)[m[32m-1, maxSeqLength)[m
+    {[m
+        const Configuration &config = Configuration::instance();[m
+
+[1mdiff --git a/layers/MDNLayer.hpp b/layers/MDNLayer.hpp[m
+[1mindex a4b5b0a..a604262 100644[m
+[1m--- a/layers/MDNLayer.hpp[m
+[1m+++ b/layers/MDNLayer.hpp[m
+[36m@@ -116,7 +116,8 @@[m [mnamespace layers {[m
+	MDNLayer([m
+		 const helpers::JsonValue &layerChild,[m
+		 const helpers::JsonValue &weightsSection,[m
+		 Layer<TDevice> [31m&precedingLayer[m[32m&precedingLayer,[m
+[32m		 int maxSeqLength[m
+		 );[m
+	[m
+	virtual ~MDNLayer();[m
+[1mdiff --git a/layers/MDNUnit.cu b/layers/MDNUnit.cu[m
+[1mindex 78ceb8d..289db39 100644[m
+[1m--- a/layers/MDNUnit.cu[m
+[1m+++ b/layers/MDNUnit.cu[m
+[36m@@ -3638,7 +3638,8 @@[m [mnamespace layers {[m
+	    thrust::counting_iterator<unsigned int> index_sequence_begin(0);[m
+	    thrust::transform(index_sequence_begin, index_sequence_begin + n,[m
+			      noiseVec.begin(),[m
+			      internal::genNoise(0.0, 1.0,
+						 [31m(int)(GetRandomNumber()*1000.0)));[m[32m(int)(misFuncs::GetRandomNumber()*1000.0)));[m
+	}[m
+	[m
+	//real_t randomSeed;[m
+[36m@@ -3706,7 +3707,7 @@[m [mnamespace layers {[m
+    {[m
+	real_t randomSeed;[m
+	if (this->m_genMethod >= NN_SOFTMAX_GEN_SAMP)[m
+	    randomSeed = [31mGetRandomNumber();[m[32mmisFuncs::GetRandomNumber();[m	    
+	else[m
+	    randomSeed = 0.0;[m
+	[m
+[1mdiff --git a/layers/Maxpooling.cu b/layers/Maxpooling.cu[m
+[1mindex 556a0d7..6127177 100644[m
+[1m--- a/layers/Maxpooling.cu[m
+[1m+++ b/layers/Maxpooling.cu[m
+[36m@@ -179,8 +179,9 @@[m [mnamespace layers {[m
+    template <typename TDevice>[m
+    MaxPoolingLayer<TDevice>::MaxPoolingLayer(const helpers::JsonValue &layerChild,[m
+					      const helpers::JsonValue &weightsSection,[m
+					      Layer<TDevice>           [31m&precedingLayer)[m[32m&precedingLayer,[m
+[32m					      int maxSeqLength)[m
+	: TrainableLayer<TDevice>(layerChild, weightsSection, 0, 0, [31mprecedingLayer)[m[32mprecedingLayer, maxSeqLength)[m
+    {[m
+
+	throw std::runtime_error("Maxpooling is not fully implemented");[m
+[36m@@ -198,11 +199,11 @@[m [mnamespace layers {[m
+	}[m
+
+	m_width_H.clear();[m
+	[31mParseIntOpt(m_width,[m[32mmisFuncs::ParseIntOpt(m_width,[m m_width_H);
+	m_width_D = m_width_H;[m
+
+	m_stride_H.clear();[m
+	[31mParseIntOpt(m_stride,[m[32mmisFuncs::ParseIntOpt(m_stride,[m m_stride_H);
+	m_stride_D = m_stride_H;[m
+
+	if (m_width_H.size() != this->size() ||[m
+[36m@@ -210,7 +211,7 @@[m [mnamespace layers {[m
+	    throw std::runtime_error("width and stride of maxpooling not equal to layer size");[m
+	}[m
+	[m
+	m_maxWidth =  [31mMaxCpuIntVec(m_width_H);[m[32mmisFuncs::MaxCpuIntVec(m_width_H);[m
+	m_maxPos.resize(precedingLayer.outputs().size() * (2 * m_maxWidth + 1), 0);[m
+
+	if (this->precedingLayer().getSaveMemoryFlag())[m
+[1mdiff --git a/layers/Maxpooling.hpp b/layers/Maxpooling.hpp[m
+[1mindex 1c2e441..d57d084 100644[m
+[1m--- a/layers/Maxpooling.hpp[m
+[1m+++ b/layers/Maxpooling.hpp[m
+[36m@@ -56,8 +56,8 @@[m [mnamespace layers {[m
+	MaxPoolingLayer([m
+			const helpers::JsonValue &layerChild,[m
+			const helpers::JsonValue &weightsSection,[m
+			Layer<TDevice>           [31m&precedingLayer[m
+[31m			);[m[32m&precedingLayer,[m
+[32m			int                       maxSeqLength);[m
+	[m
+	virtual ~MaxPoolingLayer();[m
+
+[1mdiff --git a/layers/MiddleOutputLayer.cu b/layers/MiddleOutputLayer.cu[m
+[1mindex 18d360a..a3bcd39 100644[m
+[1m--- a/layers/MiddleOutputLayer.cu[m
+[1m+++ b/layers/MiddleOutputLayer.cu[m
+[36m@@ -204,8 +204,10 @@[m [mnamespace layers{[m
+    [m
+    template <typename TDevice>[m
+    MiddleOutputLayer<TDevice>::MiddleOutputLayer(const helpers::JsonValue &layerChild,[m
+						  Layer<TDevice> [31m&precedingLayer)[m[32m&precedingLayer,[m
+[32m						  int maxSeqLength)[m
+	: PostOutputLayer<TDevice> (layerChild, precedingLayer, precedingLayer.size(),
+				    [32mmaxSeqLength,[m true)
+	, m_natPriDim (-1)[m
+	, m_natSecDim (-1)[m
+	, m_state     (UNKNOWN)[m
+[1mdiff --git a/layers/MiddleOutputLayer.hpp b/layers/MiddleOutputLayer.hpp[m
+[1mindex b5ae652..3a2cd55 100644[m
+[1m--- a/layers/MiddleOutputLayer.hpp[m
+[1m+++ b/layers/MiddleOutputLayer.hpp[m
+[36m@@ -68,7 +68,7 @@[m [mnamespace layers {[m
+	[m
+    public:[m
+	MiddleOutputLayer(const helpers::JsonValue &layerChild, [m
+			  Layer<TDevice>  [31m&precedingLayer);[m[32m&precedingLayer, int maxSeqLength);[m
+	[m
+	virtual ~MiddleOutputLayer();[m
+
+[1mdiff --git a/layers/MulticlassClassificationLayer.cu b/layers/MulticlassClassificationLayer.cu[m
+[1mindex bb4c663..68b1d4d 100644[m
+[1m--- a/layers/MulticlassClassificationLayer.cu[m
+[1m+++ b/layers/MulticlassClassificationLayer.cu[m
+[36m@@ -142,8 +142,9 @@[m [mnamespace {[m
+namespace layers {[m
+
+    template <typename TDevice>[m
+    MulticlassClassificationLayer<TDevice>::MulticlassClassificationLayer(const helpers::JsonValue &layerChild, Layer<TDevice> [31m&precedingLayer)[m[32m&precedingLayer, int maxSeqLength)[m
+        : PostOutputLayer<TDevice>(layerChild, precedingLayer, precedingLayer.size(),
+				   [32mmaxSeqLength,[m false)
+    {[m
+        if (this->size() == 1)[m
+            throw std::runtime_error("The multiclass classification post output layer cannot be used for an output layer size of 1");[m
+[1mdiff --git a/layers/MulticlassClassificationLayer.hpp b/layers/MulticlassClassificationLayer.hpp[m
+[1mindex ca5e009..969a443 100644[m
+[1m--- a/layers/MulticlassClassificationLayer.hpp[m
+[1m+++ b/layers/MulticlassClassificationLayer.hpp[m
+[36m@@ -50,7 +50,7 @@[m [mnamespace layers {[m
+         */[m
+        MulticlassClassificationLayer([m
+            const helpers::JsonValue &layerChild, [m
+            Layer<TDevice>  [31m&precedingLayer[m[32m&precedingLayer, int maxSeqLength[m
+            );[m
+[m
+        /**[m
+[1mdiff --git a/layers/OperationLayer.cu b/layers/OperationLayer.cu[m
+[1mindex c39f175..1d75848 100644[m
+[1m--- a/layers/OperationLayer.cu[m
+[1m+++ b/layers/OperationLayer.cu[m
+[36m@@ -356,8 +356,9 @@[m [mnamespace layers{[m
+    template <typename TDevice>[m
+    OperationLayer<TDevice>::OperationLayer(const helpers::JsonValue &layerChild,[m
+					    const helpers::JsonValue &weightsSection,[m
+					    Layer<TDevice>           [31m&precedingLayer)[m[32m&precedingLayer,[m
+[32m					    int                       maxSeqLength)[m
+	: TrainableLayer<TDevice>(layerChild, weightsSection, 0, 0, [31mprecedingLayer)[m[32mprecedingLayer, maxSeqLength)[m
+	, m_noiseMag    (1.0)[m
+	, m_noiseSize   (0)[m
+	, m_noiseRepeat (0)[m
+[36m@@ -385,7 +386,7 @@[m [mnamespace layers{[m
+			 ((*layerChild)["setZero"].GetString()) : (""));[m
+	if (m_setZeroStr.size()){[m
+	    m_setZeroVec_H.clear();[m
+	    [31mParseFloatOpt(m_setZeroStr,[m[32mmisFuncs::ParseFloatOpt(m_setZeroStr,[m m_setZeroVec_H);
+	    m_setZeroVec_D = m_setZeroVec_H;[m
+	}else{[m
+	    m_setZeroVec_D.resize(this->precedingLayer().size(), 1.0);[m
+[36m@@ -512,7 +513,9 @@[m [mnamespace layers{[m
+	TrainableLayer<TDevice>::loadSequences(fraction, nnState);[m
+
+	// Load information for lst shot mode[m
+	[32mif (this->getResolution() != 1){[m
+[32m	    throw std::runtime_error("Operation layer is not ready for resolution option");[m
+[32m	}[m
+	[m
+	if (m_lastShot  == NN_OPE_LAST_SHOT_MODE1 || m_lastShot == NN_OPE_LAST_SHOT_MODE2){[m
+	    [m
+[36m@@ -624,7 +627,7 @@[m [mnamespace layers{[m
+				  index_sequence_begin + timeLength * m_noiseSize,[m
+				  m_noiseInput.begin(),[m
+				  internal::genNoise(-1.0 * m_noiseMag, m_noiseMag,[m
+						     [31m(int)(GetRandomNumber()*10000.0)));[m[32m(int)(misFuncs::GetRandomNumber()*10000.0)));[m
+
+	    }[m
+	[m
+[36m@@ -742,7 +745,7 @@[m [mnamespace layers{[m
+				  index_sequence_begin + timeLength * m_noiseSize,[m
+				  m_noiseInput.begin(),[m
+				  internal::genNoise(-1.0 * m_noiseMag, m_noiseMag,[m
+						     [31m(int)(GetRandomNumber()*10000.0)));[m[32m(int)(misFuncs::GetRandomNumber()*10000.0)));[m
+
+	    }[m
+	    {[m
+[1mdiff --git a/layers/OperationLayer.hpp b/layers/OperationLayer.hpp[m
+[1mindex c2f73f8..2a46590 100644[m
+[1m--- a/layers/OperationLayer.hpp[m
+[1m+++ b/layers/OperationLayer.hpp[m
+[36m@@ -69,7 +69,8 @@[m [mnamespace layers{[m
+	OperationLayer([m
+	    const helpers::JsonValue &layerChild,[m
+	    const helpers::JsonValue &weightsSection,[m
+            Layer<TDevice>           [31m&precedingLayer[m[32m&precedingLayer,[m
+[32m	    int                       maxSeqLength[m
+	);[m
+
+	virtual ~OperationLayer();[m
+[1mdiff --git a/layers/ParaLayer.cu b/layers/ParaLayer.cu[m
+[1mindex f6f4db8..3666424 100644[m
+[1m--- a/layers/ParaLayer.cu[m
+[1m+++ b/layers/ParaLayer.cu[m
+[36m@@ -464,8 +464,9 @@[m [mnamespace layers {[m
+    ParaLayer<TDevice, TActFn>::ParaLayer([m
+        const helpers::JsonValue &layerChild, [m
+        const helpers::JsonValue &weightsSection,[m
+        Layer<TDevice> [31m&precedingLayer)[m[32m&precedingLayer,[m
+[32m	int maxSeqLength)[m
+        : FeedForwardLayer<TDevice, TActFn>(layerChild, weightsSection, [31mprecedingLayer)[m[32mprecedingLayer, maxSeqLength)[m
+    {[m
+	[m
+	// Read the configuration file[m
+[1mdiff --git a/layers/ParaLayer.hpp b/layers/ParaLayer.hpp[m
+[1mindex 46eacbc..1cec555 100644[m
+[1m--- a/layers/ParaLayer.hpp[m
+[1m+++ b/layers/ParaLayer.hpp[m
+[36m@@ -66,7 +66,8 @@[m [mnamespace layers {[m
+        ParaLayer([m
+            const helpers::JsonValue &layerChild, [m
+            const helpers::JsonValue &weightsSection,[m
+            Layer<TDevice>           [31m&precedingLayer[m[32m&precedingLayer,[m
+[32m	    int                       maxSeqLength[m
+            );[m
+[m
+        /**[m
+[1mdiff --git a/layers/PostOutputLayer.cu b/layers/PostOutputLayer.cu[m
+[1mindex 85de53a..200e243 100644[m
+[1m--- a/layers/PostOutputLayer.cu[m
+[1m+++ b/layers/PostOutputLayer.cu[m
+[36m@@ -102,9 +102,10 @@[m [mnamespace layers {[m
+        const helpers::JsonValue &layerChild, [m
+        Layer<TDevice> &precedingLayer,[m
+        int requiredSize,[m
+	[32mint maxSeqLength,[m
+        bool createOutputs)[m
+        : Layer<TDevice>  (layerChild, precedingLayer.parallelSequences(), [m
+			   [31mprecedingLayer.maxSeqLength(),[m[32mmaxSeqLength,[m
+			   Configuration::instance().trainingMode(),			   [m
+			   createOutputs)[m
+        , m_precedingLayer(precedingLayer)[m
+[36m@@ -118,6 +119,11 @@[m [mnamespace layers {[m
+		   this->size(), requiredSize);[m
+	    throw std::runtime_error("Error in network.jsn");[m
+	}[m
+
+	[32mif (this->getResolution() != 1)[m
+[32m	    throw std::runtime_error("PostOutputLayers is not ready for timeResolution option");[m
+[32m	if (this->precedingLayer().getResolution() != 1)[m
+[32m	    throw std::runtime_error("Layer before postoutput layer should have timeResolution = 1");[m
+	[m
+	/* Add 0401 wang */[m
+	// assign the vector to output weights for RMSE[m
+[1mdiff --git a/layers/PostOutputLayer.hpp b/layers/PostOutputLayer.hpp[m
+[1mindex 6f44523..3639cac 100644[m
+[1m--- a/layers/PostOutputLayer.hpp[m
+[1m+++ b/layers/PostOutputLayer.hpp[m
+[36m@@ -85,6 +85,7 @@[m [mnamespace layers {[m
+            const helpers::JsonValue &layerChild, [m
+            Layer<TDevice>  &precedingLayer,[m
+            int requiredSize,[m
+	    [32mint maxSeqLength,[m
+            bool createOutputs = true[m
+            );[m
+	[m
+[1mdiff --git a/layers/RmsePostOutputLayer.cu b/layers/RmsePostOutputLayer.cu[m
+[1mindex b644cb1..10dab50 100644[m
+[1m--- a/layers/RmsePostOutputLayer.cu[m
+[1m+++ b/layers/RmsePostOutputLayer.cu[m
+[36m@@ -104,8 +104,10 @@[m [mnamespace {[m
+namespace layers {[m
+
+    template <typename TDevice>[m
+    RmsePostOutputLayer<TDevice>::RmsePostOutputLayer(const helpers::JsonValue &layerChild,
+						      Layer<TDevice> [31m&precedingLayer)[m[32m&precedingLayer,[m
+[32m						      int maxSeqLength)[m
+        : PostOutputLayer<TDevice>(layerChild, precedingLayer, [31mprecedingLayer.size())[m[32mprecedingLayer.size(), maxSeqLength)[m
+    {[m
+        // resize the vector for RMSEs[m
+        m_rmses.resize(this->patTypes().size());[m
+[1mdiff --git a/layers/RmsePostOutputLayer.hpp b/layers/RmsePostOutputLayer.hpp[m
+[1mindex 5c3a7be..b621a4d 100644[m
+[1m--- a/layers/RmsePostOutputLayer.hpp[m
+[1m+++ b/layers/RmsePostOutputLayer.hpp[m
+[36m@@ -53,7 +53,7 @@[m [mnamespace layers {[m
+         */[m
+        RmsePostOutputLayer([m
+            const helpers::JsonValue &layerChild, [m
+            Layer<TDevice> [31m&precedingLayer[m[32m&precedingLayer, int maxSeqLength[m
+            );[m
+[m
+        /**[m
+[1mdiff --git a/layers/RnnLayer.cu b/layers/RnnLayer.cu[m
+[1mindex 847c449..9a1913e 100644[m
+[1m--- a/layers/RnnLayer.cu[m
+[1m+++ b/layers/RnnLayer.cu[m
+[36m@@ -449,11 +449,12 @@[m [mnamespace layers {[m
+    RnnLayer<TDevice>::RnnLayer(const helpers::JsonValue &layerChild, [m
+				const helpers::JsonValue &weightsSection,[m
+				Layer<TDevice>           &precedingLayer,[m
+				[32mint                       maxSeqLength,[m
+				bool                      bidirectional)[m
+        : TrainableLayer<TDevice>(layerChild, weightsSection, [m
+				  1, [m
+				  helpers::safeJsonGetInt(layerChild, "size")/(bidirectional?2:1),[m
+				  [31mprecedingLayer)[m[32mprecedingLayer, maxSeqLength)[m
+        , m_isBidirectional      (bidirectional)[m
+    {[m
+        if (m_isBidirectional && this->size() % 2 != 0)[m
+[1mdiff --git a/layers/RnnLayer.hpp b/layers/RnnLayer.hpp[m
+[1mindex a6d9607..4ea8f23 100644[m
+[1m--- a/layers/RnnLayer.hpp[m
+[1m+++ b/layers/RnnLayer.hpp[m
+[36m@@ -168,6 +168,7 @@[m [mnamespace layers{[m
+            const helpers::JsonValue &layerChild, [m
+            const helpers::JsonValue &weightsSection,[m
+            Layer<TDevice>           &precedingLayer,[m
+	    [32mint                        maxSeqLength,[m
+            bool                      bidirectional = false[m
+            );[m
+
+[1mdiff --git a/layers/SkipAddLayer.cu b/layers/SkipAddLayer.cu[m
+[1mindex e196a85..5869309 100644[m
+[1m--- a/layers/SkipAddLayer.cu[m
+[1m+++ b/layers/SkipAddLayer.cu[m
+[36m@@ -78,10 +78,10 @@[m [mnamespace layers{[m
+    SkipAddLayer<TDevice>::SkipAddLayer([m
+					const helpers::JsonValue &layerChild,[m
+					const helpers::JsonValue &weightsSection,[m
+					std::vector<Layer<TDevice>*> [31m&precedingLayers[m
+[31m					)[m[32m&precedingLayers,[m
+[32m					int maxSeqLength)[m
+	// use preLayers[0] as fake preceding layers[m
+	: SkipLayer<TDevice>(layerChild, weightsSection, precedingLayers, [32mmaxSeqLength,[m false)
+	, m_noiseRatio      (-1.0)[m
+	, m_flagSkipInit    (true)[m
+    {[m
+[36m@@ -96,7 +96,7 @@[m [mnamespace layers{[m
+
+	    // previous layers are specified by preSkipLayer[m
+	    std::vector<std::string> tmpOpt;[m
+	    [31mParseStrOpt(m_previousSkipStr,[m[32mmisFuncs::ParseStrOpt(m_previousSkipStr,[m tmpOpt, ",");
+	    for (int cnt = 0 ; cnt < tmpOpt.size(); cnt++) {[m
+		BOOST_FOREACH (Layer<TDevice> *layer, precedingLayers) {[m
+		    if (layer->name() == tmpOpt[cnt]){[m
+[36m@@ -207,7 +207,7 @@[m [mnamespace layers{[m
+		     this->curMaxSeqLength() * this->parallelSequences() * this->size()),[m
+		    this->outputs().begin(),[m
+		    internal::tempPrg(-1.0 * m_noiseRatio, m_noiseRatio,[m
+				      [31m(int)(GetRandomNumber()[m[32m(int)(misFuncs::GetRandomNumber()[m * 10000.0)));
+	    }else{[m
+		thrust::fill(this->outputs().begin(), [m
+			     (this->outputs().begin() + [m
+[1mdiff --git a/layers/SkipAddLayer.hpp b/layers/SkipAddLayer.hpp[m
+[1mindex f31038b..9e16a28 100644[m
+[1m--- a/layers/SkipAddLayer.hpp[m
+[1m+++ b/layers/SkipAddLayer.hpp[m
+[36m@@ -63,7 +63,8 @@[m [mnamespace layers {[m
+	SkipAddLayer([m
+		     const helpers::JsonValue &layerChild,[m
+		     const helpers::JsonValue &weightsSection,[m
+		     std::vector<Layer<TDevice>*> [31m&precedingLayers[m[32m&precedingLayers,[m
+[32m		     int maxSeqLength[m
+		     );[m
+
+	// Destructor[m
+[1mdiff --git a/layers/SkipCatLayer.cu b/layers/SkipCatLayer.cu[m
+[1mindex 80d8563..9256f43 100644[m
+[1m--- a/layers/SkipCatLayer.cu[m
+[1m+++ b/layers/SkipCatLayer.cu[m
+[36m@@ -96,15 +96,16 @@[m [mnamespace layers{[m
+    SkipCatLayer<TDevice>::SkipCatLayer([m
+					const helpers::JsonValue &layerChild,[m
+					const helpers::JsonValue &weightsSection,[m
+					std::vector<Layer<TDevice>*> [31m&precedingLayers[m
+[31m					)[m[32m&precedingLayers,[m
+[32m					int maxSeqLength)[m
+	// use preLayers[0] as fake preceding layers[m
+	: SkipLayer<TDevice>(layerChild, weightsSection, precedingLayers, [32mmaxSeqLength,[m false)
+    {[m
+	// initialization[m
+	m_preLayers.clear();[m
+	m_preSkipDim.clear();[m
+	m_preSkipDimAccu.clear();[m
+
+	[m
+	// Link previous Skip layer[m
+	if (precedingLayers.size() < 1)[m
+[36m@@ -115,7 +116,7 @@[m [mnamespace layers{[m
+	[m
+	if (m_previousSkipStr.size()){[m
+	    std::vector<std::string> tmpOpt;[m
+	    [31mParseStrOpt(m_previousSkipStr,[m[32mmisFuncs::ParseStrOpt(m_previousSkipStr,[m tmpOpt, ",");
+	    for (int cnt = 0 ; cnt < tmpOpt.size(); cnt++) {[m
+		BOOST_FOREACH (Layer<TDevice> *layer, precedingLayers) {[m
+		    if (layer->name() == tmpOpt[cnt]){[m
+[36m@@ -146,7 +147,7 @@[m [mnamespace layers{[m
+	m_preSkipDimStr = (layerChild->HasMember("preSkipLayerDim") ? [m
+				((*layerChild)["preSkipLayerDim"].GetString()) : "");[m
+	if (m_preSkipDimStr.size()){[m
+	    [31mParseIntOpt(m_preSkipDimStr,[m[32mmisFuncs::ParseIntOpt(m_preSkipDimStr,[m m_preSkipDim);
+	}else{[m
+	    // default case, concatenate all the previous layers[m
+	    m_preSkipDim.resize(m_preLayers.size() * 2, 0);[m
+[36m@@ -171,6 +172,10 @@[m [mnamespace layers{[m
+	    }[m
+	    m_preSkipDimAccu[cnt] = tmpDim;[m
+	    tmpDim += (m_preSkipDim[2*cnt + 1] - m_preSkipDim[2*cnt]);[m
+
+	    [32mif (this->getResolution() != m_preLayers[cnt]->getResolution()){[m
+[32m		throw std::runtime_error("SkipCat layer only concatenate layers with same resolution");[m
+[32m	    }[m
+	}[m
+	if (tmpDim != this->size()){[m
+	    printf("Layer size %d, but sum of input size is %d\n", this->size(), tmpDim);[m
+[36m@@ -205,16 +210,17 @@[m [mnamespace layers{[m
+		     0.0);[m
+	[m
+	// initialization for backward pass[m
+	[32mif (this->flagTrainingMode()){[m
+	    thrust::fill(this->outputErrors().begin(), 
+			 (this->outputErrors().begin() + 
+			  this->curMaxSeqLength() * this->parallelSequences() * this->size()),
+			 [31m0.0[m
+[31m		     );[m[32m0.0);[m
+
+	    thrust::fill(this->outputErrorsFromSkipLayer().begin(),
+			 (this->outputErrorsFromSkipLayer().begin() + 
+			  this->curMaxSeqLength() * this->parallelSequences() * this->size()),
+			 0.0);
+	[32m}[m
+
+	// accumulating the outputs of previous layers[m
+	{{[m
+[1mdiff --git a/layers/SkipCatLayer.hpp b/layers/SkipCatLayer.hpp[m
+[1mindex f5a2549..a5ab4c8 100644[m
+[1m--- a/layers/SkipCatLayer.hpp[m
+[1m+++ b/layers/SkipCatLayer.hpp[m
+[36m@@ -63,8 +63,8 @@[m [mnamespace layers {[m
+	SkipCatLayer([m
+		     const helpers::JsonValue &layerChild,[m
+		     const helpers::JsonValue &weightsSection,[m
+		     std::vector<Layer<TDevice>*> [31m&precedingLayers[m
+[31m		     );[m[32m&precedingLayers,[m
+[32m		     int maxSeqLength);[m
+
+	// Destructor[m
+	virtual ~SkipCatLayer();[m
+[1mdiff --git a/layers/SkipLayer.cu b/layers/SkipLayer.cu[m
+[1mindex e9efa07..730fa49 100644[m
+[1m--- a/layers/SkipLayer.cu[m
+[1m+++ b/layers/SkipLayer.cu[m
+[36m@@ -37,10 +37,11 @@[m [mnamespace layers{[m
+    SkipLayer<TDevice>::SkipLayer(const helpers::JsonValue &layerChild,[m
+				  const helpers::JsonValue &weightsSection,[m
+				  std::vector<Layer<TDevice>*> precedingLayers,[m
+				  [32mint maxSeqLength,[m
+				  bool trainable)[m
+	// use preLayers[0] as fake preceding layers[m
+	: TrainableLayer<TDevice>(layerChild, weightsSection,[m
+				  (trainable ? 1 : 0), 0, [31m*(precedingLayers.back()))[m[32m*(precedingLayers.back()), maxSeqLength)[m
+    {[m
+	if (this->flagTrainingMode())[m
+	    m_outputErrorsFromSkipLayer = Cpu::real_vector(this->outputs().size(), (real_t)0.0);[m
+[1mdiff --git a/layers/SkipLayer.hpp b/layers/SkipLayer.hpp[m
+[1mindex 2fe8f44..bbf827c 100644[m
+[1m--- a/layers/SkipLayer.hpp[m
+[1m+++ b/layers/SkipLayer.hpp[m
+[36m@@ -65,6 +65,7 @@[m [mnamespace layers {[m
+	SkipLayer(const helpers::JsonValue &layerChild,[m
+		  const helpers::JsonValue &weightsSection,[m
+		  std::vector<Layer<TDevice>*> precedingLayers,[m
+		  [32mint maxSeqLength,[m
+		  bool trainable);[m
+
+	// Destructor[m
+[1mdiff --git a/layers/SkipParaLayer.cu b/layers/SkipParaLayer.cu[m
+[1mindex 5dc9ff2..ea75494 100644[m
+[1m--- a/layers/SkipParaLayer.cu[m
+[1m+++ b/layers/SkipParaLayer.cu[m
+[36m@@ -190,10 +190,10 @@[m [mnamespace layers{[m
+    SkipParaLayer<TDevice, TActFn>::SkipParaLayer([m
+					const helpers::JsonValue &layerChild,[m
+					const helpers::JsonValue &weightsSection,[m
+					std::vector<Layer<TDevice>*> [31m&precedingLayers[m
+[31m					)[m[32m&precedingLayers,[m
+[32m					int maxSeqLength)[m
+	// use preLayers[0] as fake preceding layers[m
+	: SkipLayer<TDevice>(layerChild, weightsSection, precedingLayers, [32mmaxSeqLength,[m true)
+    {[m
+	// currently, only two previous layers are allowed: one from previous skiplayer, and another[m
+	//  from normal feed-forward layer[m
+[1mdiff --git a/layers/SkipParaLayer.hpp b/layers/SkipParaLayer.hpp[m
+[1mindex 78e66d9..1a81433 100644[m
+[1m--- a/layers/SkipParaLayer.hpp[m
+[1m+++ b/layers/SkipParaLayer.hpp[m
+[36m@@ -74,7 +74,8 @@[m [mnamespace layers {[m
+	SkipParaLayer([m
+		     const helpers::JsonValue &layerChild,[m
+		     const helpers::JsonValue &weightsSection,[m
+		     std::vector<Layer<TDevice>*> [31m&precedingLayers[m[32m&precedingLayers,[m
+[32m		     int maxSeqLength[m
+		     );[m
+
+	// Destructor[m
+[1mdiff --git a/layers/SoftmaxLayer.cu b/layers/SoftmaxLayer.cu[m
+[1mindex 25a2d0b..36ded80 100644[m
+[1m--- a/layers/SoftmaxLayer.cu[m
+[1m+++ b/layers/SoftmaxLayer.cu[m
+[36m@@ -229,8 +229,10 @@[m [mnamespace layers {[m
+    SoftmaxLayer<TDevice, TFfActFn>::SoftmaxLayer([m
+        const helpers::JsonValue &layerChild, [m
+        const helpers::JsonValue &weightsSection,[m
+        Layer<TDevice> [31m&precedingLayer)[m[32m&precedingLayer,[m
+[32m	int maxSeqLength)[m
+        : FeedForwardLayer<TDevice, TFfActFn>(layerChild, weightsSection,
+					      [31mprecedingLayer)[m[32mprecedingLayer, maxSeqLength)[m
+    {[m
+        // resize the vector for temporary values[m
+        m_patTmp.resize(this->patTypes().size());[m
+[1mdiff --git a/layers/SoftmaxLayer.hpp b/layers/SoftmaxLayer.hpp[m
+[1mindex 4576ed2..80cbac1 100644[m
+[1m--- a/layers/SoftmaxLayer.hpp[m
+[1m+++ b/layers/SoftmaxLayer.hpp[m
+[36m@@ -54,7 +54,8 @@[m [mnamespace layers {[m
+        SoftmaxLayer([m
+            const helpers::JsonValue &layerChild, [m
+            const helpers::JsonValue &weightsSection,[m
+            Layer<TDevice>           [31m&precedingLayer[m[32m&precedingLayer,[m
+[32m	    int                       maxSeqLength[m
+            );[m
+[m
+        /**[m
+[1mdiff --git a/layers/SseMaskPostOutputLayer.cu b/layers/SseMaskPostOutputLayer.cu[m
+[1mindex ea27539..dc80742 100644[m
+[1m--- a/layers/SseMaskPostOutputLayer.cu[m
+[1m+++ b/layers/SseMaskPostOutputLayer.cu[m
+[36m@@ -100,8 +100,11 @@[m [mnamespace {[m
+namespace layers {[m
+
+    template <typename TDevice>[m
+    SseMaskPostOutputLayer<TDevice>::SseMaskPostOutputLayer(const helpers::JsonValue &layerChild,
+							    Layer<TDevice> [31m&precedingLayer)[m[32m&precedingLayer,[m
+[32m							    int maxSeqLength)[m
+        : PostOutputLayer<TDevice>  (layerChild, precedingLayer,
+				     precedingLayer.size() * [31m2)[m[32m2, maxSeqLength)[m
+    {[m
+    }[m
+
+[1mdiff --git a/layers/SseMaskPostOutputLayer.hpp b/layers/SseMaskPostOutputLayer.hpp[m
+[1mindex e2e0134..d3461a5 100644[m
+[1m--- a/layers/SseMaskPostOutputLayer.hpp[m
+[1m+++ b/layers/SseMaskPostOutputLayer.hpp[m
+[36m@@ -47,7 +47,7 @@[m [mnamespace layers {[m
+         */[m
+        SseMaskPostOutputLayer([m
+            const helpers::JsonValue &layerChild, [m
+            Layer<TDevice> [31m&precedingLayer[m[32m&precedingLayer, int maxSeqLength[m
+            );[m
+[m
+        /**[m
+[1mdiff --git a/layers/SsePostOutputLayer.cu b/layers/SsePostOutputLayer.cu[m
+[1mindex 423bb28..59b3be5 100644[m
+[1m--- a/layers/SsePostOutputLayer.cu[m
+[1m+++ b/layers/SsePostOutputLayer.cu[m
+[36m@@ -142,8 +142,10 @@[m [mnamespace {[m
+namespace layers {[m
+
+    template <typename TDevice>[m
+    SsePostOutputLayer<TDevice>::SsePostOutputLayer(const helpers::JsonValue &layerChild,
+						    Layer<TDevice> [31m&precedingLayer)[m[32m&precedingLayer,[m
+[32m						    int maxSeqLength)[m
+        : PostOutputLayer<TDevice>(layerChild, precedingLayer, [31mprecedingLayer.size())[m[32mprecedingLayer.size(), maxSeqLength)[m
+    {[m
+    }[m
+
+[1mdiff --git a/layers/SsePostOutputLayer.hpp b/layers/SsePostOutputLayer.hpp[m
+[1mindex b10319d..de23f27 100644[m
+[1m--- a/layers/SsePostOutputLayer.hpp[m
+[1m+++ b/layers/SsePostOutputLayer.hpp[m
+[36m@@ -47,7 +47,8 @@[m [mnamespace layers {[m
+         */[m
+        SsePostOutputLayer([m
+            const helpers::JsonValue &layerChild, [m
+            Layer<TDevice> [31m&precedingLayer[m[32m&precedingLayer,[m
+[32m	    int maxSeqLength[m
+            );[m
+[m
+        /**[m
+[1mdiff --git a/layers/TrainableLayer.cu b/layers/TrainableLayer.cu[m
+[1mindex 58eab0f..2a716e7 100644[m
+[1m--- a/layers/TrainableLayer.cu[m
+[1m+++ b/layers/TrainableLayer.cu[m
+[36m@@ -82,10 +82,11 @@[m [mnamespace layers {[m
+					    const helpers::JsonValue &weightsSection, [m
+                                            int inputWeightsPerBlock, [m
+					    int internalWeightsPerBlock, [m
+					    Layer<TDevice> [31m&precedingLayer)[m[32m&precedingLayer,[m
+[32m					    int maxSeqLength)[m
+        : Layer<TDevice>           (layerChild,[m
+				    precedingLayer.parallelSequences(), [m
+				    [31mprecedingLayer.maxSeqLength(),[m[32mmaxSeqLength,[m
+				    Configuration::instance().trainingMode())[m
+        , m_precedingLayer         (precedingLayer)[m
+        , m_inputWeightsPerBlock   (inputWeightsPerBlock)[m
+[36m@@ -223,6 +224,7 @@[m [mnamespace layers {[m
+	m_weightMask    = weights;          // make it the same length as weights matrix [m
+	m_weightNum     = weights.size(); [m
+	m_weightMaskFlag= false;[m
+
+    }[m
+[m
+   [m
+[36m@@ -242,7 +244,7 @@[m [mnamespace layers {[m
+    {[m
+        return m_precedingLayer;[m
+    }[m
+    
+    template <typename TDevice>[m
+    real_t TrainableLayer<TDevice>::bias() const[m
+    {[m
+[36m@@ -403,7 +405,8 @@[m [mnamespace layers {[m
+        Layer<TDevice>::exportLayer(layersArray, allocator);[m
+        (*layersArray)[layersArray->Size() - 1].AddMember("bias", m_bias, allocator);[m
+	if (m_learningRate >= 0.0)[m
+	    (*layersArray)[layersArray->Size() - 1].AddMember("learningRate", [31mm_bias,[m[32mm_learningRate,[m allocator);
+
+    }[m
+    [m
+    // Add 0511: re-initialize the weight (used for learning_rate checking)[m
+[1mdiff --git a/layers/TrainableLayer.hpp b/layers/TrainableLayer.hpp[m
+[1mindex 832aaa4..7b99220 100644[m
+[1m--- a/layers/TrainableLayer.hpp[m
+[1m+++ b/layers/TrainableLayer.hpp[m
+[36m@@ -78,7 +78,8 @@[m [mnamespace layers {[m
+            const helpers::JsonValue &weightsSection,[m
+            int                       inputWeightsPerBlock, [m
+            int                       internalWeightsPerBlock,[m
+            Layer<TDevice>           [31m&precedingLayer[m[32m&precedingLayer,[m
+[32m	    int                       maxSeqLength[m
+            );[m
+[m
+        /**[m
+[36m@@ -203,6 +204,8 @@[m [mnamespace layers {[m
+[m
+	virtual void cleanGradidents();	[m
+	const unsigned& optOpt() const;[m
+
+	
+    };[m
+[m
+} // namespace layers[m
+[1mdiff --git a/layers/WeightedSsePostOutputLayer.cu b/layers/WeightedSsePostOutputLayer.cu[m
+[1mindex c2eaeff..3cfe5a1 100644[m
+[1m--- a/layers/WeightedSsePostOutputLayer.cu[m
+[1m+++ b/layers/WeightedSsePostOutputLayer.cu[m
+[36m@@ -100,8 +100,9 @@[m [mnamespace {[m
+namespace layers {[m
+
+    template <typename TDevice>[m
+    WeightedSsePostOutputLayer<TDevice>::WeightedSsePostOutputLayer(const helpers::JsonValue &layerChild, Layer<TDevice> [31m&precedingLayer)[m[32m&precedingLayer, int maxSeqLength)[m
+        : PostOutputLayer<TDevice>  (layerChild, precedingLayer,
+				     precedingLayer.size() * [31m2)[m[32m2, maxSeqLength)[m
+    {[m
+    }[m
+
+[1mdiff --git a/layers/WeightedSsePostOutputLayer.hpp b/layers/WeightedSsePostOutputLayer.hpp[m
+[1mindex 52b9b26..aba3ab5 100644[m
+[1m--- a/layers/WeightedSsePostOutputLayer.hpp[m
+[1m+++ b/layers/WeightedSsePostOutputLayer.hpp[m
+[36m@@ -47,7 +47,7 @@[m [mnamespace layers {[m
+         */[m
+        WeightedSsePostOutputLayer([m
+            const helpers::JsonValue &layerChild, [m
+            Layer<TDevice> [31m&precedingLayer[m[32m&precedingLayer, int maxSeqLength[m
+            );[m
+[m
+        /**[m
+[1mdiff --git a/layers/vaeMiddleLayer.cu b/layers/vaeMiddleLayer.cu[m
+[1mindex 94db26f..4ce996e 100644[m
+[1m--- a/layers/vaeMiddleLayer.cu[m
+[1m+++ b/layers/vaeMiddleLayer.cu[m
+[36m@@ -297,8 +297,10 @@[m [mnamespace layers{[m
+    [m
+    template <typename TDevice>[m
+    VaeMiddleLayer<TDevice>::VaeMiddleLayer(const helpers::JsonValue &layerChild,[m
+					    Layer<TDevice> [31m&precedingLayer)[m[32m&precedingLayer,[m
+[32m					    int maxSeqLength)[m
+	: PostOutputLayer<TDevice> (layerChild, precedingLayer, precedingLayer.size()/2,
+				    [32mmaxSeqLength,[m true)
+	, m_noiseStd    (1.0)[m
+	, m_noiseMean   (0.0)[m
+	, m_noiseRepeat (0)[m
+[36m@@ -341,6 +343,9 @@[m [mnamespace layers{[m
+    {[m
+	Layer<TDevice>::loadSequences(fraction, nnState);[m
+
+	[32mif (this->getResolution() != 1)[m
+[32m	    throw std::runtime_error("vaeLayer is not ready for resolution option");[m
+	
+	if (nnState == NN_STATE_GENERATION_STAGE && this->size() == 2 && m_vaeUsageOpt==1){[m
+	    printf("Plot manifold");[m
+	    real_vector tmp(fraction.outputs().size());[m
+[36m@@ -440,7 +445,7 @@[m [mnamespace layers{[m
+			  index_sequence_begin + timeLength * this->size(),[m
+			  m_noiseInput.begin(),[m
+			  internal::genNoise(m_noiseMean, m_noiseStd,[m
+					     [31m(int)(GetRandomNumber()*10000.0)));[m[32m(int)(misFuncs::GetRandomNumber()*10000.0)));[m
+	if (m_noiseRepeat){[m
+	    internal::noiseRepeat fn;[m
+	    fn.noiseDim = this->size();[m
+[36m@@ -523,7 +528,7 @@[m [mnamespace layers{[m
+			      index_sequence_begin + timeLength * this->size(),[m
+			      m_noiseInput.begin(),[m
+			      internal::genNoise(m_noiseMean, m_noiseStd,[m
+						 [31m(int)(GetRandomNumber()*10000.0)));[m[32m(int)(misFuncs::GetRandomNumber()*10000.0)));[m
+
+	    if (m_noiseRepeat){[m
+		internal::noiseRepeat fn;[m
+[1mdiff --git a/layers/vaeMiddleLayer.hpp b/layers/vaeMiddleLayer.hpp[m
+[1mindex 5e08561..dfd9f6d 100644[m
+[1m--- a/layers/vaeMiddleLayer.hpp[m
+[1m+++ b/layers/vaeMiddleLayer.hpp[m
+[36m@@ -56,7 +56,8 @@[m [mnamespace layers {[m
+    public:[m
+	VaeMiddleLayer([m
+	    const helpers::JsonValue &layerChild,[m
+            Layer<TDevice>           [31m&precedingLayer[m[32m&precedingLayer,[m
+[32m	    int                       maxSeqLength[m
+	);[m
+	[m
+	virtual ~VaeMiddleLayer();[m
+[1mdiff --git a/layers/wavNetCore.cu b/layers/wavNetCore.cu[m
+[1mindex 4a2a1da..02582cb 100644[m
+[1m--- a/layers/wavNetCore.cu[m
+[1m+++ b/layers/wavNetCore.cu[m
+[36m@@ -207,6 +207,41 @@[m [mnamespace {[m
+        }[m
+    };[m
+
+    [32mstruct SumGradientsForExternalInut[m
+[32m    {[m
+[32m	// from the perspective of externalLayer[m
+[32m	int featureDim;[m
+[32m	int resolution;[m
+[32m	int maxTimeLength;[m
+[32m	int parall;[m
+[32m	[m
+[32m	real_t     *inputGrad;[m
+[32m	const char *patTypesEx;[m
+[32m	const char *patTypes;[m
+[32m	[m
+[32m	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const[m
+[32m	{[m
+[32m	    int timeIdx  = t.get<1>() / featureDim;[m
+[32m	    int dimIdx   = t.get<1>() % featureDim;[m
+[32m	    int timeRel  = timeIdx    / parall;	    [m
+[32m	    int paraIdx  = timeIdx    % parall;[m
+[32m	    [m
+[32m	    if (patTypesEx[timeIdx] == PATTYPE_NONE){[m
+[32m		t.get<0>() = 0.0;[m
+[32m		return;[m
+[32m	    }else{[m
+[32m		int idx;[m
+[32m		for (int i = 0; i<resolution; i++){[m
+[32m		    idx = (timeRel * resolution + i) * parall + paraIdx;[m
+[32m		    if (idx < maxTimeLength && patTypes[idx] != PATTYPE_NONE)[m
+[32m			t.get<0>() += inputGrad[idx * featureDim + dimIdx];[m
+[32m		}[m
+[32m		return;[m
+[32m	    }[m
+[32m	}[m
+
+[32m    };[m
+
+}[m
+}[m
+
+[36m@@ -244,11 +279,13 @@[m [mnamespace layers{[m
+    template <typename TDevice>[m
+    WavNetCore<TDevice>::WavNetCore(const helpers::JsonValue &layerChild,[m
+				    const helpers::JsonValue &weightsSection,[m
+				    Layer<TDevice>           [31m&precedingLayer)[m[32m&precedingLayer,[m
+[32m				    int maxSeqLength)[m
+	: TrainableLayer<TDevice>(layerChild, weightsSection, 0,[m
+				  ((layerChild->HasMember("contextDim")) ? [m
+				   ((*layerChild)["contextDim"].GetInt()) : (0)) * 2,[m
+				  [31mprecedingLayer)[m[32mprecedingLayer, maxSeqLength)[m
+[32m	, m_exInputLayer         (NULL)[m
+    {[m
+	m_contextDim   = ((layerChild->HasMember("contextDim")) ? [m
+			  ((*layerChild)["contextDim"].GetInt()) : (0));[m
+[36m@@ -279,7 +316,7 @@[m [mnamespace layers{[m
+	    m_contextMV = tmp;[m
+	}[m
+	[m
+	[32mm_contextCurMaxLength = -1;[m
+    }[m
+
+    template <typename TDevice>[m
+[36m@@ -297,55 +334,85 @@[m [mnamespace layers{[m
+	if (m_contextMVStr.size())[m
+	    (*layersArray)[layersArray->Size() - 1].AddMember("contextMV", m_contextMVStr.c_str(),[m
+							      allocator);[m
+
+    }[m
+
+
+    template <typename TDevice>[m
+    void [31mWavNetCore<TDevice>::loadSequences(const data_sets::DataSetFraction &fraction,[m
+[31m					    const int nnState)[m[32mWavNetCore<TDevice>::__loadContextBuff()[m
+    {[m
+	[31mTrainableLayer<TDevice>::loadSequences(fraction, nnState);[m
+[31m	if (m_iniWavCoreC){[m[32m// load the data into the buffer[m
+	if [31m(m_contextDim ==[m[32m(m_iniWavCoreC && m_contextDim >[m 0){
+	    //
+	    [31mnot load anything[m
+[31m		return;[m
+[31m	    }[m[32mint dataPos = this->maxSeqLength() * this->parallelSequences();[m
+	    // Load the [32mtrainable[m external [31mlinguistic features[m[32mdata from that layer[m
+	    if [31m(fraction.externalInputSize()[m[32m(m_exInputLayer[m != [31mm_contextDim){[m
+[31m		printf("Linguistic feature dim  %d mismatch", fraction.externalInputSize());[m
+[31m		throw std::runtime_error("Unmatched linguistic feature dimension");[m
+[31m	    }[m
+[31m	    if (m_contextBuf.size()<1){[m
+[31m		throw std::runtime_error("Fail to initialize m_contextBuf");[m
+[31m	    }[m
+[31m	    {{[m[32mNULL)[m
+[32m		thrust::copy(m_exInputLayer->outputs().begin(), m_exInputLayer->outputs().end(),[m
+[32m			     m_contextRawBuf.begin() + dataPos);[m
+
+	    // [31mPreLoad[m[32mLoad the[m data [31mreal_vector tmp(fraction.inputs().size() + fraction.exInputData().size(), 0.0);[m
+[31m		thrust::copy(fraction.inputs().begin(), fraction.inputs().end(), tmp.begin());[m
+[31m		thrust::copy(fraction.exInputData().begin(), fraction.exInputData().end(),[m
+[31m			     tmp.begin() + fraction.inputs().size());[m[32mto contextBuf[m
+[32m	    {{[m	
+		internal::loadLinguisticFeature fn1;[m
+		fn1.featureDim = [31mfraction.externalInputSize();[m[32mm_contextDim;[m
+		fn1.paralNum   = this->parallelSequences();[m
+		fn1.maxFeatureLength = [31mfraction.maxExInputLength();[m[32mm_contextCurMaxLength;[m
+		fn1.sourceData = [31m(helpers::getRawPointer(tmp)[m[32mhelpers::getRawPointer(m_contextRawBuf)[m + [31m+ fraction.inputs().size());[m[32mdataPos;[m
+		fn1.frameIndex = [31mhelpers::getRawPointer(tmp);[m[32mhelpers::getRawPointer(m_contextRawBuf);[m
+		fn1.patTypes   = helpers::getRawPointer(this->patTypes());[m
+		
+		fn1.contextMV  = ((m_contextMV.size() == m_contextDim * 2)?[m
+				  helpers::getRawPointer(m_contextMV) : NULL);[m
+		[m
+		int n = this->curMaxSeqLength() * this->parallelSequences() * m_contextDim;[m
+		thrust::for_each([m
+			thrust::make_zip_iterator(
+				thrust::make_tuple(m_contextBuf.begin(),
+						   thrust::counting_iterator<int>(0))),
+			thrust::make_zip_iterator(
+				thrust::make_tuple(m_contextBuf.begin()              + n,
+						   thrust::counting_iterator<int>(0) + n)),
+			fn1);
+	    }}[m
+	}else{[m
+	    [32mreturn;[m
+[32m	}[m
+[32m    }[m
+[32m    [m
+[32m    template <typename TDevice>[m
+[32m    void WavNetCore<TDevice>::loadSequences(const data_sets::DataSetFraction &fraction,[m
+[32m					    const int nnState)[m
+[32m    {[m
+[32m	TrainableLayer<TDevice>::loadSequences(fraction, nnState);[m
+
+[32m	[m
+[32m	if (m_iniWavCoreC && m_contextDim > 0){[m
+[32m	    [m
+[32m	    if (m_contextRawBuf.size()<1)[m
+[32m		throw std::runtime_error("Fail to initialize m_contextRawBuf");[m
+[32m	    // load the input index[m
+[32m	    thrust::copy(fraction.inputs().begin(),fraction.inputs().end(),m_contextRawBuf.begin());[m
+[32m	    m_contextCurMaxLength = fraction.maxExInputLength();[m
+[32m	    [m
+[32m	    if (m_exInputLayer == NULL){[m
+[32m		// Load the external linguistic features from fractionData[m
+[32m		// check the fixed external data[m
+[32m		if (fraction.externalInputSize() != m_contextDim){[m
+[32m		    printf("Linguistic feature dim  %d mismatch", fraction.externalInputSize());[m
+[32m		    throw std::runtime_error("Unmatched linguistic feature dimension");[m
+[32m		}[m
+[32m		// Note: __loadContextBuff also write to m_contextRawBuf[m
+[32m		// but they are used in different cases[m
+[32m		thrust::copy(fraction.exInputData().begin(), fraction.exInputData().end(),[m
+[32m			     (m_contextRawBuf.begin() +[m
+[32m			      this->maxSeqLength() * this->parallelSequences()));[m
+[32m	    [m
+[32m	    }else{[m
+[32m		if (m_exInputLayer->size()!= m_contextDim){[m
+[32m		    printf("Trainable external input dim  %d mismatch", m_exInputLayer->size());[m
+[32m		    throw std::runtime_error("Unmatched trainable external feature dimension");[m
+[32m		}[m
+[32m	    }[m
+[32m	}else{[m
+	    // no need to read the linguistic features again[m
+	}[m
+    }[m
+[36m@@ -361,24 +428,51 @@[m [mnamespace layers{[m
+    template <typename TDevice>[m
+    void WavNetCore<TDevice>::linkTargetLayer(Layer<TDevice> &targetLayer)[m
+    {[m
+	if [32m(targetLayer.type() == std::string("wavnetc")){[m
+[32m	    //[m
+[32m	    if[m (targetLayer.name() == this->name()){
+		// This is the initial wavNetCore layer
+		m_iniWavCoreC = true;
+		m_iniWavCPtr  = NULL;
+		
+		[32m// Allocate the external data buffer, and index buffer[m
+		cpu_real_vector [31mtmp(this->maxSeqLength()*this->parallelSequences()[m[32mtmp(this->maxSeqLength() * this->parallelSequences()[m * m_contextDim,
+				    0.0);
+		m_contextBuf    = tmp;
+		[32mtmp.resize(this->maxSeqLength()*this->parallelSequences()*(m_contextDim+1), 0.0);[m
+[32m		m_contextRawBuf = tmp;[m
+		
+		if (m_contextDim == 0)
+		    printf("\nWavenet without conditional input");
+		
+	    [32m}else{[m
+[32m		// This is the following wavNetCore layers[m
+[32m		// The following wavNetCore layers will directly read the m_contextBuf[m
+[32m		// from the initial wavNetCore layer, no need to read it again[m
+[32m		m_iniWavCoreC = false;[m
+[32m		m_iniWavCPtr  = dynamic_cast<WavNetCore<TDevice>*>(&(targetLayer));[m
+[32m		if (m_iniWavCPtr == NULL)[m
+[32m		    throw std::runtime_error("Fail to link wavnetc");[m
+[32m		m_contextBuf.clear();[m
+[32m		m_contextRawBuf.clear();[m
+[32m	    }[m
+[32m	    m_exInputLayer = NULL;[m
+[32m	    m_contextGraBuf.clear();[m
+	    [m
+	}else{[m
+	    // [31mThis is the following wavNetCore layers[m
+[31m	    // The following wavNetCore layers will directly read the m_contextBuf[m
+[31m	    // from[m[32mlink[m the [31minitial wavNetCore layer, no need to read it again[m
+[31m	    m_iniWavCoreC = false;[m
+[31m	    m_iniWavCPtr[m[32mexternal trainable input layer[m
+[32m	    if (m_iniWavCoreC){[m
+[32m		m_exInputLayer[m = [31mdynamic_cast<WavNetCore<TDevice>*>(&(targetLayer));[m[32mdynamic_cast<layers::TrainableLayer<TDevice>*>(&(targetLayer));[m
+		if [31m(m_iniWavCPtr[m[32m(m_exInputLayer[m == NULL)
+		    throw std::runtime_error("Fail to link [31mwavnetc");[m
+[31m	    m_contextBuf.clear();[m[32mexternal layer for wavenetc");[m
+[32m		if (m_contextDim != m_exInputLayer->size())[m
+[32m		    throw std::runtime_error("External input layer size != contextDim");[m
+[32m		printf("\nWavenet with external input layer %s", m_exInputLayer->name().c_str());[m
+[32m		// a buffer to store gradients[m
+[32m		m_contextGraBuf = m_contextBuf;[m
+[32m	    }else{[m
+[32m		throw std::runtime_error("Impossible bug");		[m
+[32m	    }[m
+	}[m
+    }[m
+
+[36m@@ -387,6 +481,12 @@[m [mnamespace layers{[m
+    {[m
+	int timeLength = this->curMaxSeqLength() * this->parallelSequences();[m
+	[m
+	[32m// Step0. initialze the gradients for external input[m
+[32m	if (m_iniWavCoreC && this->m_exInputLayer != NULL)[m
+[32m	    thrust::fill(m_contextGraBuf.begin(), m_contextGraBuf.end(), 0.0);[m
+[32m	__loadContextBuff();[m
+	
+	
+	// Step1. transform the linguistic context[m
+	if (m_contextDim == 0){[m
+	    thrust::fill(m_coreBuf.begin(), m_coreBuf.end(), 0.0);[m
+[36m@@ -452,6 +552,9 @@[m [mnamespace layers{[m
+	int shiftPre    = this->precedingLayer().outputBufPtrBias(effTimeStep, nnState);[m
+	int shiftCur    = this->outputBufPtrBias(effTimeStep, nnState);[m
+
+	[32m// Load the data to contextBuf[m
+[32m	if (timeStep == 0) __loadContextBuff();[m
+	
+	if (m_contextDim == 0){[m
+	    thrust::fill(m_coreBuf.begin() + (effTimeStep * this->size() - shiftCur) * 2,[m
+			 m_coreBuf.begin() +((effTimeStep * this->size() - shiftCur) * 2 + [m
+[36m@@ -564,7 +667,8 @@[m [mnamespace layers{[m
+                fn);[m
+
+	}[m
+
+	[32m// Gradients to the transformation matrix[m
+	helpers::Matrix<TDevice> weightUpdatesMatrix(&this->_weightUpdates(),[m
+						     m_contextDim, this->size() * 2);[m
+	helpers::Matrix<TDevice> plOutputsMatrix(&(m_iniWavCoreC?(this->m_contextBuf):[m
+[36m@@ -573,7 +677,55 @@[m [mnamespace layers{[m
+	helpers::Matrix<TDevice> outputsMatrix  (&m_contextTanhBuf,[m
+						 this->size()*2, timeLength);[m
+	weightUpdatesMatrix.assignProduct(plOutputsMatrix, false, outputsMatrix, true);[m
+
+	[m
+	[32mif (m_iniWavCoreC == false){[m
+[32m	    // Gradients to the trainable external input layers[m
+[32m	    if (m_iniWavCPtr->m_exInputLayer != NULL){[m
+[32m		// accumulate the gradients from wavenets[m
+[32m		helpers::Matrix<TDevice> gradBuf(&m_iniWavCPtr->m_contextGraBuf,[m
+[32m						 m_contextDim, timeLength);[m
+[32m		helpers::Matrix<TDevice> weightsMatrix(&this->weights(),[m
+[32m						       m_contextDim, 2*this->size());		[m
+[32m		helpers::Matrix<TDevice> outputsMatrix  (&m_contextTanhBuf,[m
+[32m							 this->size()*2, timeLength);[m
+[32m		gradBuf.addProduct(weightsMatrix, false, outputsMatrix, false);   [m
+[32m	    }[m
+[32m	}else{[m
+[32m	    [m
+[32m	    if (this->m_exInputLayer != NULL){[m
+[32m		// accumulate the gradients from wavenets[m
+[32m		helpers::Matrix<TDevice> gradBuf(&this->m_contextGraBuf,[m
+[32m						 m_contextDim, timeLength);[m
+[32m		helpers::Matrix<TDevice> weightsMatrix(&this->weights(),[m
+[32m						       m_contextDim, 2*this->size());		[m
+[32m		helpers::Matrix<TDevice> outputsMatrix  (&m_contextTanhBuf,[m
+[32m							 this->size()*2, timeLength);[m
+[32m		gradBuf.addProduct(weightsMatrix, false, outputsMatrix, false);[m
+[32m		[m
+[32m		// return the gradients to the previous layer[m
+[32m		thrust::fill(this->m_exInputLayer->outputErrors().begin(),[m
+[32m			     this->m_exInputLayer->outputErrors().end(), 0.0);[m
+[32m		internal::SumGradientsForExternalInut fn2;[m
+[32m		fn2.featureDim = this->m_exInputLayer->size();[m
+[32m		fn2.resolution = this->m_exInputLayer->getResolution();[m
+[32m		fn2.maxTimeLength = timeLength;[m
+[32m		fn2.parall     = this->parallelSequences();[m
+[32m		fn2.inputGrad  = helpers::getRawPointer(this->m_contextGraBuf);[m
+[32m		fn2.patTypesEx = helpers::getRawPointer(this->m_exInputLayer->patTypes());[m
+[32m		fn2.patTypes   = helpers::getRawPointer(this->patTypes());[m
+[32m		int m = (this->m_exInputLayer->size() * this->m_exInputLayer->curMaxSeqLength() *[m
+[32m			 this->parallelSequences());[m
+[32m		thrust::for_each([m
+[32m		   thrust::make_zip_iterator([m
+[32m			thrust::make_tuple(this->m_exInputLayer->outputErrors().begin(),[m
+[32m					   thrust::counting_iterator<int>(0))),[m
+[32m		   thrust::make_zip_iterator([m
+[32m			thrust::make_tuple(this->m_exInputLayer->outputErrors().begin() + m,[m
+[32m					   thrust::counting_iterator<int>(0) + m)),[m
+[32m		   fn2);[m
+[32m	    }[m
+[32m	}[m
+    }[m
+
+    template <typename TDevice>[m
+[1mdiff --git a/layers/wavNetCore.hpp b/layers/wavNetCore.hpp[m
+[1mindex 0be5588..4aaece6 100644[m
+[1m--- a/layers/wavNetCore.hpp[m
+[1m+++ b/layers/wavNetCore.hpp[m
+[36m@@ -50,19 +50,26 @@[m [mnamespace layers{[m
+
+	real_vector    m_coreBuf;        // internal data buffer[m
+	real_vector    m_contextBuf;     // buffer for the textual data[m
+	[32mreal_vector    m_contextGraBuf;[m
+	real_vector    m_contextTanhBuf; [m
+	[32mreal_vector    m_contextRawBuf;[m
+	real_vector    m_contextMV;[m
+	std::string    m_contextMVStr;[m
+	[32mint            m_contextCurMaxLength;[m
+[32m	[m
+[32m	TrainableLayer<TDevice> *m_exInputLayer;[m
+[32m	[m
+[32m	bool                     m_iniWavCoreC;[m
+[32m	WavNetCore<TDevice>     *m_iniWavCPtr;[m
+
+[32m	void __loadContextBuff();[m
+	[m
+[31m	bool                  m_iniWavCoreC;[m
+[31m	WavNetCore<TDevice>  *m_iniWavCPtr;[m
+[31m  [m
+    public:[m
+	WavNetCore([m
+	    const helpers::JsonValue &layerChild,[m
+	    const helpers::JsonValue &weightsSection,[m
+            Layer<TDevice>           [31m&precedingLayer[m[32m&precedingLayer,[m
+[32m	    int                       maxSeqLength[m
+	);[m
+
+	virtual ~WavNetCore();[m

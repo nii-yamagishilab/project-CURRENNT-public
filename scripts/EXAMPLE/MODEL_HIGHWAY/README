@@ -1,0 +1,50 @@
+### For Highway network
+
+Usage:
+	1. prepare the network for Highway
+	   
+	   there are two types of layers related to Highway
+	   
+	   "type": "skipini":          this layer specifies the start of a highway block
+	   "type": "skippara_logistic" this layer specifies the end of a highway block
+                                       the hidden layers between the skipini and skippara_logistic 
+				       will be covered by the highway block
+				       
+	   Make sure that the layer size of skipini and skippara_logistic in one block is equal
+	   If the layer size is always equal, specify multiple highway blocks as:
+
+	   block 1    skipini
+	      	      hidden layer 1
+	      	      ...
+		      hidden layer N
+	   	      skippara_logistic	
+	   block 2    hidden layer 1
+	      	      ...
+		      hidden layer N
+	   	      skippara_logistic	
+   	   block 3    hidden layer 1
+	      	      ...
+		      hidden layer N
+	   	      skippara_logistic	
+
+	   If the layer size changes, use skipini to re-start a highway block:		      
+   	   block 1    skipini
+	      	      hidden layer 1
+	      	      ...
+		      hidden layer N
+	   	      skippara_logistic	
+		      
+                      feed_forward (change size)
+	   block 2    skipini
+	   	      hidden layer 1
+	      	      ...
+		      hidden layer N
+	   	      skippara_logistic	
+   	   block 3    hidden layer 1
+	      	      ...
+		      hidden layer N
+	   	      skippara_logistic	
+
+
+	2. Change to Residual Network ?
+	   just replace skippara_logistic with skippadd

@@ -1,0 +1,326 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\Configuration.cpp" />
+    <ClCompile Include="src\data_sets\DataSet.cpp" />
+    <ClCompile Include="src\data_sets\DataSetFraction.cpp" />
+    <CudaCompile Include="src\helpers\cublas.cu" />
+    <CudaCompile Include="src\helpers\Matrix.cu" />
+    <CudaCompile Include="src\LayerFactory.cu" />
+    <CudaCompile Include="src\layers\BinaryClassificationLayer.cu" />
+    <CudaCompile Include="src\layers\CePostOutputLayer.cu" />
+    <CudaCompile Include="src\layers\LstmLayer.cu" />
+    <CudaCompile Include="src\layers\SseMaskPostOutputLayer.cu" />
+    <CudaCompile Include="src\layers\SsePostOutputLayer.cu" />
+    <CudaCompile Include="src\layers\MulticlassClassificationLayer.cu" />
+    <CudaCompile Include="src\layers\PostOutputLayer.cpp" />
+    <CudaCompile Include="src\layers\SoftmaxLayer.cu" />
+    <ClCompile Include="src\helpers\JsonClasses.cpp" />
+    <CudaCompile Include="src\layers\RmsePostOutputLayer.cu">
+      <FileType>CppCode</FileType>
+    </CudaCompile>
+    <ClCompile Include="src\NeuralNetwork.cpp">
+      <FileType>Document</FileType>
+    </ClCompile>
+    <CudaCompile Include="src\layers\TrainableLayer.cu" />
+    <CudaCompile Include="src\layers\WeightedSsePostOutputLayer.cu" />
+    <CudaCompile Include="src\optimizers\Optimizer.cu">
+      <FileType>CppCode</FileType>
+    </CudaCompile>
+    <CudaCompile Include="src\optimizers\SteepestDescentOptimizer.cu" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\Configuration.hpp" />
+    <ClInclude Include="src\data_sets\DataSet.hpp" />
+    <ClInclude Include="src\data_sets\DataSetFraction.hpp" />
+    <ClInclude Include="src\helpers\JsonClasses.hpp" />
+    <ClInclude Include="src\helpers\JsonClassesForward.hpp" />
+    <ClInclude Include="src\helpers\cublas.hpp" />
+    <ClInclude Include="src\helpers\printVector.hpp" />
+    <ClInclude Include="src\LayerFactory.hpp" />
+    <ClInclude Include="src\layers\BinaryClassificationLayer.hpp" />
+    <ClInclude Include="src\layers\CePostOutputLayer.hpp" />
+    <ClInclude Include="src\layers\FeedForwardLayer.hpp" />
+    <ClInclude Include="src\layers\InputLayer.hpp" />
+    <ClInclude Include="src\layers\Layer.hpp" />
+    <ClInclude Include="src\layers\LstmLayer.hpp" />
+    <ClInclude Include="src\layers\RmsePostOutputLayer.hpp" />
+    <ClInclude Include="src\layers\SseMaskPostOutputLayer.hpp" />
+    <ClInclude Include="src\layers\SsePostOutputLayer.hpp" />
+    <ClInclude Include="src\layers\MulticlassClassificationLayer.hpp" />
+    <ClInclude Include="src\layers\PostOutputLayer.hpp" />
+    <ClInclude Include="src\layers\SoftmaxLayer.hpp" />
+    <ClInclude Include="src\layers\TrainableLayer.hpp" />
+    <ClInclude Include="src\layers\WeightedSsePostOutputLayer.hpp" />
+    <ClInclude Include="src\netcdf\netcdf.h" />
+    <ClInclude Include="src\NeuralNetwork.hpp" />
+    <ClInclude Include="src\optimizers\Optimizer.hpp" />
+    <ClInclude Include="src\optimizers\SteepestDescentOptimizer.hpp" />
+    <ClInclude Include="src\rapidjson\document.h" />
+    <ClInclude Include="src\rapidjson\filestream.h" />
+    <ClInclude Include="src\rapidjson\internal\pow10.h" />
+    <ClInclude Include="src\rapidjson\internal\stack.h" />
+    <ClInclude Include="src\rapidjson\internal\strfunc.h" />
+    <ClInclude Include="src\rapidjson\prettywriter.h" />
+    <ClInclude Include="src\rapidjson\rapidjson.h" />
+    <ClInclude Include="src\rapidjson\reader.h" />
+    <ClInclude Include="src\rapidjson\stringbuffer.h" />
+    <ClInclude Include="src\rapidjson\writer.h" />
+    <ClInclude Include="src\Types.hpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="src\layers\FeedForwardLayer.cu" />
+    <CudaCompile Include="src\layers\InputLayer.cpp">
+      <Keep Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</Keep>
+    </CudaCompile>
+    <CudaCompile Include="src\layers\Layer.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\activation_functions\Identity.cuh">
+      <FileType>Document</FileType>
+    </ClInclude>
+    <ClInclude Include="src\activation_functions\Logistic.cuh">
+      <FileType>Document</FileType>
+    </ClInclude>
+    <ClInclude Include="src\activation_functions\Max2min0.cuh">
+      <FileType>Document</FileType>
+    </ClInclude>
+    <ClInclude Include="src\activation_functions\Maxmin1.cuh">
+      <FileType>Document</FileType>
+    </ClInclude>
+    <ClInclude Include="src\activation_functions\Maxmin2.cuh">
+      <FileType>Document</FileType>
+    </ClInclude>
+    <ClInclude Include="src\activation_functions\Tanh.cuh">
+      <FileType>Document</FileType>
+    </ClInclude>
+    <ClInclude Include="src\helpers\getRawPointer.cuh">
+      <FileType>Document</FileType>
+    </ClInclude>
+    <ClInclude Include="src\helpers\boundRange.cuh">
+      <FileType>Document</FileType>
+    </ClInclude>
+    <ClInclude Include="src\helpers\limitedError.cuh">
+      <FileType>Document</FileType>
+    </ClInclude>
+    <ClInclude Include="src\helpers\max.cuh">
+      <FileType>Document</FileType>
+    </ClInclude>
+    <ClInclude Include="src\helpers\min.cuh">
+      <FileType>Document</FileType>
+    </ClInclude>
+    <ClInclude Include="src\helpers\NumericLimits.cuh">
+      <FileType>Document</FileType>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="src\helpers\Matrix.hpp" />
+    <None Include="src\helpers\safeExp.cuh" />
+    <None Include="src\helpers\TypedMath.cuh" />
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{1486C003-F639-452F-8D03-A05BB18397B0}</ProjectGuid>
+    <RootNamespace>currennt_lib</RootNamespace>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 5.0.props" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <LinkIncremental>true</LinkIncremental>
+    <OutDir>$(ProjectDir)$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)$(Configuration)\</IntDir>
+    <TargetExt>.lib</TargetExt>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <LinkIncremental>true</LinkIncremental>
+    <OutDir>$(ProjectDir)$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)$(Configuration)\</IntDir>
+    <TargetExt>.lib</TargetExt>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <LinkIncremental>true</LinkIncremental>
+    <OutDir>$(ProjectDir)$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)$(Configuration)\</IntDir>
+    <TargetExt>.lib</TargetExt>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <LinkIncremental>true</LinkIncremental>
+    <OutDir>$(ProjectDir)$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)$(Configuration)\</IntDir>
+    <TargetExt>.lib</TargetExt>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>C:\boost_1_52_0;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_SCL_SECURE_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;NOMINMAX;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <DisableSpecificWarnings>4661</DisableSpecificWarnings>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <SubSystem>Console</SubSystem>
+      <AdditionalDependencies>cudart.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:\boost_1_52_0\stage\lib;%(AdditionalLibraryDirectories);$(CudaToolkitLibDir)</AdditionalLibraryDirectories>
+    </Link>
+    <PostBuildEvent>
+      <Command>echo copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"
+copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"
+del "$(ProjectDir)\tmpxft_*.o"</Command>
+    </PostBuildEvent>
+    <CudaCompile>
+      <AdditionalOptions>-Xcompiler "/wd 4661" %(AdditionalOptions)</AdditionalOptions>
+      <CodeGeneration>compute_13,sm_13</CodeGeneration>
+    </CudaCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>C:\boost_1_52_0;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_SCL_SECURE_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;NOMINMAX;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <DisableSpecificWarnings>4661</DisableSpecificWarnings>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <FloatingPointExceptions>true</FloatingPointExceptions>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <SubSystem>Console</SubSystem>
+      <AdditionalDependencies>cudart.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:\boost_1_52_0\stage\lib;%(AdditionalLibraryDirectories);$(CudaToolkitLibDir)</AdditionalLibraryDirectories>
+    </Link>
+    <PostBuildEvent>
+      <Command>echo copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"
+copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"
+del "$(ProjectDir)\tmpxft_*.o"</Command>
+    </PostBuildEvent>
+    <CudaCompile>
+      <TargetMachinePlatform>64</TargetMachinePlatform>
+      <AdditionalOptions>-Xcompiler "/wd 4661" %(AdditionalOptions)</AdditionalOptions>
+      <CodeGeneration>compute_13,sm_13</CodeGeneration>
+    </CudaCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <AdditionalIncludeDirectories>C:\boost_1_52_0;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_SCL_SECURE_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;NOMINMAX;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <DisableSpecificWarnings>4661</DisableSpecificWarnings>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <SubSystem>Console</SubSystem>
+      <AdditionalDependencies>cudart.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:\boost_1_52_0\stage\lib;%(AdditionalLibraryDirectories);$(CudaToolkitLibDir)</AdditionalLibraryDirectories>
+    </Link>
+    <PostBuildEvent>
+      <Command>echo copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"
+copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"
+del "$(ProjectDir)\tmpxft_*.o"</Command>
+    </PostBuildEvent>
+    <CudaCompile>
+      <AdditionalOptions>-Xcompiler "/wd 4661" %(AdditionalOptions)</AdditionalOptions>
+      <CodeGeneration>compute_13,sm_13</CodeGeneration>
+    </CudaCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <AdditionalIncludeDirectories>C:\boost_1_52_0;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_SCL_SECURE_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;NOMINMAX;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <FloatingPointModel>Precise</FloatingPointModel>
+      <DisableSpecificWarnings>4661</DisableSpecificWarnings>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <SubSystem>Console</SubSystem>
+      <AdditionalDependencies>cudart.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:\boost_1_52_0\stage\lib;%(AdditionalLibraryDirectories);$(CudaToolkitLibDir)</AdditionalLibraryDirectories>
+    </Link>
+    <PostBuildEvent>
+      <Command>echo copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"
+copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"
+del "$(ProjectDir)\tmpxft_*.o"</Command>
+    </PostBuildEvent>
+    <CudaCompile>
+      <TargetMachinePlatform>64</TargetMachinePlatform>
+      <AdditionalOptions>-Xcompiler "/wd 4661" %(AdditionalOptions)</AdditionalOptions>
+      <CodeGeneration>compute_13,sm_13</CodeGeneration>
+    </CudaCompile>
+  </ItemDefinitionGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 5.0.targets" />
+  </ImportGroup>
+</Project>

@@ -1,0 +1,304 @@
+(venv220)wang@gpu05:/work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS$ perl 001_RUN.pl CONFIGPOOLS/config_ARRMDN_1.pm 
+
+=====================================================================================
+------- 1 Start preparing the training data ------- at Sun Oct 29 11:33:54 JST 2017
+=====================================================================================
+
+COMMANDLINE: perl 01_prepare_train_data.pl /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA CONFIGPOOLS/config_ARRMDN_1.pm
+
+Using /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA/data_config.py
+COMMANDLINE: rm -f /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA/*.info
+
+
+=============================================================
+--- 1.1 generating scps --- at Sun Oct 29 11:33:54 JST 2017
+=============================================================
+
+COMMANDLINE: python ./utilities/PrePareData.py /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA/data_config.py /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA
+
+====== Generating the Scp File ======
+No Mask configuration
+No normMask configuration
+No normMethod configuration
+
+Note: Different feature files of one utterance may contain different number of frames.
+Trim value shows how many frames are discarded in order to match the shortest file.
+Large Trim value indicates that the dimension in data_config.py or the extracted feature
+file may be ill. Please check it carefully if it happens!
+
+Processing the input file
+Input 0 4
+Processing the output file
+Output 0 4
+Output 1 4
+Output 2 4
+Output 3 4
+
+======     Data statistics     ======
+Number of utternaces:          4
+Number of frames:              3308
+Max utterance lab length:      129
+
+
+Generating scps to:            
+	/work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA/all.scp1
+	/work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA/all.scp2
+Number of frames per file:     [1516, 1792]
+Number of utterances per file: [2, 2]
+
+
+Generating /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA/all.scp as batch file
+
+==========================================================
+--- 1.2 package data --- at Sun Oct 29 11:33:54 JST 2017
+==========================================================
+
+======     configuration info  ======
+Not using data mask
+Not using norm mask
+Not using norm method
+
+
+COMMANDLINE: python ./utilities/PackData.py /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA/all.scp /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA/data.mv /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA 1 1 1 None 0 None None
+
+===== Reading and loading data =====
+Creating nc file /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA/data.nc1
+Input dimension:  382
+ output dimension: 259
+*** /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA/data.nc1 exists. It will be overwritten
+Reading BC2011_nancy_NYT096-008-00
+Reading BC2011_nancy_RURAL-02652
+Read and write done
+
+Creating nc file /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA/data.nc2
+Input dimension:  382
+ output dimension: 259
+*** /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA/data.nc2 exists. It will be overwritten
+Reading BC2011_nancy_SCIENCE-03888
+Reading BC2011_nancy_SLAT035-001-00
+Read and write done
+
+===== Calculating mean and variance =====
+Processing /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA/data.nc1
+Processing /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA/data.nc1 of 1516 frames
+Input max 51.000000	min -0.000000
+Output max 438.275421	min -63.639416
+Processing /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA/data.nc2
+Processing /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA/data.nc2 of 1792 frames
+Input max 93.000000	min -0.000000
+Output max 441.363434	min -61.466408
+*** please check max/min above
+
+*** writing done /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA/data.mv
+
+===== Normalize data.nc =====
+norm /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA/data.nc1 
+1516/(0-1516), Let's wait netCDF for 5(s)
+* * * * * *
+*** /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA/data.nc1 prepared (original file deleted) 
+norm /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA/data.nc2 
+1792/(0-1792), Let's wait netCDF for 5(s)
+* * * * * *
+*** /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA/data.nc2 prepared (original file deleted) 
+
+======================================================================
+------- 2 Training the model ------- at Sun Oct 29 11:34:05 JST 2017
+======================================================================
+
+/work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/MODEL_ARRMDN/RNN
+COMMANDLINE: cat ./config.cfg
+
+max_epochs_no_best   = 2
+max_epochs           = 5
+learning_rate        = 4e-7
+network              = ./network.jsn
+train                = true
+train_file           = ../../DATA/data.nc1
+val_file             = ../../DATA/data.nc1
+weights_dist         = normal
+weights_normal_sigma = 0.1
+weights_normal_mean  = 0
+stochastic           = true
+validate_every       = 1
+parallel_sequences   = 1
+input_noise_sigma    = 0.1
+shuffle_fractions    = true
+shuffle_sequences    = false
+momentum             = 0
+autosave             = true
+
+	Please wait for several minutes.
+COMMANDLINE: currennt --options_file config.cfg > log_train 2>&1
+
+
+-------------------- CURRENNNT training log ----------------
+COMMANDLINE: cat ./log_train
+
+Configuration Infor:
+	Training Mode: Started in hybrid online/batch
+		Mini-batches (parallel 1 sequences each) will be shuffled during training.
+		Using input noise with std. of 0.1
+		Writting network  to 'trained_network.jsn'.
+	Validation every 1 epochs.
+
+	Training epoch number maximum: 5
+
+	Training epoch number no lowest validation error: 2
+	Autosave after EVERY EPOCH enabled.
+	Utilizing the GPU on 1 sequences in parallel.
+
+	Initialization method:
+		Normal dist. with mean, std:00.1
+		Random seed: 2392621808
+
+Using device #0 (Tesla K40c)
+Reading network from './network.jsn'... done.
+
+Loading training set '../../DATA/data.nc1' ...
+using cache file: /tmp/0143-67f9-e7fe-cbf2
+... done.
+Loaded fraction:  100%
+Sequences:        2
+Sequence lengths: 570..946
+Total timesteps:  1516
+
+Loading validation set '../../DATA/data.nc1' ...
+using cache file: /tmp/a0b1-132b-f745-2e09
+... done.
+Loaded fraction:  100%
+Sequences:        2
+Sequence lengths: 570..946
+Total timesteps:  1516
+
+Creating the neural network...
+Layer (0) [ input ]  input 
+Layer (1) [ fl1 ]  feedforward_tanh Trainable layer: initialize weight
+Layer (2) [ fl2 ]  blstm Trainable layer: initialize weight
+Layer (3) [ output ]  feedforward_identity Trainable layer: initialize weight
+Layer (4) [ postoutput ]  sse 
+Network construction done.
+
+Network summary:
+     Name		Type
+(0) input		input [size: 382]
+(1) fl1		feedforward_tanh [size: 512, bias: 1.0, weights: 196096]
+(2) fl2		blstm [size: 256, bias: 1.0, weights: 657152]
+(3) output		feedforward_identity [size: 259, bias: 1.0, weights: 66563]
+(4) postoutput		sse [size: 259]
+Total weights: 919811
+
+
+Creating the optimizer... 
+Optimization: plain SGD 
+Max training epochs:       5
+Max epochs until new best: 2
+Validation error every:    1
+Test error every:          1
+Learning rate:             4e-07
+Momentum:                  0
+
+Starting training...
+Print error per sequence / per timestep / secondary error (optional)
+ Epoch | Duration |           Training error         |           Validation error       |           Test error             |New best 
+-------+----------+----------------------------------+----------------------------------+----------------------------------+---------
+     1 |      0.5 |  133405.281 /   175.996/    0.000|  133605.078 /   176.260/    0.000|                                  |  yes SGD
+     2 |      0.4 |  133249.312 /   175.791/    0.000|  133300.547 /   175.858/    0.000|                                  |  yes SGD
+     3 |      0.4 |  133056.047 /   175.536/    0.000|  133010.359 /   175.475/    0.000|                                  |  yes SGD
+     4 |      0.4 |  132648.719 /   174.998/    0.000|  132727.484 /   175.102/    0.000|                                  |  yes SGD
+     5 |      0.4 |  132391.969 /   174.660/    0.000|  132437.516 /   174.720/    0.000|                                  |  yes Finished
+
+Maximum number of training epochs reached. Training stopped.
+Lowest validation error: 132437.515625
+
+Storing the trained network in 'trained_network.jsn'... done.
+Removing cache file(s) ...
+------------------------------------------------------------
+
+=================================================================================
+------- 3 Start preparing the test data ------- at Sun Oct 29 11:35:14 JST 2017
+=================================================================================
+
+COMMANDLINE: perl 03_prepare_test_data.pl /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/TESTDATA /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA/data.mv /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/TESTDATA CONFIGPOOLS/config_ARRMDN_1.pm
+
+
+===========================================================================
+--- 3.1 generating scps for test data --- at Sun Oct 29 11:35:14 JST 2017
+===========================================================================
+
+COMMANDLINE: rm /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/TESTDATA/*.info
+
+COMMANDLINE: python ./utilities/PrePareData.py /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/TESTDATA/data_config.py /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/TESTDATA
+
+====== Generating the Scp File ======
+No Mask configuration
+No normMask configuration
+No normMethod configuration
+
+Note: Different feature files of one utterance may contain different number of frames.
+Trim value shows how many frames are discarded in order to match the shortest file.
+Large Trim value indicates that the dimension in data_config.py or the extracted feature
+file may be ill. Please check it carefully if it happens!
+
+Processing the input file
+Input 0 4
+Processing the output file
+
+======     Data statistics     ======
+Number of utternaces:          4
+Number of frames:              3308
+Max utterance lab length:      133
+
+
+Generating scps to:            
+	/work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/TESTDATA/all.scp1
+Number of frames per file:     [3308]
+Number of utterances per file: [4]
+
+
+Generating /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/TESTDATA/all.scp as batch file
+---
+/work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/TESTDATA/all.scp
+/work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/TESTDATA/gen.scp
+
+=======================================================================
+--- 3.2 package data for test set --- at Sun Oct 29 11:35:14 JST 2017
+=======================================================================
+
+Not using norm maskNot using norm method
+COMMANDLINE: python ./utilities/PackData.py /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/TESTDATA/all.scp /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/DATA/data.mv /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/TESTDATA 1 0 1 None 1 None None
+
+===== Reading and loading data =====
+Creating nc file /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/TESTDATA/data.nc1
+Input dimension:  382
+ output dimension: 259
+*** /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/TESTDATA/data.nc1 exists. It will be overwritten
+Reading BC2011_nancy_NYT096-008-00
+Reading BC2011_nancy_RURAL-02652
+Reading BC2011_nancy_SCIENCE-03888
+Reading BC2011_nancy_SLAT035-001-00
+Read and write done
+
+===== Skip calculating mean and variance =====
+===== Normalize data.nc =====
+norm /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/TESTDATA/data.nc1 
+3308/(0-3308), Let's wait netCDF for 5(s)
+* * * * * *
+*** /work/smg/wang/TEMP/code/CURRENNT/examples/CURRENNT_DIS_TEMP/CURRENNT_DIS/EXAMPLE/TESTDATA/data.nc1 prepared (original file deleted) 
+
+=============================================================================
+------- 4 Skip parameter generating ------- at Sun Oct 29 11:35:20 JST 2017
+=============================================================================
+
+
+=========================================================================
+------- 5 Skip calculating RMSE ------- at Sun Oct 29 11:35:20 JST 2017
+=========================================================================
+
+
+====================================================
+ --- All Done ---  at Sun Oct 29 11:35:20 JST 2017
+====================================================
+
+Ignore the synthetic waveforms
+ This script is only for testing
+ Use more data for speech synthesis

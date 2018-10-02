@@ -1,0 +1,93 @@
+####
+This is the example folder for quantized F0 model. 
+
+For the configuration files for both training and generation that I used on
+the Japanese corpus, please check ./config_pool_F009.
+
+To translate this example to your data:
+1. Prepare the quantized F0 data
+   1.1 Prepare the un-interpolated F0. For example, *.lf0_dis in ../RAWDATA
+   1.2 Use ../DATA_F0CLASS/scripts/00_stats.py to collect the information
+       on your F0 data
+   1.3 Based on information given in 1.2,
+       Configure and use ../DATA_F0CLASS/scripts/01_converF0.py to generate
+       qunatized F0 data
+   1.4 Prepare the DATA_F0CLASS directory (in the same way as other examples)
+       Note: remember to use normMask in data_config.py to prevent data
+             normalization on the target F0 events
+   1.5 Prepare the TEST_F0CLASS directory
+       Note: remember to set outputDelta and f0Info
+
+2. Prepare the network.jsn. Please read the # part
+
+    "layers": [
+        {
+            "size": 382,
+            "name": "input",
+            "type": "input"
+        },
+        {
+            "size": 10,
+            "name": "forward_0",
+            "bias": 1.0,
+            "type": "blstm"
+        },
+        {
+            "size": 266,
+	    # size = previous_size + feedback_data_size
+	    
+            "name": "fb1",   
+            "bias": 1.0,
+	    
+            "type": "feedback",
+	    # type feedback
+	    
+	    "lookback":  "1",
+	    # lookback 1 previous step.
+	    # For multiple steps, use commands like "1_2_3".
+	    # "1_2_3" will look back 1, 2 and 3 steps ahead.
+	    # Then, feedback data size should be increased
+	    # to 10 + 3 * 128
+	    
+	    "aggregate": "1",
+	    # aggregation, only the 1st level.
+	    # For multiple levels, use commands like "1_2_3".
+	    # This depends on the auxillary data provided.
+	    # In the example, the aggregation boundary includes
+	    # 5 levels (frame, phone, syllable, word, phrase)
+	    
+	    "aggregate_cross_boundary": 1
+	    # default
+        },
+        {
+            "size": 2,
+            "name": "forward_1",
+            "bias": 1.0,
+            "type": "feedforward_tanh"
+        },
+        {
+            "size": 128,
+	    # This size should be equal to the number of 
+	    # F0 events (including the unvoiced event)
+
+            "name": "output",
+            "bias": 1.0,
+            "type": "feedforward_identity"
+        },
+        {
+            "size": 1,
+            "name": "postoutput",
+            "type": "mdn",
+	    
+	    "uvSigmoidSoftmax": "y",
+	    # Turn on the two-level hierarchical-softmax
+	    
+        }
+    ]
+
+3. Prepare the config.cfg and config_syn.cfg.
+   Please read the comment in config.cfg
+
+4. Go to ../ and perl 001_run.pl CONFIGPOOL/config*.pm
+   
+
