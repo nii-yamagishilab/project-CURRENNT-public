@@ -17,7 +17,7 @@ except ImportError:
     except ImportError:
         try: 
             from ioTools import readwrite as funcs
-        finally:
+        except ImportError:
             print "Please add pyTools to PYTHONPATH"
             raise Exception("Can't not import binaryTools/readwriteC2 or ioTools/readwrite")
 
