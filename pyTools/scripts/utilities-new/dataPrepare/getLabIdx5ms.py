@@ -1,15 +1,4 @@
 #!/usr/bin/python
-try:
-    from binaryTools import readwriteC2 as py_rw
-except ImportError:
-    try:
-        from binaryTools import readwriteC2_220 as py_rw
-    except ImportError:
-        print "Please add ~/CODE/pyTools to PYTHONPATH"
-        try: 
-            from ioTools import readwrite as py_rw
-        except ImportError:
-            print "Can't not import binaryTools/readwriteC2 or funcs"
 
 
 import numpy as np
@@ -17,6 +6,18 @@ import multiprocessing
 import os
 import sys
 
+try:
+    from binaryTools import readwriteC2 as py_rw
+except ImportError:
+    try:
+        from binaryTools import readwriteC2_220 as py_rw
+    except ImportError:
+        try: 
+            from ioTools import readwrite as py_rw
+        finally:
+            print "Please add pyTools to PYTHONPATH"
+            raise Exception("Can't not import binaryTools/readwriteC2 or ioTools/readwrite")
+        
 def generateLabIndex(labfile, outfile, featDim):
     if os.path.isfile(labfile):
         labFile = py_rw.read_raw_mat(labfile, featDim)

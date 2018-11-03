@@ -15,10 +15,11 @@ except ImportError:
     try:
         from binaryTools import readwriteC2_220 as funcs
     except ImportError:
-        try:
+        try: 
             from ioTools import readwrite as funcs
-        except:
-            assert 1==0,"Can't find ioTools, please add path of pyTools to PYTHONPATH"
+        finally:
+            print "Please add pyTools to PYTHONPATH"
+            raise Exception("Can't not import binaryTools/readwriteC2 or ioTools/readwrite")
 
 from speechTools import discreteF0 as f0funcs
             

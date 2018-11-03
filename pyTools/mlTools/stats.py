@@ -11,7 +11,11 @@ except ImportError:
     try:
         from binaryTools import readwriteC2_220 as py_rw
     except ImportError:
-        assert 1==0,"Cant find readwrite"
+        try: 
+            from ioTools import readwrite as py_rw
+        finally:
+            print "Please add pyTools to PYTHONPATH"
+            raise Exception("Can't not import binaryTools/readwriteC2 or ioTools/readwrite")
 
 
 

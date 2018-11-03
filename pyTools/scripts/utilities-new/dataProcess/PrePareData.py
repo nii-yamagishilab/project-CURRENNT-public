@@ -16,8 +16,8 @@ except ImportError:
         try: 
             from ioTools import readwrite as funcs
         finally:
-            print "Please add ~/CODE/pyTools to PYTHONPATH"
-            raise Exception("Can't not import binaryTools/readwriteC2 or funcs")
+            print "Please add pyTools to PYTHONPATH"
+            raise Exception("Can't not import binaryTools/readwriteC2 or ioTools/readwrite")
 
 sys.path.append(os.path.dirname(sys.argv[1]))
 cfg = __import__(os.path.basename(sys.argv[1])[:-3])
