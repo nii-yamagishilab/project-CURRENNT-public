@@ -10,6 +10,12 @@ Felix Weninger, Johannes Bergmann, and Bjoern Schuller,
 "Introducing CURRENNT - the Munich Open-Source CUDA RecurREnt Neural Network
 Toolkit", Journal of Machine Learning Research, 2014.
 
+This version of CURRENNT is modifed by Xin Wang, National Institute of Informatics,
+Japan, for the application in speech synthesis. These slides may be useful: 
+http://tonywangx.github.io/slides.html
+http://tonywangx.github.io/pdfs/CURRENNT_TUTORIAL.pdf
+
+
 +=============================================================================+
 | Structure                                                                   |
 +=============================================================================+
@@ -34,24 +40,73 @@ Toolkit", Journal of Machine Learning Research, 2014.
 | 1. Building on Linux                                                        |
 +=============================================================================+
 Building on Linux requires the following:
-* CUDA Toolkit 5.0
-* GCC 4.6 or higher
-* NetCDF scientific data library
-* Boost library 1.48 or higher
-  ("program_options system filesystem random thread" in boost should be compiled,
-   ./bootstrap.sh --with-libraries=program_options,filesystem,system,random,thread)
 
-To build CURRENNT execute the following commands:
-#> cd currennt
-#> mkdir build && cd build
-#> cmake ..
-#> make
+   1 netcdf http://www.unidata.ucar.edu/software/netcdf/
+       The version Xin Wang uses is 4.3.3.1.
+       
+       For compatiblity,
+       please configure netCDF by "./configure --disable-netcdf-4 ...". 
 
-This produces the executable file 'currennt'.
+       After compiling, nc-config can be used to print the configuration of netCDF.
+
+       $ ./nc-config --all
+       This netCDF 4.3.3.1 has been built with the following features: 
+
+        --cc        -> gcc
+	--cflags    ->  -I/home/smg/wang/TOOL/bin/netcdf_220/include 
+	--libs      -> -L/home/smg/wang/TOOL/bin/netcdf_220/lib -lnetcdf
+
+	--has-c++   -> no
+ 	--cxx       -> 
+ 	--has-c++4  -> no
+ 	--cxx4      -> 
+
+ 	--fc        -> 
+ 	--fflags    -> 
+ 	--flibs     -> 
+ 	--has-f90   -> no
+
+ 	--has-dap   -> yes
+ 	--has-nc2   -> yes
+ 	--has-nc4   -> no
+	--has-hdf5  -> no
+ 	--has-hdf4  -> no
+ 	--has-pnetcdf-> no
+
+ 	--prefix    -> /home/smg/wang/TOOL/bin/netcdf_220
+ 	--includedir-> /home/smg/wang/TOOL/bin/netcdf_220/include
+ 	--version   -> netCDF 4.3.3.1
+       
+   2 Boost  (headers and compiled library) http://www.boost.org
+       The version Xin Wang uses is boost_1_59_0.
+       Although Boost is head-file library, some of the sub-libraries must be compiled.
+       
+       Particularly, "program_options system filesystem random thread" should be compiled,
+        ./bootstrap.sh --with-libraries=program_options,filesystem,system,random,thread)
+
+   3 CUDA > 6.5
+       The modified CURRENNT can be compiled with CUDA7.0, 8.0 and 9.0.
+       This version of CURRENNT has coverd the issues mentioned in
+       http://sourceforge.net/p/currennt/discussion/general/thread/df6eeece/
+       http://sourceforge.net/p/currennt/discussion/general/thread/e10ef414/
+
+
+
+To build CURRENNT execute:
+1. Please configure CMakeLists.tx
+   Change /home/smg/wang/TOOL/bin/boost_220 and /home/smg/wang/TOOL/bin/netcdf_220/lib
+   to the path of boost and netcdf lib on your machine
+
+2. Make sure you are in the root directory of CURRENNT_codes:
+   $: mkdir build && cd build
+   $: cmake ..
+   $: make
+   
+   This produces the executable file 'currennt' in ./build
 
 You might get many warnings like 'Cannot tell what pointer points to, assuming
-global memory space'. These are totally OK and there seems to be no way to
-suppress them.
+global memory space' or '***operator()" was declared but never referenced'. 
+These are totally OK.
 
 
 +=============================================================================+

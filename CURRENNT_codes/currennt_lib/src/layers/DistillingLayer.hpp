@@ -69,9 +69,11 @@ namespace layers {
 	real_t             m_kld;
 
 	real_t             m_gamma;
-
+	real_t             m_zeta;
+	
 	// Short time STFT part (configurable))
 	real_t             m_specError;
+	real_t             m_phaseError;
 	int                m_fftLength;
 	int                m_fftBinsNum;
 	int                m_frameLength;
@@ -88,8 +90,11 @@ namespace layers {
 	real_vector        m_fftDiffFramed;
 	fft_vector         m_fftDiffSigFFT;
 
+	real_vector         m_fftDiffDataPhase;
+
 	// Long time STFT 
 	real_t             m_specError2;
+	real_t             m_phaseError2;
 	int                m_fftLength2;
 	int                m_fftBinsNum2;
 	int                m_frameLength2;
@@ -106,9 +111,11 @@ namespace layers {
 	real_vector        m_fftDiffFramed2;
 	fft_vector         m_fftDiffSigFFT2;
 
+	real_vector         m_fftDiffDataPhase2;
 
 	// Long time STFT 
 	real_t             m_specError3;
+	real_t             m_phaseError3;
 	int                m_fftLength3;
 	int                m_fftBinsNum3;
 	int                m_frameLength3;
@@ -125,6 +132,7 @@ namespace layers {
 	real_vector        m_fftDiffFramed3;
 	fft_vector         m_fftDiffSigFFT3;
 
+	real_vector         m_fftDiffDataPhase3;
 	
 	
 	int_vector         m_gradPtr;           // pointers to collect gradients from MDN

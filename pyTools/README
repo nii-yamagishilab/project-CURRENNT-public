@@ -1,13 +1,25 @@
-###########################################################################
+N###########################################################################
+##  pyTools for CURRENNT  ----------------------------------------------  #
 ## ---------------------------------------------------------------------  #
-##  Python interface and tools    					  #
-## ---------------------------------------------------------------------  #
+##                                                                        #
+##  Copyright (c) 2018  National Institute of Informatics                 #
+##                                                                        #
+##  THE NATIONAL INSTITUTE OF INFORMATICS AND THE CONTRIBUTORS TO THIS    #
+##  WORK DISCLAIM ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING  #
+##  ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT    #
+##  SHALL THE NATIONAL INSTITUTE OF INFORMATICS NOR THE CONTRIBUTORS      #
+##  BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY   #
+##  DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,       #
+##  WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS        #
+##  ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE   #
+##  OF THIS SOFTWARE.                                                     #
 ###########################################################################
-##                         Author: Xin WANG                               #
-##                         Contact: wangxin@nii.ac.jp                     #
+##                         Author: Xin Wang                               #
+##                         Date:   2016 - 2018                            #
+##                         Contact: wangxin at nii.ac.jp                  #
 ###########################################################################
 
-Tools based on Python. Default for Python 2.7
+Tools based on Python (Python 2.7)
 
 To use it:
 :~$ sh setup.sh
@@ -16,8 +28,11 @@ To use it:
 There tools are used in CURRENNT_SCIRPTS implicitly. So, no need to write
 instruction here.
 
-However, the binary data handler may be useful. See the example below to
-read and write binary data (litten endian, float32, I assume)
+However, the binary data handler may be useful if you want to check and plot
+the data used by CURRENNT. 
+
+See the example below to read and write binary data
+(litten endian, float32)
 
 >> from ioTools import readwrite as py_rw
 >> data = py_rw.read_raw_mat(PATH_TO_BINARY_DATA, DIMENSION_OF_DATA)

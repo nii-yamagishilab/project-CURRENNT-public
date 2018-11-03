@@ -113,7 +113,7 @@ Configuration::Configuration(int argc, const char *argv[])
     else
         ms_instance = this;
 
-    std::cout << "ver:2018/09/26" << std::endl;
+    std::cout << "ver:2018/10/24" << std::endl;
     
     std::string optionsFile;
     std::string optimizerString;
@@ -434,6 +434,21 @@ Configuration::Configuration(int argc, const char *argv[])
 	("whichDataChecker",
 	 po::value(&m_dataCheckerIdx)->default_value(-1),
 	 "Which data checker should be used to pre-check the data? (default -1 (None))")
+	("BatchNormGenMode",
+	 po::value(&m_batchnorm_genmode)->default_value(0),
+	 std::string(
+	    std::string("0: use utterance mean/std to normalize data (non-AR model) (default);") +
+	    std::string("1: use saved mean/std from training data")).c_str())
+	("F0MeanForSourceModule",
+	 po::value(&m_f0dataMean_signalgen)->default_value(-1),
+	 std::string(
+	    std::string("Mean of F0 data. This will be used by NSF source module to recover ") +
+	    std::string("the linear F0 value if the input F0 has been normalized")).c_str())
+	("F0StdForSourceModule",
+	 po::value(&m_f0dataStd_signalgen)->default_value(-1),
+	 std::string(
+	    std::string("Std of F0 data. This will be used by NSF source module to recover ") +
+	    std::string("the linear F0 value if the input F0 has been normalized")).c_str())
 	;
 
     po::options_description autosaveOptions("Autosave options");
@@ -1610,4 +1625,16 @@ const int& Configuration::waveNetMemSaveFlag() const{
 
 const int& Configuration::dataCheckerIdx() const{
     return m_dataCheckerIdx;
+}
+
+const int& Configuration::batchnorm_genmode() const{
+    return m_batchnorm_genmode;
+}
+
+const real_t& Configuration::f0dataMean_signalgen() const{
+    return m_f0dataMean_signalgen;
+}
+
+const real_t& Configuration::f0dataStd_signalgen() const{
+    return m_f0dataStd_signalgen;
 }

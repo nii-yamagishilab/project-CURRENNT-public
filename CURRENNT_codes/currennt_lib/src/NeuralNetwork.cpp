@@ -738,7 +738,9 @@ NeuralNetwork<TDevice>::NeuralNetwork(
 		m_distillingLayers.push_back(counter);
 		if (!config.trainingMode() && config.waveNetMemSaveFlag() && tmp_wavNetCore)
 		    m_waveNetMemSaveFlag = NETWORK_WAVENET_SAVE_MA;
-		
+	    }else if (layerType == "dft"){
+		if (!config.trainingMode() && config.waveNetMemSaveFlag() && tmp_wavNetCore)
+		    m_waveNetMemSaveFlag = NETWORK_WAVENET_SAVE_MA;
 	    }else{
 		// do nothing
 	    }
@@ -1582,7 +1584,7 @@ void NeuralNetwork<TDevice>::computeForwardPass(const int curMaxSeqLength,
 		    layer->computeForwardPass(m_trainingState);
 
 		    // for distilling network, reload the target after student network
-		    // calculates the output
+		    // calculates the output, i.e., use student's output as feedback data
 		    if ((!m_distillingLayers.empty()) && layerCnt == m_distillingLayers.back())
 			this->postOutputLayer().retrieveFeedBackData();
 		    layerCnt++;
@@ -2179,11 +2181,12 @@ void NeuralNetwork<TDevice>::computeForwardPassGen(const data_sets::DataSetFract
 		    layer->loadSequences(fraction, m_trainingState);
 		    layer->computeForwardPass(m_trainingState);
 		}
-		    
+		
 		// release the dependended layers
 		BOOST_FOREACH (int fromwhich,
 			       tmp_networkMng.get_layerDep(layerID).get_fromwhich()){
-		    if (fromwhich > 0){
+		    // normally, the output layer before postoutput is the actual output layer
+		    if (fromwhich > 0 && fromwhich < m_layers.size() - 2){
 			tmp_networkMng.get_layerDep(fromwhich).del_towhich(layerID);
 			// if the dependended layers is no longer needed, release the mem
 			if (tmp_networkMng.get_layerDep(fromwhich).empty_towhich())
@@ -2243,7 +2246,7 @@ void NeuralNetwork<TDevice>::computeBackwardPass()
 	}else if (Configuration::instance().runningMode() == NETWORKRUNNING_MODE_DISTEACHER &&
 		  !m_distillingLayers.empty()){
 
-	    // not using the Gradients calculated by maximum likelihood
+	    // not using the Gradients calculated by maximum likelihood in postoutput layer
 	    if (layerCnt ==  m_layers.size() - 1)
 		continue;
 	    // propagate through all the layers
@@ -2482,9 +2485,9 @@ std::vector<std::vector<std::vector<real_t> > > NeuralNetwork<TDevice>::getOutpu
 	
 	olm = outMDNLayer(-1);
 	if (olm == NULL)
-	    tempLayerID = this->m_layers.size()-2; // postouput MDN
+	    tempLayerID = this->m_layers.size()-2; // layer be postouput
 	else
-	    tempLayerID = this->m_layers.size()-1; // output
+	    tempLayerID = this->m_layers.size()-1; // MDN postoutput layer
 	
     }else{
 	// If layerID is specified, generate from that layer

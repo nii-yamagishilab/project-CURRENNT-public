@@ -50,7 +50,7 @@ if __name__ == "__main__":
             for idx, fileName in enumerate(filePtr):
                 fileName = fileName.rstrip('\n')
                 data = py_rw.read_raw_mat(fileDir + os.path.sep + fileName + fileExt, fileDim)
-                if fileExt == '.lf0' and fileDim == 1:
+                if (fileExt == '.lf0' or fileExt =='.f0') and fileDim == 1:
                     data = data[data>0]
                 gvData[cnt, :] = gv(data)
                 cnt = cnt + 1

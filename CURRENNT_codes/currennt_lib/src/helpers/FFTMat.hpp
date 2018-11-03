@@ -77,11 +77,14 @@ namespace helpers {
 	void FFT();
 	void iFFT();
 	void frameSignal();
-	void prepareGrad(FFTMat<TDevice> &source, FFTMat<TDevice> &target);
 	void collectGrad(real_t gradScaleFactor);
-	
-	real_t FFTL2Distance(FFTMat<TDevice> &target, FFTMat<TDevice> &diff);
-	
+
+	void specAmpGrad(FFTMat<TDevice> &source, FFTMat<TDevice> &target);
+	real_t specAmpDistance(FFTMat<TDevice> &target, FFTMat<TDevice> &diff);
+
+	void specPhaseGrad(FFTMat<TDevice> &source, FFTMat<TDevice> &target);
+	real_t specPhaseDistance(FFTMat<TDevice> &target, FFTMat<TDevice> &diff);
+
     };
 
 

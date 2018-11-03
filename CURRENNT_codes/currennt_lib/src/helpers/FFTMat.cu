@@ -46,6 +46,8 @@ typedef cufftHandle *cufftHandle_t;
 
 #define FFT_PI_DEFINITION 3.141215
 #define FFT_KLD_FLOOR_NUM 0.00001
+#define FFT_AMP_MIN_NUM   0.0000001
+
 namespace internal{
 namespace {
 
@@ -198,10 +200,24 @@ namespace {
 		
 	    }else{
 		// Since FFT length should be >= signal length (frame length)
-		//  we need zero paddings after the frame
+		//  we need zero paddings after the frame length
 		t.get<0>() = 0.0;
 	    }
 	    
+	}
+    };
+
+    struct cleanDummyGradients
+    {
+	int fftLength;   // dimension of frame (padded)
+	int frameLength;
+	int frameShift;
+
+	__host__ __device__ void operator() (const thrust::tuple<real_t &, int> &t) const
+	{
+	    int framePos = t.get<1>() % fftLength;
+	    if (framePos > frameLength)
+		t.get<0>() = 0.0;
 	}
     };
 
@@ -242,12 +258,43 @@ namespace {
 				 FFT_KLD_FLOOR_NUM);
 	    real_t target = sqrt(t.get<1>().x * t.get<1>().x + t.get<1>().y * t.get<1>().y +
 				 FFT_KLD_FLOOR_NUM);
+	    
+	    // t.x save the KLD divergence
 	    t.get<2>().x = target * helpers::safeLog(target / source) - target + source;
+	    // t.y save the intermediate results for gradient calculation
 	    t.get<2>().y = 1.0 - target / source;
 
 	}
     };
     
+    struct phaseDistance
+    {
+	__host__ __device__ void operator() (const thrust::tuple<complex_t &,
+					     complex_t &, complex_t &> &t) const
+	{
+	    // t.get<0>() source
+	    // t.get<1>() target
+	    // t.get<2>() buffer to store diff
+
+	    // To save memory space, t.get<2>().x stores
+	    //   Amp_source * Amp_target
+	    t.get<2>().y = (sqrt(t.get<0>().x * t.get<0>().x +
+				 t.get<0>().y * t.get<0>().y) *
+			    sqrt(t.get<1>().x * t.get<1>().x +
+				 t.get<1>().y * t.get<1>().y));
+
+	    if (t.get<2>().y < FFT_AMP_MIN_NUM){
+		t.get<2>().x = 0.0;
+	    }else{
+		// phaseDistance = 1 - Re_s / Amp_s * Re_t / Amp_t - Im_s / Amp_s * Im_t / Amp_t
+		t.get<2>().x = 1.0 -
+		    (t.get<0>().x * t.get<1>().x + t.get<0>().y * t.get<1>().y) / t.get<2>().y;
+	    }
+
+	}
+    };
+
+
     struct L2DistanceGrad
     {
 	__host__ __device__ void operator() (const thrust::tuple<complex_t &,
@@ -284,6 +331,25 @@ namespace {
 	    t.get<2>().x = t.get<2>().y * t.get<0>().x / spec;
 	    t.get<2>().y = t.get<2>().y * t.get<0>().y / spec;
 
+	}
+    };
+
+    struct PhaseGrad
+    {
+	__host__ __device__ void operator() (const thrust::tuple<complex_t &,
+					     complex_t &, complex_t &> &t) const
+	{
+	    // t.get<0>() source
+	    // t.get<1>() target
+	    // t.get<2>() buffer to store diff
+	    real_t spec = (t.get<0>().x * t.get<0>().x +
+			   t.get<0>().y * t.get<0>().y +
+			   FFT_KLD_FLOOR_NUM);
+	    
+	    real_t fac  = (t.get<0>().y * t.get<1>().x - t.get<0>().x * t.get<1>().y) / t.get<2>().y;
+	    t.get<2>().x = fac * (-1.0) * t.get<0>().y / spec;
+	    t.get<2>().y = fac * t.get<0>().x / spec;
+	    
 	}
     };
 
@@ -444,8 +510,10 @@ namespace helpers {
     template <typename TDevice>
     void FFTMat<TDevice>::frameSignal()
     {
-	// frame and window the original signal (m_rawData)
-	//  here Hann window is used
+	// Frame and window the original signal (m_rawData)
+	//  here Hann window is used.
+	// Framing is conducted on the entire m_rawData buffer.
+	//  Since m_rawData is zero padded after m_signalLength, it is safe
 	if (m_rawData == NULL || m_framedData == NULL)
 	    throw std::runtime_error("signal and framedSignal buffer not initialized");
 
@@ -497,7 +565,7 @@ namespace helpers {
     }
 
     template <typename TDevice>
-    real_t FFTMat<TDevice>::FFTL2Distance(FFTMat<TDevice> &target, FFTMat<TDevice> &diff)
+    real_t FFTMat<TDevice>::specAmpDistance(FFTMat<TDevice> &target, FFTMat<TDevice> &diff)
     {
 	// calculate the spectral-distrince
 	if (this->m_fftData->size() != target.m_fftData->size())
@@ -533,7 +601,7 @@ namespace helpers {
 	    }
 	}
 
-	// sum the spectral-distance
+	// Spectral-distance averaged over (frameNum * fftBins)
 	real_t distance = 0.0;
 	{{
 		internal::getError fn2;
@@ -549,7 +617,46 @@ namespace helpers {
     }
 
     template <typename TDevice>
-    void FFTMat<TDevice>::prepareGrad(FFTMat<TDevice> &source, FFTMat<TDevice> &target)
+    real_t FFTMat<TDevice>::specPhaseDistance(FFTMat<TDevice> &target, FFTMat<TDevice> &diff)
+    {
+	// calculate the spectral-distrince
+	if (this->m_fftData->size() != target.m_fftData->size())
+	    throw std::runtime_error("FFTL2Distance error: input fft data unequal size");
+	
+	{
+	    {
+		internal::phaseDistance fn1;
+		thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_fftData).begin(),
+					   (*(target.m_fftData)).begin(),
+					   (*(diff.m_fftData)).begin())),
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_fftData).end(),
+					   (*(target.m_fftData)).end(),
+					   (*(diff.m_fftData)).end())),
+		fn1);
+	    }
+	}
+
+	// Phase-distance averaged over (frameNum * fftBins)
+	real_t distance = 0.0;
+	{{
+		internal::getError fn2;
+		//fn2.factor = 1.0/this->m_fftData->size();
+		fn2.factor = fftTools::fftBinsNum(m_fftLength) * m_validFrameNum;
+		distance = thrust::transform_reduce((*(diff.m_fftData)).begin(),
+						    (*(diff.m_fftData)).begin() + (int)fn2.factor,
+						    fn2,
+						    (real_t)0,
+						    thrust::plus<real_t>());
+	}}
+	return distance;
+    }
+
+    
+    template <typename TDevice>
+    void FFTMat<TDevice>::specAmpGrad(FFTMat<TDevice> &source, FFTMat<TDevice> &target)
     {
 
 	// calculate the gradient at each frequency bin and each time step
@@ -586,12 +693,55 @@ namespace helpers {
     }
 
     template <typename TDevice>
+    void FFTMat<TDevice>::specPhaseGrad(FFTMat<TDevice> &source, FFTMat<TDevice> &target)
+    {
+
+	{
+	    {
+		internal::PhaseGrad fn1;
+		thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*(source.m_fftData)).begin(),
+					   (*(target.m_fftData)).begin(),
+					   (*m_fftData).begin())),
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*(source.m_fftData)).end(),
+					   (*(target.m_fftData)).end(),
+					   (*m_fftData).end())),
+		fn1);
+	      }
+	}
+	
+    }
+    template <typename TDevice>
     void FFTMat<TDevice>::collectGrad(real_t gradScaleFactor)
     {
 
+	// Fatal Error
+	// *** this line of code sets the frames near the end of the memory buff to 0.0,
+	//     note the end waveform points in each frame !!!
 	// set the gradients of dummy time point to zero
-	thrust::fill((*m_framedData).begin() + m_validDataPointNum, (*m_framedData).end(), 0.0);
-	    
+	// thrust::fill((*m_framedData).begin() + m_validDataPointNum, (*m_framedData).end(), 0.0);
+	//
+	// now, clean the gradients correspoding to the zero-padded values in each frame
+	// maybe this step is unnecessary if we carefully gather the gradients in collectGrad
+	{{
+	    internal::cleanDummyGradients fn1;
+	    fn1.fftLength   = m_fftLength;
+	    fn1.frameLength = m_frameLength;
+	    fn1.frameShift  = m_frameShift;
+	    thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_framedData).begin(), 
+					   thrust::counting_iterator<int>(0))),
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_framedData).end(),  
+					   thrust::counting_iterator<int>(0) +
+					   m_framedData->size())),
+		fn1);
+	}}
+
+	
 	// calculate the gradient w.r.t original signal by accumulating
 	// gradients w.r.t framed signals
 	{{
@@ -602,7 +752,7 @@ namespace helpers {
 	    fn1.frameNum    = m_framedData->size() / m_fftLength;
 	    fn1.windowType  = m_windowType;
 	    fn1.gradData    = getRawPointer(*m_framedData);
-	    fn1.gradScale   = gradScaleFactor / m_validDataPointNum;
+	    fn1.gradScale   = gradScaleFactor / (fftTools::fftBinsNum(m_fftLength) * m_validFrameNum);
 		
 	    thrust::for_each(
 		thrust::make_zip_iterator(

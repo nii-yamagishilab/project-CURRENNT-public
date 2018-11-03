@@ -362,6 +362,10 @@ namespace layers{
 
 	if (m_gamma > 0.0){
 
+	    // only use phase when spectral ditance is used
+	    m_zeta         = (layerChild->HasMember("zeta") ? 
+			      static_cast<real_t>((*layerChild)["zeta"].GetDouble()) : 0.0);
+
 	    m_realTargetVector = this->outputs();
 	    
 	    if (this->parallelSequences() > 1)
@@ -409,7 +413,8 @@ namespace layers{
 
 	    // A temporary buffer to store the difference between target and source
 	    m_fftDiffData = this->outputs();
-
+	    if (m_zeta > 0.0)
+		m_fftDiffDataPhase = m_fftDiffData;
 	    
 	    // Second FFT part
 	    m_fftLength2   = (layerChild->HasMember("fftLength2") ? 
@@ -428,7 +433,9 @@ namespace layers{
 	    m_fftTargetSigFFT2.resize(m_frameNum2 * m_fftBinsNum2, tmp);
 	    m_fftDiffSigFFT2 = m_fftTargetSigFFT2;
 	    m_fftDiffData2 = this->outputs();
-
+	    if (m_zeta > 0.0)
+		m_fftDiffDataPhase2 = m_fftDiffData2;
+	    
 	    // third FFT part
 	    m_fftLength3   = (layerChild->HasMember("fftLength3") ? 
 			     static_cast<int>((*layerChild)["fftLength3"].GetInt()) : 0);
@@ -446,6 +453,8 @@ namespace layers{
 	    m_fftTargetSigFFT3.resize(m_frameNum3 * m_fftBinsNum3, tmp);
 	    m_fftDiffSigFFT3 = m_fftTargetSigFFT3;
 	    m_fftDiffData3 = this->outputs();
+	    if (m_zeta > 0.0)
+		m_fftDiffDataPhase3 = m_fftDiffData3;
 	    
 	}else{
 	    m_fftSourceFramed.clear();
@@ -455,6 +464,7 @@ namespace layers{
 	    m_fftDiffSigFFT.clear();
 	    m_fftDiffFramed.clear();
 	    m_fftDiffData.clear();
+	    m_fftDiffDataPhase.clear();
 	    
 	    m_fftSourceFramed2.clear();
 	    m_fftTargetFramed2.clear();
@@ -463,6 +473,7 @@ namespace layers{
 	    m_fftDiffSigFFT2.clear();
 	    m_fftDiffFramed2.clear();
 	    m_fftDiffData2.clear();
+	    m_fftDiffDataPhase2.clear();
 	    
 	    m_fftSourceFramed3.clear();
 	    m_fftTargetFramed3.clear();
@@ -471,6 +482,7 @@ namespace layers{
 	    m_fftDiffSigFFT3.clear();
 	    m_fftDiffFramed3.clear();
 	    m_fftDiffData3.clear();
+	    m_fftDiffDataPhase3.clear();
 	    
 	}
 
@@ -654,20 +666,30 @@ namespace layers{
 		// step2. fft
 		sourceSig.FFT();
 		targetSig.FFT();
-		    
+
+		// -- phase part
+		if (m_zeta > 0.0){
+		    // calculate phase distortion
+		    m_phaseError = sourceSig.specPhaseDistance(targetSig, fftDiffSig);
+		    fftDiffSig.specPhaseGrad(sourceSig, targetSig);
+		    fftDiffSig.iFFT();
+		    fftDiffSig.collectGrad(m_zeta);
+		    m_fftDiffDataPhase = m_fftDiffData;
+		}
+		
 		// step3. FFT distance
-		m_specError = sourceSig.FFTL2Distance(targetSig, fftDiffSig);
+		m_specError = sourceSig.specAmpDistance(targetSig, fftDiffSig);
 		
 		// step4. Prepare Gradients
-		fftDiffSig.prepareGrad(sourceSig, targetSig);
+		fftDiffSig.specAmpGrad(sourceSig, targetSig);
 
 		// step5. use iFFT to collect gradients w.r.t framed signal
 		fftDiffSig.iFFT();
 
 		// step6. collect gradients to the real signal
 		fftDiffSig.collectGrad(m_gamma);
-		// Gradients should be in m_fftDiffData
-
+		// Gradients should be in m_fftDiffData		    
+		
 		
 		// FFT 2
 		if (m_fftLength2){
@@ -698,8 +720,18 @@ namespace layers{
 		    sourceSig2.FFT();
 		    targetSig2.FFT();
 		    
-		    m_specError2 = sourceSig2.FFTL2Distance(targetSig2, fftDiffSig2);
-		    fftDiffSig2.prepareGrad(sourceSig2, targetSig2);
+		    // -- phase part
+		    if (m_zeta > 0.0){
+			// calculate phase distortion
+			m_phaseError2 = sourceSig2.specPhaseDistance(targetSig2, fftDiffSig2);
+			fftDiffSig2.specPhaseGrad(sourceSig2, targetSig2);
+			fftDiffSig2.iFFT();
+			fftDiffSig2.collectGrad(m_zeta);
+			m_fftDiffDataPhase2 = m_fftDiffData2;
+		    }
+		    
+		    m_specError2 = sourceSig2.specAmpDistance(targetSig2, fftDiffSig2);
+		    fftDiffSig2.specAmpGrad(sourceSig2, targetSig2);
 		    fftDiffSig2.iFFT();
 		    fftDiffSig2.collectGrad(m_gamma);
 		}
@@ -726,14 +758,25 @@ namespace layers{
 			m_frameLength3, m_frameShift3, 0, m_fftLength3, m_fftBinsNum3,
 			m_frameNum3, this->maxSeqLength(), timeLength,
 			m_specDisType);
-		
+
+		    
 		    sourceSig3.frameSignal();
 		    targetSig3.frameSignal();
 		    sourceSig3.FFT();
 		    targetSig3.FFT();
+
+		    // -- phase part
+		    if (m_zeta > 0.0){
+			// calculate phase distortion
+			m_phaseError3 = sourceSig3.specPhaseDistance(targetSig3, fftDiffSig3);
+			fftDiffSig3.specPhaseGrad(sourceSig3, targetSig3);
+			fftDiffSig3.iFFT();
+			fftDiffSig3.collectGrad(m_zeta);
+			m_fftDiffDataPhase3 = m_fftDiffData3;
+		    }
 		    
-		    m_specError3 = sourceSig3.FFTL2Distance(targetSig3, fftDiffSig3);
-		    fftDiffSig3.prepareGrad(sourceSig3, targetSig3);
+		    m_specError3 = sourceSig3.specAmpDistance(targetSig3, fftDiffSig3);
+		    fftDiffSig3.specAmpGrad(sourceSig3, targetSig3);
 		    fftDiffSig3.iFFT();
 		    fftDiffSig3.collectGrad(m_gamma);		    
 		}
@@ -926,6 +969,22 @@ namespace layers{
 		      fn1);
 
 
+		    if (m_zeta > 0.0){
+			fn1.source  = helpers::getRawPointer(m_fftDiffDataPhase);
+			fn1.accumulate = true;    
+			thrust::for_each(
+		          thrust::make_zip_iterator(
+		            thrust::make_tuple(
+				  this->outputs().begin(), 
+				  thrust::counting_iterator<int>(0))),
+			  thrust::make_zip_iterator(
+		            thrust::make_tuple(
+				  this->outputs().begin()           + timeLength * this->size(), 
+				  thrust::counting_iterator<int>(0) + timeLength * this->size())),
+			  fn1);
+		    }
+
+		    
 		    if (m_fftLength2){
 			fn1.source  = helpers::getRawPointer(m_fftDiffData2);
 			fn1.accumulate = true;    
@@ -939,6 +998,23 @@ namespace layers{
 				  this->outputs().begin()           + timeLength * this->size(), 
 				  thrust::counting_iterator<int>(0) + timeLength * this->size())),
 			  fn1);
+			
+			if (m_zeta > 0.0){
+			fn1.source  = helpers::getRawPointer(m_fftDiffDataPhase2);
+			fn1.accumulate = true;    
+			thrust::for_each(
+		          thrust::make_zip_iterator(
+		            thrust::make_tuple(
+				  this->outputs().begin(), 
+				  thrust::counting_iterator<int>(0))),
+			  thrust::make_zip_iterator(
+		            thrust::make_tuple(
+				  this->outputs().begin()           + timeLength * this->size(), 
+				  thrust::counting_iterator<int>(0) + timeLength * this->size())),
+			  fn1);
+			}
+
+		    
 		    }
 
 		    if (m_fftLength3){
@@ -954,6 +1030,22 @@ namespace layers{
 				  this->outputs().begin()           + timeLength * this->size(), 
 				  thrust::counting_iterator<int>(0) + timeLength * this->size())),
 			  fn1);
+			if (m_zeta > 0.0){
+			fn1.source  = helpers::getRawPointer(m_fftDiffDataPhase3);
+			fn1.accumulate = true;    
+			thrust::for_each(
+		          thrust::make_zip_iterator(
+		            thrust::make_tuple(
+				  this->outputs().begin(), 
+				  thrust::counting_iterator<int>(0))),
+			  thrust::make_zip_iterator(
+		            thrust::make_tuple(
+				  this->outputs().begin()           + timeLength * this->size(), 
+				  thrust::counting_iterator<int>(0) + timeLength * this->size())),
+			  fn1);
+			}
+
+		    
 		    }
 		}}
 		
@@ -1035,6 +1127,7 @@ namespace layers{
 	
 	if (m_gamma > 0.0){
 	    (*layersArray)[layersArray->Size() - 1].AddMember("gamma", m_gamma, allocator);
+	    (*layersArray)[layersArray->Size() - 1].AddMember("zeta", m_zeta, allocator);
 	    (*layersArray)[layersArray->Size() - 1].AddMember("fftLength", m_fftLength,
 							      allocator);
 	    (*layersArray)[layersArray->Size() - 1].AddMember("frameLength", m_frameLength,
@@ -1258,6 +1351,10 @@ namespace layers{
 	    if (Configuration::instance().verboseLevel() == OP_VERBOSE_LEVEL_1){
 		std::cerr << m_specError << ", " << m_specError2 << ", " << m_specError3;
 		std::cerr << ", " << m_mseError << ", " << m_kld << ", ";
+		if (m_zeta > 0.0){
+		    std::cerr << m_phaseError << ", " << m_phaseError2 << ", ";
+		    std::cerr << m_phaseError3 << ", ";
+		}
 	    }
 	    return m_specError + m_specError2 + m_specError3;
 	    

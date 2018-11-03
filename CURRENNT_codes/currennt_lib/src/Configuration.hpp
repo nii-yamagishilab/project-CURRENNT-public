@@ -221,6 +221,12 @@ private:
 
     int         m_dataCheckerIdx;
 
+    int         m_batchnorm_genmode;
+    
+
+    /**/
+    real_t      m_f0dataMean_signalgen;
+    real_t      m_f0dataStd_signalgen;
     
     unsigned m_truncSeqLength;
     unsigned m_parallelSequences;
@@ -719,6 +725,10 @@ public:
 
     const real_t& lstmForgetIni() const;
 
+    const real_t& f0dataMean_signalgen() const;
+
+    const real_t& f0dataStd_signalgen() const;
+    
     const int& probDataDim() const;
 
     const std::string& probDataDir() const;
@@ -779,6 +789,8 @@ public:
     const int& waveNetMemSaveFlag() const;
 
     const int& dataCheckerIdx() const;
+
+    const int& batchnorm_genmode() const;
 };
 
 

@@ -71,7 +71,10 @@ namespace layers{
 	real_vector     m_signalStatic;	
 
 	int             m_equalNoiseSinePower;
+	int             m_noiseType;
 
+	int             m_noNoiseInSine;
+	
 	void __loadOpts(const helpers::JsonValue &layerChild);
 	void __setLayerMode();
 	void __allocateLocalMem();

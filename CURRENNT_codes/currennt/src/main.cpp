@@ -525,7 +525,10 @@ int trainerMain(const Configuration &config)
 		}
 		
                 // autosave
-                if (config.autosave()){
+		//  When finished, the last epoch***.autosave will load
+		//  the weights of best_epoch rather than the weights of the last epoch.
+		//  To avoid confusion, the last epoch*** will not be saved here
+                if (config.autosave() && (!finished)){
                     saveState(neuralNetwork,
 			      *optimizer,
 			      infoRows, 
@@ -582,7 +585,7 @@ int trainerMain(const Configuration &config)
 	    }else if (config.printWeightOpt() == 2){
 		// save the trained network to the output file
 		printf("Translate the network in '%s'... ",
-		       config.trainedNetworkFile().c_str());
+		       config.printWeightPath().c_str());
 		saveNetwork(neuralNetwork,
 			    config.printWeightPath(),//config.trainedNetworkFile(), 
 			    config.learningRate(),

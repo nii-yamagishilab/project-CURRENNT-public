@@ -46,6 +46,7 @@
 
 #define STRUCTTRANS_AX_B      1        // Ax + B
 #define STRUCTTRANS_AX_B_WITH_MU_STD 3 // Ax + B with mean and std into consideration
+#define STRUCTTRANS_AX_B_WITH_MU_STD_SHIFT 4 // type 3, with 1 time-step shifted
 #define STRUCTTRANS_DEFAULT   1
 
 #define STRUCTTRANS_AX_B_WITH_MU_STD_STD_FLOOR 0.0000001
@@ -238,6 +239,90 @@ namespace{
 	}
     };
 
+    struct trans_ax_b_with_mean_std_shifted
+    {
+	real_t *abData;
+	real_t *preOut;
+	
+	int dataDim;
+	int preDim;
+	int parallel;
+	
+	const char *patTypes;
+
+	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
+	{
+	    
+	    int outputIdx = t.get<1>();
+	    int timeIdx   = outputIdx / dataDim;
+	    int dimIdx    = outputIdx % dataDim;
+	    int featDim   = dataDim / 3;
+	    
+	    // skip dummy frame (for parallel sentence processing)
+	    if (patTypes != NULL && patTypes[timeIdx] == PATTYPE_NONE)
+		return;
+	    
+	    if (timeIdx < parallel){
+		// the first time block
+
+		if (preDim == dataDim){
+		    t.get<0>() = preOut[t.get<1>()];
+		}else{
+		    
+		    if (dimIdx < featDim){
+			// output dimension
+			t.get<0>() = preOut[timeIdx * preDim + dimIdx];
+		    }else if (dimIdx < featDim * 2){
+			dimIdx = dimIdx - featDim;
+			t.get<0>() = 0;
+		    }else{
+			dimIdx = dimIdx - featDim * 2;
+			t.get<0>() = 1.0;
+		    }
+		}
+	    }else{
+	    
+		if (preDim == dataDim){
+		    // Previous transform layer has mean and std
+		    if (dimIdx < featDim){
+			// output dimension
+			t.get<0>() = (preOut[t.get<1>()] *
+				      exp(abData[(timeIdx - parallel)*2*featDim+featDim+dimIdx])+
+				      abData[(timeIdx - parallel) * 2 * featDim + dimIdx]);
+		    }else if (dimIdx < featDim * 2){
+			// mean part
+			dimIdx = dimIdx - featDim;
+			t.get<0>() = (preOut[t.get<1>()] *
+				      exp(abData[(timeIdx - parallel)*2*featDim+featDim+dimIdx])+
+				      abData[(timeIdx - parallel) * 2 * featDim + dimIdx]);
+		    }else{
+			// std part 
+			dimIdx = dimIdx - featDim * 2;
+			t.get<0>() = (preOut[t.get<1>()] +
+				      abData[(timeIdx - parallel) * 2 * featDim + featDim+dimIdx]);
+		    }
+		    
+		}else{
+		    // Previous transform layer has no mean and std
+		    if (dimIdx < featDim){
+			// output dimension
+			t.get<0>() = (preOut[timeIdx * preDim + dimIdx] *
+				      exp(abData[(timeIdx-parallel)*2*featDim+featDim+dimIdx]) +
+				      abData[(timeIdx-parallel) * 2 * featDim + dimIdx]);
+		    }else if (dimIdx < featDim * 2){
+			// mean part set to 0 * b + a
+			dimIdx = dimIdx - featDim;
+			t.get<0>() = abData[(timeIdx-parallel) * 2 * featDim + dimIdx];
+		    }else{
+			dimIdx = dimIdx - featDim * 2;
+			t.get<0>() = abData[(timeIdx-parallel) * 2 * featDim + featDim + dimIdx];
+		    }
+		}
+	    
+	    }
+		
+	}
+    };
 
     struct trans_ax_b_with_mean_std_grad
     {
@@ -422,6 +507,133 @@ namespace{
 	}
     };
 
+    struct trans_ax_b_with_mean_std_grad_shift
+    {
+	
+	real_t *abData;
+	real_t *abError;
+	
+	real_t *preData;
+	real_t *preError;
+
+	real_t *thisError;
+	
+	int dataDim;
+	int preDim;
+	int featDim;
+	int parallel;
+	
+	bool abFromSkipLayer;
+	bool preFromSkipLayer;
+	
+	const char *patTypes;
+
+	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
+	{
+	    
+	    int outputIdx = t.get<1>();
+	    int timeIdx   = outputIdx / featDim;
+	    int dimIdx    = outputIdx % featDim;
+
+	    real_t grad_a = 0.0;
+	    real_t grad_b = 0.0;
+	    real_t grad_z = 0.0;
+	    real_t grad_u = 0.0;
+	    real_t grad_s = 0.0;
+
+	    real_t scaleVal = 0.0;
+	    
+	    // skip dummy frame (for parallel sentence processing)
+	    if (patTypes != NULL && patTypes[timeIdx] == PATTYPE_NONE){
+		
+		if (!abFromSkipLayer){
+		    if (timeIdx > parallel){
+			abError[(timeIdx - parallel) * featDim * 2 + dimIdx] = 0;
+			abError[(timeIdx - parallel) * featDim * 2 + dimIdx + featDim] = 0;
+		    }
+		}
+		if (!preFromSkipLayer){
+		    if (dataDim == preDim){
+			preError[timeIdx * preDim + dimIdx] = 0; // x data
+			preError[timeIdx * preDim + dimIdx + featDim] = 0; // mean
+			preError[timeIdx * preDim + dimIdx + featDim + featDim] = 0; // std
+		    }else{
+			preError[timeIdx * preDim + dimIdx] = 0;
+		    }
+		}
+		
+	    }else if (timeIdx < parallel){
+
+		grad_z = thisError[timeIdx * dataDim + dimIdx];
+		preError[timeIdx * preDim + dimIdx]               += grad_z;
+		
+	    }else{
+		
+		scaleVal = exp(abData[(timeIdx-parallel) * featDim * 2 + dimIdx + featDim]);
+		
+		// gradient to a
+		// \E/\a = \E/\z + \E/\u
+		grad_a = (thisError[timeIdx * dataDim + dimIdx] +
+			  thisError[timeIdx * dataDim + dimIdx + featDim]);
+
+		// \E/\z = \E/\z * b
+		grad_z = thisError[timeIdx * dataDim + dimIdx] * scaleVal;
+		
+		if (dataDim == preDim){
+		    
+		    // previous transform layer has mean and std
+		    // \E/\b = \E / \z * z + \E / \s * 1/s + \E / \u * u
+		    grad_b = ((thisError[timeIdx * dataDim + dimIdx] *
+			       preData[timeIdx * preDim + dimIdx] *
+			       scaleVal) +
+			      (thisError[timeIdx * dataDim + dimIdx + featDim] *
+			       preData[timeIdx * preDim + dimIdx + featDim] *
+			       scaleVal) +
+			      thisError[timeIdx * dataDim + dimIdx + 2 * featDim]);
+
+		    // \E / \s = \E / \s 
+		    grad_s = thisError[timeIdx * dataDim + dimIdx + featDim * 2];
+
+		    // \E / \u = \E / \u * b
+		    grad_u = thisError[timeIdx * dataDim + dimIdx + featDim] * scaleVal;
+
+		    if (preFromSkipLayer){
+			preError[timeIdx * preDim + dimIdx]               += grad_z;
+			preError[timeIdx * preDim + dimIdx + featDim]     += grad_u;
+			preError[timeIdx * preDim + dimIdx + featDim * 2] += grad_s;
+		    }else{
+			preError[timeIdx * preDim + dimIdx]                = grad_z;
+			preError[timeIdx * preDim + dimIdx + featDim]      = grad_u;
+			preError[timeIdx * preDim + dimIdx + featDim * 2]  = grad_s;
+		    }
+		    
+		}else{
+		    
+		    // previous transform layer has no mean and std
+		    // \E/\b = \E / \z * z + \E / \s * 1 + \E / \u * 0
+		    grad_b = ((thisError[timeIdx * dataDim + dimIdx] *
+			       preData[timeIdx * preDim + dimIdx] *
+			       scaleVal) +
+			      thisError[timeIdx * dataDim + dimIdx + 2 * featDim]);
+
+		    if (preFromSkipLayer){
+			preError[timeIdx * preDim + dimIdx] += grad_z;
+		    }else{
+			preError[timeIdx * preDim + dimIdx] = grad_z;
+		    }
+		}
+		
+		if (abFromSkipLayer){
+		    abError[(timeIdx - parallel) * featDim * 2 + dimIdx + featDim] += grad_b;
+		    abError[(timeIdx - parallel) * featDim * 2 + dimIdx]           += grad_a;
+		}else{
+		    abError[(timeIdx - parallel) * featDim * 2 + dimIdx + featDim] = grad_b;
+		    abError[(timeIdx - parallel) * featDim * 2 + dimIdx]           = grad_a;
+		}
+	    }
+	}
+    };
+
     // 
     struct TimeReverse
     {
@@ -517,7 +729,8 @@ namespace layers{
 	    printf("\n\tStruct transform Ax + B, where A, B from %s, x from %s\n",
 		   this->PreLayers()[0]->name().c_str(), this->PreLayers()[1]->name().c_str());
 	    
-	}else if (m_structTransType == STRUCTTRANS_AX_B_WITH_MU_STD){
+	}else if (m_structTransType == STRUCTTRANS_AX_B_WITH_MU_STD ||
+		  m_structTransType == STRUCTTRANS_AX_B_WITH_MU_STD_SHIFT ){
 	    if (this->size()/3 != this->PreLayers()[0]->size()/2){
 		printf("\nThis layer size: %d, 1st preSkipLayr size should be %d",
 		       this->size(), this->size()/3*2);
@@ -619,6 +832,29 @@ namespace layers{
 	    
 	    fn1.preDim  = this->PreLayers()[1]->size();
 	    fn1.dataDim = this->size();
+
+	    fn1.patTypes = helpers::getRawPointer(this->patTypes());
+
+	    thrust::for_each(
+	         thrust::make_zip_iterator(
+		  thrust::make_tuple(
+			this->outputs().begin(),
+			thrust::counting_iterator<int>(0))),
+		 thrust::make_zip_iterator(
+		  thrust::make_tuple(
+			this->outputs().begin()                 +timeLength * this->size(),
+			thrust::counting_iterator<int>(0)       +timeLength * this->size())),
+		 fn1);
+	
+	    
+	}else if (this->m_structTransType == STRUCTTRANS_AX_B_WITH_MU_STD_SHIFT){
+
+	    internal::trans_ax_b_with_mean_std_shifted fn1;
+	    fn1.abData   = helpers::getRawPointer(this->PreLayers()[0]->outputs());
+	    fn1.preOut   = helpers::getRawPointer(this->PreLayers()[1]->outputs());	
+	    fn1.parallel = this->parallelSequences();
+	    fn1.preDim   = this->PreLayers()[1]->size();
+	    fn1.dataDim  = this->size();
 
 	    fn1.patTypes = helpers::getRawPointer(this->patTypes());
 
@@ -778,6 +1014,54 @@ namespace layers{
 	    fn1.preData  = helpers::getRawPointer(this->PreLayers()[1]->outputs());
 	    fn1.thisError= helpers::getRawPointer(this->outputErrors());
 	    
+	    if (tempLayerAb){
+		fn1.abFromSkipLayer = true;
+		fn1.abError = helpers::getRawPointer(tempLayerAb->outputErrorsFromSkipLayer());
+	    }else{
+		fn1.abFromSkipLayer = false;
+		fn1.abError = helpers::getRawPointer(this->PreLayers()[0]->outputErrors());
+	    }
+	    
+	    // In fact, tempLayerPre must be a skipLayer
+	    if (tempLayerPre){
+		fn1.preFromSkipLayer = true;
+		fn1.preError = helpers::getRawPointer(tempLayerPre->outputErrorsFromSkipLayer());
+	    }else{
+		fn1.preFromSkipLayer = false;
+		fn1.preError = helpers::getRawPointer(this->PreLayers()[1]->outputErrors());
+	    }
+	    
+	    fn1.dataDim = this->size();
+	    fn1.featDim = this->size()/3;
+	    fn1.preDim  = this->PreLayers()[1]->size();
+	    fn1.patTypes = helpers::getRawPointer(this->patTypes());
+
+	    thrust::for_each(
+	      thrust::make_zip_iterator(
+		thrust::make_tuple(
+			this->outputErrors().begin(), 
+			thrust::counting_iterator<int>(0))),
+	      thrust::make_zip_iterator(
+		thrust::make_tuple(
+			this->outputErrors().begin()      + timeLength * this->size()/3, 
+			thrust::counting_iterator<int>(0) + timeLength * this->size()/3)),
+	      fn1);
+
+	    //printf("%s", this->name().c_str());
+	
+
+	}else if (this->m_structTransType == STRUCTTRANS_AX_B_WITH_MU_STD_SHIFT){
+
+	    SkipLayer<TDevice>* tempLayerAb =
+		dynamic_cast<SkipLayer<TDevice>*>(this->PreLayers()[0]);
+	    SkipLayer<TDevice>* tempLayerPre =
+		dynamic_cast<SkipLayer<TDevice>*>(this->PreLayers()[1]);
+	    
+	    internal::trans_ax_b_with_mean_std_grad_shift fn1;
+	    fn1.abData   = helpers::getRawPointer(this->PreLayers()[0]->outputs());
+	    fn1.preData  = helpers::getRawPointer(this->PreLayers()[1]->outputs());
+	    fn1.thisError= helpers::getRawPointer(this->outputErrors());
+	    fn1.parallel = this->parallelSequences();
 	    if (tempLayerAb){
 		fn1.abFromSkipLayer = true;
 		fn1.abError = helpers::getRawPointer(tempLayerAb->outputErrorsFromSkipLayer());

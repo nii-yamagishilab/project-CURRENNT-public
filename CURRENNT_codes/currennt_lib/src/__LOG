@@ -62,3 +62,16 @@ clearAllBuffers and resizeAllBuffers
 #1
 When input is not completely noise, initial mean of StructTransformLayer should
 be read from the clean signal
+
+20181005
+#1
+In Optimizer.cu, the last epoch will restore the best weights
+   // Check status                                      
+   if (m_maxEpochs >= 0 && m_curEpoch >= m_maxEpochs){
+       // it must be finished                           
+       _restoreWeights();
+       m_finished  = true;
+       m_optStatus = "Finished";
+   the weights learned from epoch***.autosave will be covered by the
+   best-weights
+   

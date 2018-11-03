@@ -49,7 +49,6 @@
 #include "layers/SkipParaLayer.hpp"
 #include "layers/MDNLayer.hpp"
 #include "layers/CNNLayer.hpp"
-//#include "layers/LstmLayerCharW.hpp"  // obsolete
 #include "layers/Maxpooling.hpp"
 #include "layers/RnnLayer.hpp"
 #include "layers/ParaLayer.hpp"
@@ -62,6 +61,7 @@
 #include "layers/SignalGenLayer.hpp"
 #include "layers/DistillingLayer.hpp"
 #include "layers/embedding.hpp"
+#include "layers/DFTErrorPostoutputLayer.hpp"
 #include <stdexcept>
 
 
@@ -169,7 +169,7 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
 	     layerType == "rmse"                      || layerType == "ce"  || 
 	     layerType == "wf"                        || layerType == "binary_classification" ||
 	     layerType == "multiclass_classification" || layerType == "mdn" || 
-	     layerType == "kld" ) {
+	     layerType == "kld"                       || layerType == "dft" ) {
         //layers::TrainableLayer<TDevice>* precedingTrainableLayer = 
 	// dynamic_cast<layers::TrainableLayer<TDevice>*>(precedingLayer);
         //if (!precedingTrainableLayer)
@@ -207,6 +207,9 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
 	else if (layerType == "mdn")
 	    return new MDNLayer<TDevice>(layerChild, weightsSection,
 					 *precedingLayer, maxSeqLength, layerID);
+	else if (layerType == "dft")
+	    return new DFTPostoutputLayer<TDevice>(layerChild,
+						   *precedingLayer, maxSeqLength, layerID);
 	
         else // if (layerType == "multiclass_classification")
     	    return new MulticlassClassificationLayer<TDevice>(layerChild,

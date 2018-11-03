@@ -15,7 +15,7 @@ except ImportError:
 
 
 
-def getMeanStd(fileScp, fileDim, stdFloor=0.00001):
+def getMeanStd(fileScp, fileDim, stdFloor=0.00001, f0Feature=0):
     """ Calculate the mean and std from a list of files
     """
     meanBuf = np.zeros([fileDim], dtype=np.float64)
@@ -26,25 +26,42 @@ def getMeanStd(fileScp, fileDim, stdFloor=0.00001):
     with open(fileScp, 'r') as filePtr:
         for idx, fileName in enumerate(filePtr):
             fileName = fileName.rstrip('\n')
-            data = py_rw.read_raw_mat(fileName, fileDim)
-
-            
+            data = py_rw.read_raw_mat(fileName, fileDim)            
                 
             sys.stdout.write('\r')
             sys.stdout.write("%d/%d" % (idx, fileNum))
+
+            if f0Feature and fileDim == 1:
+                # if this is F0 feature, remove unvoiced region
+                data = data[np.where(data>0)]
             
-            for t in xrange(data.shape[0]):
+            # parallel algorithm
+            # https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
+            dataCount = data.shape[0]
+            if len(data.shape) == 1:
+                meanNew = data.mean()
+                stdNew = data.var()
+            else:
+                meanNew = data.mean(axis=0)
+                stdNew = data.var(axis=0)
+                
+            deltaMean = meanNew - meanBuf
+            meanBuf = meanBuf + deltaMean * (float(dataCount) / (timeStep + dataCount))
+            
+            if timeStep == 0:
                 if len(data.shape) == 1:
-                    tmpIn = (data[t]-meanBuf)
-                    meanBuf = meanBuf + tmpIn * 1.0/ (timeStep + t + 1)
-                    stdBuf  = stdBuf  + tmpIn*(data[t] - meanBuf)
+                    stdBuf[0] = stdNew
                 else:
-                    tmpIn = (data[t, :]-meanBuf)
-                    meanBuf = meanBuf + tmpIn * 1.0/ (timeStep + t + 1)
-                    stdBuf  = stdBuf  + tmpIn*(data[t, :] - meanBuf)
+                    stdBuf = stdNew
+            else:
+                stdBuf = (stdBuf * (float(timeStep) / (timeStep + dataCount)) +
+                          stdNew * (float(dataCount)/ (timeStep + dataCount)) +
+                          deltaMean * deltaMean  / (float(dataCount)/timeStep +
+                                                    float(timeStep)/dataCount + 2.0))
+            
             timeStep += data.shape[0]
     sys.stdout.write('\n')
-    stdBuf = np.sqrt(stdBuf/(timeStep-1))
+    stdBuf = np.sqrt(stdBuf)
 
     floorIdx = stdBuf < stdFloor
     stdBuf[floorIdx] = 1.0
@@ -54,7 +71,7 @@ def getMeanStd(fileScp, fileDim, stdFloor=0.00001):
 
     return meanBuf, stdBuf
     
-def getMeanStd_merge(fileScps, fileDims, meanStdOutPath):
+def getMeanStd_merge(fileScps, fileDims, meanStdOutPath, f0Dim=-1):
     assert len(fileScps) == len(fileDims), "len(fileScps) != len(fileDims)"
     
     dimSum  = np.array(fileDims).sum()
@@ -63,7 +80,12 @@ def getMeanStd_merge(fileScps, fileDims, meanStdOutPath):
     dimCount = 0
     for fileScp, fileDim in zip(fileScps, fileDims):
         print "Mean std on %s" % (fileScp)
-        tmpM, tmpV = getMeanStd(fileScp, fileDim)
+        if f0Dim == dimCount:
+            # this is the feature dimension for F0, don't count unvoiced region
+            tmpM, tmpV = getMeanStd(fileScp, fileDim, f0Feature=1)
+        else:
+            tmpM, tmpV = getMeanStd(fileScp, fileDim, f0Feature=0)
+            
         meanStdBuf[dimCount:dimCount+fileDim] = tmpM
         meanStdBuf[(dimSum + dimCount):(dimSum+dimCount+fileDim)]  = tmpV
         dimCount = dimCount + fileDim

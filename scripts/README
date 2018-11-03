@@ -1,18 +1,28 @@
-###########################################################################
+N###########################################################################
+##  CURRENNT scripts      ----------------------------------------------  #
 ## ---------------------------------------------------------------------  #
-##  Scripts for CURRENNT						  #
-## ---------------------------------------------------------------------  #
+##                                                                        #
+##  Copyright (c) 2018  National Institute of Informatics                 #
+##                                                                        #
+##  THE NATIONAL INSTITUTE OF INFORMATICS AND THE CONTRIBUTORS TO THIS    #
+##  WORK DISCLAIM ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING  #
+##  ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT    #
+##  SHALL THE NATIONAL INSTITUTE OF INFORMATICS NOR THE CONTRIBUTORS      #
+##  BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY   #
+##  DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,       #
+##  WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS        #
+##  ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE   #
+##  OF THIS SOFTWARE.                                                     #
 ###########################################################################
-##                         Author:  Xin WANG                              #
-##                         Contact: wangxin@nii.ac.jp                     #
-##                         Date:    2016-05-30                            #
-##                         Updated: 2017-10-29                            #
+##                         Author: Xin Wang                               #
+##                         Date:   2016 - 2018                            #
+##                         Contact: wangxin at nii.ac.jp                  #
 ###########################################################################
 
 ## ----------------------- MESSAGE  ------------------------------------  #
 I use the scripts to train networks for speech synthesis.
 They are not full speech synthesis systems but just the script to train
-neural-network-based acoustic model ! 
+neural-network-based acoustic/waveform model ! 
 
 Some components for specific tasks, e.g. MLPG generation algorithm,
 vocoder for speech-analysis-synthesis, and formant enhancement are removed
@@ -61,8 +71,10 @@ And, the code may be dirty !
  	--version   -> netCDF 4.3.3.1
        
    1.2 Boost  (headers and compiled library) http://www.boost.org
-       The version I use is boost_1_59_0. Just follow the CURRENNT/README to
-       compile Boost
+       The version I use is boost_1_59_0. Although Boost is head-file
+       library, some of the sub-libraries must be compiled.
+       ("program_options system filesystem random thread" in boost should be compiled,
+        ./bootstrap.sh --with-libraries=program_options,filesystem,system,random,thread)
 
    1.3 CUDA > 6.5
        The modified CURRENNT can be compiled with CUDA7.0, 8.0 and 9.0.

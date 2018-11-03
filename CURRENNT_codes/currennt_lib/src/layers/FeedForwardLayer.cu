@@ -32,6 +32,7 @@
 #include "../activation_functions/Identity.cuh"
 #include "../activation_functions/Relu.cuh"
 
+#include "../helpers/misFuncs.hpp"
 #include "../helpers/JsonClasses.hpp"
 #include "../Configuration.hpp"
 #include "../MacroDefine.hpp"
@@ -72,6 +73,35 @@ namespace {
         }
     };
 
+    template <typename TActFn>
+    struct ComputeOutputFn_weightNorm
+    {
+        int     layerSize;
+        real_t  bias;
+	real_t *weightNormFactors;
+        const real_t *biasWeights;
+
+        __host__ __device__ real_t operator() (real_t a, const int &outputIdx) const
+        {
+            // calculate indices
+            int blockIdx = outputIdx % layerSize; 
+
+	    // x * g / |v|
+	    a = a / weightNormFactors[1] * weightNormFactors[0];
+	    
+            // add the bias
+            a += bias * biasWeights[blockIdx];
+
+            // apply the activation function
+            real_t b = TActFn::fn(a);
+
+            // store the activation
+            return b;
+        }
+    };
+
+
+    
     template <typename TActFn>
     struct ComputeDeltaFn
     {
@@ -203,7 +233,49 @@ namespace {
 	}
     };
     
+    struct WeightSqr
+    {
+	__host__ __device__ real_t operator() (const thrust::tuple<const real_t&, int> &t) const
+	{
+	    return t.get<0>() * t.get<0>();
+	}	
+    };
+
+
+    struct WeightNormGGrad
+    {
+	real_t *weightNormFactors;
+	
+	__host__ __device__ real_t operator() (const thrust::tuple<const real_t&, const real_t&> &t) const
+	{
+	    // \partial E / \partial W * V / |V|
+	    return (t.get<0>() * t.get<1>()) / weightNormFactors[1];
+	}	
+    };
+
+    struct WeightNormScaleGradofV
+    {
+	real_t     *weightNormFactors;
+	real_t      gradOfG;
+	
+	__host__ __device__ void operator() (const thrust::tuple<real_t&, const real_t&> &t) const
+	{
+	    // t.get<0>() grad of w
+	    // t.get<1>() v
+	    t.get<0>() = (weightNormFactors[0] / weightNormFactors[1]) *
+		(t.get<0>() - gradOfG  / weightNormFactors[1] * t.get<1>());
+	}
+    };		
     
+    struct WeightNormScaleGradOfInput
+    {
+	real_t     *weightNormFactors;
+	
+	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
+	{
+	    t.get<0>() = t.get<0>() * (weightNormFactors[0] / weightNormFactors[1]);
+	}
+    };		
 
     template <typename TActFn>
     struct ComputeBatchNorm_Transform
@@ -281,6 +353,8 @@ namespace layers {
     int weightForBatchNorm(const helpers::JsonValue &layerChild){
 	if (layerChild->HasMember("batchnorm") && ((*layerChild)["batchnorm"].GetInt()))
 	    return 3; // alpha, mean, std, the bias has been allocated
+	else if (layerChild->HasMember("weightnorm") && ((*layerChild)["weightnorm"].GetInt()))
+	    return 2; // g, |v|, unnecessary memory space will be allocated
 	else
 	    return 0;
     }
@@ -301,7 +375,17 @@ namespace layers {
     {
 	
 	// Initialization for batch normalization
-	m_batchNorm = (weightForBatchNorm(layerChild)>0)? true : false;
+	m_batchNorm = ((layerChild->HasMember("batchnorm") &&
+			((*layerChild)["batchnorm"].GetInt())))? true : false;
+	
+	m_weightNorm = ((layerChild->HasMember("weightnorm") &&
+			((*layerChild)["weightnorm"].GetInt())))? true : false;
+
+	if (m_batchNorm && m_weightNorm){
+	    printf("\n\tBatchnorm & weightnorm cannot be used together in this implementaiton");
+	    printf("\n\tWeightnorm will be turned off");
+	    m_weightNorm = false;
+	}
 	
 	if (m_batchNorm){
 	    // Normalization:
@@ -334,8 +418,15 @@ namespace layers {
 			     this->weights().end(),
 			     0.0);
 	    }
-	    //const Configuration &config = Configuration::instance();
-	    //m_trainFlag = config.trainingMode();
+	    const Configuration &config = Configuration::instance();
+	    m_batchNormGenUseTrainMV = config.batchnorm_genmode();
+
+	    if (m_batchNormGenUseTrainMV)
+		printf("\tBatchnorm will use training data mean/std in generation stage\n");
+	    
+	}
+	if (m_weightNorm){
+	    printf("\n\tWeightnorm is used\n");
 	}
 
 	this->__allocateLocalMem();
@@ -405,49 +496,7 @@ namespace layers {
 	if (this->getSaveMemoryFlag())
 	    throw std::runtime_error("Memory save mode should be turned off");
 	
-	// Fine, I am lazy to merge the code
-	if (!m_batchNorm){
-	    
-	    // The conventional feedforward part
-	    // collect outputs from preceding layer
-	    {{
-            helpers::Matrix<TDevice> weightsMatrix  (&this->weights(),                  
-						     this->precedingLayer().size(), this->size());
-	    
-	    
-            helpers::Matrix<TDevice> plOutputsMatrix(&this->precedingLayer().outputs(), 
-						     this->precedingLayer().size(), 
-						     this->curMaxSeqLength() * 
-						     this->parallelSequences());
-
-            helpers::Matrix<TDevice> outputsMatrix  (&this->_outputs(),                 
-						     this->size(),                  
-						     this->curMaxSeqLength() * 
-						     this->parallelSequences());
-
-            outputsMatrix.assignProduct(weightsMatrix, true, plOutputsMatrix, false);
-	    }}
-
-	    
-	    // calculate the outputs of the layer
-	    {{
-            internal::ComputeOutputFn<TActFn> fn;
-            fn.layerSize        = this->size();
-            fn.bias             = this->bias();
-            fn.biasWeights      = (helpers::getRawPointer(this->weights()) + 
-				   this->size() * this->precedingLayer().size());
-
-            thrust::transform(
-                this->_outputs().begin(),
-                (this->_outputs().begin() + 
-		 this->curMaxSeqLength() * this->parallelSequences() * this->size()),
-                thrust::counting_iterator<int>(0),
-                this->_outputs().begin(),
-                fn
-                );
-	   }}
-	    
-	}else{
+	if (m_batchNorm){
 	    // if batch normalization is used
 	    int transMatrixWeightNum = this->size() * this->precedingLayer().size();
 	    
@@ -577,9 +626,15 @@ namespace layers {
 	       fn2.meanStd   = helpers::getRawPointer(this->m_stats);
 	       fn2.meanStdBuf= (helpers::getRawPointer(this->weights()) +
 				transMatrixWeightNum + this->size() * 2);
-	       //fn2.trainFlag = (this->flagTrainingMode() && (nnState == NN_STATE_GAN_NOGAN_TRAIN));
 
-	       fn2.trainFlag = true;
+	       if (this->flagTrainingMode() && (nnState == NN_STATE_GAN_NOGAN_TRAIN))
+		   fn2.trainFlag = true;
+	       else if (m_batchNormGenUseTrainMV == 0)
+		   fn2.trainFlag = true;
+	       else 
+		   fn2.trainFlag = false;
+	       
+	       //fn2.trainFlag = true;
 	       // Note: batchnorm here always assume this->m_outNormed (one or multiple sequences)
 	       //  as a single batch. Thus in this computeForwardPass() mode, the data in the batch
 	       //  are all visiable. Thus, normalization can be directly conducted on the input
@@ -599,6 +654,112 @@ namespace layers {
 		fn2);
 
 	    }}
+	}else if (m_weightNorm){
+	    int weight_size = this->precedingLayer().size() * this->size();
+		
+	    // Compute |v|
+	    {{
+			
+		internal::WeightSqr fn0;
+		m_weightNormVal  = thrust::transform_reduce(
+				thrust::make_zip_iterator(
+				    thrust::make_tuple(
+					this->weights().begin(), 
+					thrust::counting_iterator<int>(0))),
+				thrust::make_zip_iterator(
+				    thrust::make_tuple(
+					this->weights().begin()           + weight_size, 
+					thrust::counting_iterator<int>(0) + weight_size)),
+				fn0, (real_t)0.0, thrust::plus<real_t>());
+		m_weightNormVal = std::sqrt(m_weightNormVal);
+		
+		thrust::fill(this->weights().begin() + weight_size + this->size() + 1,
+			     this->weights().begin() + weight_size + this->size() + 2,
+			     m_weightNormVal);
+	    }}
+
+	    
+	    // The conventional feedforward part
+	    // collect outputs from preceding layer
+	    {{
+            helpers::Matrix<TDevice> weightsMatrix  (&this->weights(),                  
+						     this->precedingLayer().size(), this->size());
+	    
+	    
+            helpers::Matrix<TDevice> plOutputsMatrix(&this->precedingLayer().outputs(), 
+						     this->precedingLayer().size(), 
+						     this->curMaxSeqLength() * 
+						     this->parallelSequences());
+
+            helpers::Matrix<TDevice> outputsMatrix  (&this->_outputs(),                 
+						     this->size(),                  
+						     this->curMaxSeqLength() * 
+						     this->parallelSequences());
+
+            outputsMatrix.assignProduct(weightsMatrix, true, plOutputsMatrix, false);
+	    }}
+
+	    
+	    // calculate the outputs of the layer
+	    {{
+            internal::ComputeOutputFn_weightNorm<TActFn> fn;
+            fn.layerSize        = this->size();
+            fn.bias             = this->bias();
+	    fn.weightNormFactors= (helpers::getRawPointer(this->weights()) + 
+				   this->size() * this->precedingLayer().size() + this->size());
+            fn.biasWeights      = (helpers::getRawPointer(this->weights()) + 
+				   this->size() * this->precedingLayer().size());
+
+            thrust::transform(
+                this->_outputs().begin(),
+                (this->_outputs().begin() + 
+		 this->curMaxSeqLength() * this->parallelSequences() * this->size()),
+                thrust::counting_iterator<int>(0),
+                this->_outputs().begin(),
+                fn);
+	   }}
+		
+	}else{
+	    
+	    // The conventional feedforward part
+	    // collect outputs from preceding layer
+	    {{
+            helpers::Matrix<TDevice> weightsMatrix  (&this->weights(),                  
+						     this->precedingLayer().size(), this->size());
+	    
+	    
+            helpers::Matrix<TDevice> plOutputsMatrix(&this->precedingLayer().outputs(), 
+						     this->precedingLayer().size(), 
+						     this->curMaxSeqLength() * 
+						     this->parallelSequences());
+
+            helpers::Matrix<TDevice> outputsMatrix  (&this->_outputs(),                 
+						     this->size(),                  
+						     this->curMaxSeqLength() * 
+						     this->parallelSequences());
+
+            outputsMatrix.assignProduct(weightsMatrix, true, plOutputsMatrix, false);
+	    }}
+
+	    
+	    // calculate the outputs of the layer
+	    {{
+            internal::ComputeOutputFn<TActFn> fn;
+            fn.layerSize        = this->size();
+            fn.bias             = this->bias();
+            fn.biasWeights      = (helpers::getRawPointer(this->weights()) + 
+				   this->size() * this->precedingLayer().size());
+
+            thrust::transform(
+                this->_outputs().begin(),
+                (this->_outputs().begin() + 
+		 this->curMaxSeqLength() * this->parallelSequences() * this->size()),
+                thrust::counting_iterator<int>(0),
+                this->_outputs().begin(),
+                fn
+                );
+	   }}
+	    
 	}
 	
 	// done
@@ -671,8 +832,13 @@ namespace layers {
 	      fn2);
 	    }}
 	    
-	}else{
+	}else if (m_weightNorm){
+
+	    printf("Not implemented for weightNorm");
 	    
+	}else{
+	    // weight norm mode
+	    //  assume weight has been normalized in the training stage
 	    // normal mode
 	    
 	    // collect outputs from preceding layer
@@ -719,31 +885,32 @@ namespace layers {
     {
 	if (this->getSaveMemoryFlag())
 	    throw std::runtime_error("Memory save mode should be turned off");
+
+	int maxFrameNum          = this->curMaxSeqLength() * this->parallelSequences();
+	int maxDataNum           = maxFrameNum * this->size();
+	int transMatrixWeightNum = this->size() * this->precedingLayer().size();
 	
+	thrust::fill(this->_weightUpdates().begin(), this->_weightUpdates().end(), 0.0);
+ 
 	// compute deltas
 	{{
             internal::ComputeDeltaFn<TActFn> fn;
 
-            int n = this->curMaxSeqLength() * this->parallelSequences() * this->size();
-
             thrust::for_each(
                thrust::make_zip_iterator(
-		  thrust::make_tuple(this->outputErrors().begin(),   this->outputs().begin())),
+		  thrust::make_tuple(this->outputErrors().begin(),
+				     this->outputs().begin())),
 	       thrust::make_zip_iterator(
-		  thrust::make_tuple(this->outputErrors().begin()+n, this->outputs().begin()+n)),
+		  thrust::make_tuple(this->outputErrors().begin() + maxDataNum,
+				     this->outputs().begin()      + maxDataNum)),
                 fn);
 	}}
 
+	// For batch-normalization, calculate the gradients w.r.t. gamma, beta, Wx+b
 	if (m_batchNorm) {
-	    // for batch normalization
-	    int maxFrameNum          = this->curMaxSeqLength() * this->parallelSequences();
-	    int maxDataNum           = maxFrameNum * this->size();
-	    int transMatrixWeightNum = this->size() * this->precedingLayer().size();
 
 	    thrust::fill(m_oneVector.begin(),            m_oneVector.end(),            1.0);
 	    thrust::fill(m_buff.begin(),                 m_buff.end(),                 0.0);
-	    thrust::fill(this->_weightUpdates().begin(), this->_weightUpdates().end(), 0.0);
-	    
 	    
 	    // Step1. Calculate \deltaE/\delta{\alpha}
 	    internal::PrepareGrad fn1;
@@ -803,13 +970,11 @@ namespace layers {
 			thrust::make_tuple(m_outNormed.begin() + maxDataNum, 
 					   thrust::counting_iterator<int>(0) + maxDataNum)),
 		fn2);
-
 	}
-
 	
-	// back-propagate the error to the preceding layer
+	
+	// Back-propagate the error to the preceding layer
 	{{
-
 	    // why only to Trainablelayer?
 		//            TrainableLayer<TDevice> *pl = 
 		// dynamic_cast<TrainableLayer<TDevice>*>(&this->precedingLayer());
@@ -834,37 +999,26 @@ namespace layers {
 		printf("\nGradients cannot be propagated after %s. ", this->name().c_str());
 		throw std::runtime_error("Backpropagation error");
 	    }
-	    /* This part is merged with the above part since pl is a general layer pointer
-	    else{
-		//Add 16-02-22 Wang: for WE updating 
-		// If the input layer will udpate the word vectors
-		// we need to propagate the errors back to the input layer
-		// Add 17-05-01 for MiddleoutputLayer
-		Layer<TDevice> *pl2 = dynamic_cast<Layer<TDevice>*>(&this->precedingLayer());
-		if (this->precedingLayer().inputWeUpdate() ||
-		    this->precedingLayer().type() == "middleoutput" ||
-		    this->precedingLayer().type() == "featmatch"){
-		    helpers::Matrix<TDevice> weightsMatrix (&this->weights(),      
-							    pl2->size(),  
-							    this->size());
-
-		    helpers::Matrix<TDevice> plErrorsMatrix(&pl2->outputErrors(),  
-							    pl2->size(),  
-							    this->curMaxSeqLength() * 
-							    this->parallelSequences());
-
-		    helpers::Matrix<TDevice> deltasMatrix  (&this->outputErrors(), 
-							    this->size(), 
-							    this->curMaxSeqLength() * 
-							    this->parallelSequences());
-		    plErrorsMatrix.assignProduct(weightsMatrix, false, deltasMatrix, false);
-		}else{
-		    printf("\nGradients cannot be propagated after %s. ", this->name().c_str());
-		    throw std::runtime_error("Backpropagation error");
-		}
-		}*/
+	    
+	    if (m_weightNorm){
+		internal::WeightNormScaleGradOfInput fn2;
+		fn2.weightNormFactors= (helpers::getRawPointer(this->weights()) + 
+					transMatrixWeightNum + this->size());
+		
+		thrust::for_each(thrust::make_zip_iterator(
+				    thrust::make_tuple(
+					pl->outputErrors().begin(), 
+					thrust::counting_iterator<int>(0))),
+				thrust::make_zip_iterator(
+				    thrust::make_tuple(
+					pl->outputErrors().begin()        + maxDataNum, 
+					thrust::counting_iterator<int>(0) + maxDataNum)),
+				 fn2);
+	    }
+	    
 	}}
 
+	
 	// compute the input weight updates
 	{{
             helpers::Matrix<TDevice> weightUpdatesMatrix(&this->_weightUpdates(),           
@@ -884,7 +1038,52 @@ namespace layers {
             weightUpdatesMatrix.assignProduct(plOutputsMatrix, false, deltasMatrix, true);
 	}}
 
-	if (!m_batchNorm){
+	
+	if (m_batchNorm){
+	    // there is no bias part
+	    
+	}else{
+	    
+	    if (m_weightNorm){
+	       // gradient to scaling factor G
+	       internal::WeightNormGGrad fn1;
+	       fn1.weightNormFactors= (helpers::getRawPointer(this->weights()) + 
+				       transMatrixWeightNum + this->size());
+
+	       m_weightNormGrad = thrust::transform_reduce(
+				thrust::make_zip_iterator(
+				    thrust::make_tuple(
+					this->_weightUpdates().begin(), 
+					this->weights().begin())),
+				thrust::make_zip_iterator(
+				    thrust::make_tuple(
+					this->_weightUpdates().begin() + transMatrixWeightNum, 
+					this->weights().begin()        + transMatrixWeightNum)),
+				fn1, (real_t)0.0, thrust::plus<real_t>());
+
+
+	       thrust::fill(this->_weightUpdates().begin()+transMatrixWeightNum+this->size(),
+			    this->_weightUpdates().begin()+transMatrixWeightNum+this->size()+1,
+			    m_weightNormGrad);
+
+	       
+	       internal::WeightNormScaleGradofV fn2;
+	       fn2.weightNormFactors= (helpers::getRawPointer(this->weights()) + 
+				       transMatrixWeightNum + this->size());
+	       fn2.gradOfG = m_weightNormGrad;
+	       
+	       thrust::for_each(thrust::make_zip_iterator(
+				    thrust::make_tuple(
+					this->_weightUpdates().begin(), 
+					this->weights().begin())),
+				thrust::make_zip_iterator(
+				    thrust::make_tuple(
+					this->_weightUpdates().begin() + transMatrixWeightNum, 
+					this->weights().begin()        + transMatrixWeightNum)),
+				fn2);
+	       
+	    }
+	    
 	    // compute the bias weight updates
 	    {{
             internal::ComputeBiasWeightUpdateFn fn;
@@ -897,22 +1096,11 @@ namespace layers {
                 thrust::counting_iterator<int>(0),
                 thrust::counting_iterator<int>(0) + this->size(),
                 this->_weightUpdates().begin() + this->precedingLayer().size() * this->size(),
-                fn
-                );
+                fn);
 	    }}
 	}
-	/* Gradient averaging ?
-	      if (this->_optOpt()){
-	      {{
-	      internal::GradientAverage fn;
-	      fn.timeStep = (real_t)(this->curMaxSeqLength() * this->parallelSequences());
-	      fn.gradients= helpers::getRawPointer(this->_weightUpdates());		
-	      thrust::for_each(
-	      thrust::counting_iterator<int>(0),
-	      thrust::counting_iterator<int>(0) + this->_weightUpdates().size(),
-	      fn);
-	      }}
-	      }*/
+
+	// #2018101202
     }
 
     template <typename TDevice, typename TActFn>
@@ -921,7 +1109,13 @@ namespace layers {
 	const helpers::JsonAllocator &allocator) const
     {
         TrainableLayer<TDevice>::exportLayer(layersArray, allocator);
-        (*layersArray)[layersArray->Size() - 1].AddMember("batchnorm", (int)m_batchNorm, allocator);
+	if (m_batchNorm)
+	    (*layersArray)[layersArray->Size() - 1].AddMember("batchnorm",
+							      (int)m_batchNorm, allocator);
+	if (m_weightNorm)
+	    (*layersArray)[layersArray->Size() - 1].AddMember("weightnorm",
+							      (int)m_weightNorm, allocator);
+	
     }
 
 
@@ -983,3 +1177,51 @@ namespace layers {
     template class FeedForwardLayer<Gpu, activation_functions::Relu>;
 
 } // namespace layers
+
+
+
+
+// #2018101201
+	    /* This part is merged with the above part since pl is a general layer pointer
+	    else{
+		//Add 16-02-22 Wang: for WE updating 
+		// If the input layer will udpate the word vectors
+		// we need to propagate the errors back to the input layer
+		// Add 17-05-01 for MiddleoutputLayer
+		Layer<TDevice> *pl2 = dynamic_cast<Layer<TDevice>*>(&this->precedingLayer());
+		if (this->precedingLayer().inputWeUpdate() ||
+		    this->precedingLayer().type() == "middleoutput" ||
+		    this->precedingLayer().type() == "featmatch"){
+		    helpers::Matrix<TDevice> weightsMatrix (&this->weights(),      
+							    pl2->size(),  
+							    this->size());
+
+		    helpers::Matrix<TDevice> plErrorsMatrix(&pl2->outputErrors(),  
+							    pl2->size(),  
+							    this->curMaxSeqLength() * 
+							    this->parallelSequences());
+
+		    helpers::Matrix<TDevice> deltasMatrix  (&this->outputErrors(), 
+							    this->size(), 
+							    this->curMaxSeqLength() * 
+							    this->parallelSequences());
+		    plErrorsMatrix.assignProduct(weightsMatrix, false, deltasMatrix, false);
+		}else{
+		    printf("\nGradients cannot be propagated after %s. ", this->name().c_str());
+		    throw std::runtime_error("Backpropagation error");
+		}
+		}*/
+
+// #2018101202
+	/* Gradient averaging ?
+	      if (this->_optOpt()){
+	      {{
+	      internal::GradientAverage fn;
+	      fn.timeStep = (real_t)(this->curMaxSeqLength() * this->parallelSequences());
+	      fn.gradients= helpers::getRawPointer(this->_weightUpdates());		
+	      thrust::for_each(
+	      thrust::counting_iterator<int>(0),
+	      thrust::counting_iterator<int>(0) + this->_weightUpdates().size(),
+	      fn);
+	      }}
+	      }*/

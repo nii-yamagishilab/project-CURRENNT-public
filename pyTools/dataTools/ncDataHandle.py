@@ -646,7 +646,7 @@ def bmat2nc_sub1(fileScp, outputfile, maskFile=None, flushT=300, waitT=30):
                     data = np.zeros([seqFrame, dim])
                 else:
                     data = py_rw.read_raw_mat(datafile, dim)
-                assert (data.shape[0]-seqFrame)<seqFrame*0.1, \
+                assert (data.shape[0]-seqFrame)<seqFrame*0.3, \
                     errorMes([datafile], 3) + "This data has less number of frames" % (datafile)
                 if dim==1 and data.ndim==1:
                     #data = data[0:seqFrame]

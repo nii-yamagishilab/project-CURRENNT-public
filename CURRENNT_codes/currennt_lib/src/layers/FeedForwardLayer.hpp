@@ -41,8 +41,14 @@ namespace layers {
 	typedef typename TDevice::int_vector  int_vector;
 	typedef typename TDevice::bool_vector bool_vector;
 	typedef typename TDevice::pattype_vector pattype_vector;
-
+	
 	bool m_batchNorm;            // whether to use batch normalization
+	int  m_batchNormGenUseTrainMV;
+
+	bool m_weightNorm;
+	real_t      m_weightNormVal;
+	real_t      m_weightNormGrad;
+	
 	real_vector m_stats;         // mean and variance of each batch
 	real_vector m_outNormed;     // normed data output without being scaled
 	

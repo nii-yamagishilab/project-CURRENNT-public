@@ -64,8 +64,13 @@
 
 #define PI_DEFINITION 3.141592654f
 
+#define NN_SIGGEN_LAYER_NOISE_UNIFORM  1 // uniform noise
+#define NN_SIGGEN_LAYER_NOISE_GAUSSIAN 2 // Gaussian noise
+
+#define NN_SIGGEN_NOISE_FLOOR 0.000001
 namespace internal{
-namespace{    
+namespace{
+    
     struct genNoise
     {
 	float a, b;
@@ -84,6 +89,23 @@ namespace{
 	}
     };
 
+    struct genNoise_Gaussian
+    {
+	float a, b;
+	int   seed;
+	
+	__host__ __device__
+	genNoise_Gaussian(float _a=-1.f, float _b=1.f, int _seed=123) : a(_a), b(_b), seed(_seed) {};
+
+	__host__ __device__
+	float operator()(const unsigned int n) const
+	{
+	    thrust::default_random_engine rng(seed);
+	    thrust::normal_distribution<float> dist(a, b);
+	    rng.discard(n);
+	    return dist(rng);
+	}
+    };
         
     struct sinWaveGenerator_accum
     {
@@ -114,7 +136,8 @@ namespace{
 	
 	int parallel;
 	int HmnNum;
-       
+	int noNoiseInSince;
+	
 	real_t *targetData;
 	real_t *sourceData;
 	real_t *genSignalBuff;
@@ -204,7 +227,12 @@ namespace{
 			genSignalBuff[timeIdxPhy * phaseCandNum + dimIdx] = sigValue;
 		    else
 			HmnBuff[timeIdxPhy * hnmNum + (dimIdx - phaseCandNum)] = sigValue;
-		    
+
+		    // if necessary, set the noise in voiced regions to zero
+		    if (noNoiseInSince)
+			if (dimIdx < (hnmNum + 1))
+			    addtiveNoise[timeIdxPhy * (hnmNum + 1) + dimIdx] = 0.0;
+			
 		}else{
 		    // for unvoiced segment, keep the initial phase, set data = 0
 		    spPhase = initPhase;
@@ -394,6 +422,7 @@ namespace layers{
 	, m_freqDataS  (0)
 	, m_targetLayer(NULL)
 	, m_equalNoiseSinePower (0)
+	, m_noiseType  (NN_SIGGEN_LAYER_NOISE_UNIFORM)
     {
 	// load options
 	this->__loadOpts(layerChild);
@@ -415,9 +444,11 @@ namespace layers{
     {
 	// Read flags
 	m_freqDim = (layerChild->HasMember("frequencyDim")?
-		    static_cast<real_t>((*layerChild)["frequencyDim"].GetInt()) : -1);
+		     static_cast<real_t>((*layerChild)["frequencyDim"].GetInt()) :
+		     this->precedingLayer().size()-1);
 	m_freqOpt = (layerChild->HasMember("frequencyOpt")?
-		     static_cast<real_t>((*layerChild)["frequencyOpt"].GetInt()) : -1);
+		     static_cast<real_t>((*layerChild)["frequencyOpt"].GetInt()) :
+		     NN_OPE_FREGEN_F0_PF0);
 	m_freqSR  = (layerChild->HasMember("frequencySR")?
 		     static_cast<real_t>((*layerChild)["frequencySR"].GetDouble()) : -1);
 	m_freqQF0min = (layerChild->HasMember("frequencyQF0min")?
@@ -441,14 +472,52 @@ namespace layers{
 	m_phaseNoiseMag = (layerChild->HasMember("phaseNoiseMag") ? 
 			   static_cast<real_t>((*layerChild)["phaseNoiseMag"].GetDouble()):0.0);
 	m_equalNoiseSinePower = (layerChild->HasMember("equalNoiseSinePower") ? 
-			   static_cast<real_t>((*layerChild)["equalNoiseSinePower"].GetInt()):0.0);
+			   static_cast<real_t>((*layerChild)["equalNoiseSinePower"].GetInt()):1.0);
+	m_noiseType = (layerChild->HasMember("noiseType") ? 
+			   static_cast<real_t>((*layerChild)["noiseType"].GetInt()):
+		       NN_SIGGEN_LAYER_NOISE_UNIFORM);
+
+	m_noNoiseInSine = (layerChild->HasMember("noNoiseInSine") ? 
+			   static_cast<real_t>((*layerChild)["noNoiseInSine"].GetInt()):0);
+
+	
+	const Configuration &config = Configuration::instance();
+	if (config.f0dataMean_signalgen() > 0)
+	    m_freqDataM = config.f0dataMean_signalgen();
+	if (config.f0dataStd_signalgen() > 0)
+	    m_freqDataS = config.f0dataStd_signalgen();
+
+	printf("\n\tSource module info:\n");
+	printf("\n\tTake the %d-th dimension of previous layer's output as F0:\n", m_freqDim);
+	if (m_freqOpt == NN_OPE_FREGEN_F0_LF0)
+	    printf("\n\tInput F0 is log-F0. ");
+	else if (m_freqOpt == NN_OPE_FREGEN_F0_QF0)
+	    printf("\n\tInput F0 is quantized F0. ");
+	else if (m_freqOpt == NN_OPE_FREGEN_F0_PF0)
+	    printf("\n\tInput F0 is linear F0. ");
+	else
+	    throw std::runtime_error("Unknown F0 input type (frequencyOpt)");
+	printf("Denormalize F0 using mean/std: %f %f.", m_freqDataM, m_freqDataS);
+	printf("\n\tSine wave magnitude %f", m_freqSignalMag);
+	printf("\n\tSine wave harmonics %d", m_freqHmn);
+	if (m_freqBins)
+	    printf("\n\tSine wave used phase match in training");
+	if (m_noNoiseInSine)
+	    printf("\n\tSine wave will have no additive noise");
+
+	// otherwise, m_equalNoiseSinePower will lead to nan in sinWaveGenerator_accum
+	if (m_noiseMag < NN_SIGGEN_NOISE_FLOOR && m_equalNoiseSinePower){
+	    m_noiseMag = NN_SIGGEN_NOISE_FLOOR;
+	    printf("\n\tNoise magnitude is floored to %f in voiced region", m_noiseMag);
+	}
+	
     }
 
     template <typename TDevice>
     void SignalGenLayer<TDevice>::__setLayerMode()
     {
 	// check layer mode
-	if (m_freqDim > 0){
+	if (m_freqDim >= 0){
 	    if (m_freqDim >= this->precedingLayer().size())
 		throw std::runtime_error("frequencyDim is larger than previous layer size");    
 	    if (m_freqDim >= 0 && m_freqSR < 1)
@@ -541,12 +610,20 @@ namespace layers{
 		(*layersArray)[layersArray->Size() - 1].AddMember("frequencyHarmonics", m_freqHmn,
 								  allocator);
 	    }
+	    if (m_noNoiseInSine)
+		(*layersArray)[layersArray->Size() - 1].AddMember("noNoiseInSine", m_noNoiseInSine,
+								  allocator);
+
 	}
 	(*layersArray)[layersArray->Size() - 1].AddMember("frequencyDim",      m_freqDim,
 							  allocator);
 	
 	(*layersArray)[layersArray->Size() - 1].AddMember("frequencyNoiseMag", m_noiseMag,
 							  allocator);
+
+	if (m_noiseType != NN_SIGGEN_LAYER_NOISE_UNIFORM)
+	    (*layersArray)[layersArray->Size() - 1].AddMember("noiseType", m_noiseType,
+							      allocator);
 
 	(*layersArray)[layersArray->Size() - 1].AddMember("phaseNoiseMag",     m_phaseNoiseMag,
 							  allocator);
@@ -584,13 +661,22 @@ namespace layers{
 
 	thrust::fill(this->outputs().begin(), this->outputs().end(), 0.0);
 		
-	// generate noise 
+	// generate noise
 	thrust::counting_iterator<unsigned int> index_sequence_begin(0);
-	thrust::transform(index_sequence_begin,
-			  index_sequence_begin + timeLength * signalDimTotal,
-			  m_noiseInput.begin(),
-			  internal::genNoise(-1.0 * m_noiseMag, m_noiseMag,
-					     (int)(misFuncs::GetRandomNumber()*10000.0)));
+	if (m_noiseType == NN_SIGGEN_LAYER_NOISE_GAUSSIAN){
+	    thrust::transform(index_sequence_begin,
+			      index_sequence_begin + timeLength * signalDimTotal,
+			      m_noiseInput.begin(),
+			      internal::genNoise_Gaussian(0.0, m_noiseMag/3.0,
+				(int)(misFuncs::GetRandomNumber()*10000.0)));
+	}else{
+	    thrust::transform(index_sequence_begin,
+			      index_sequence_begin + timeLength * signalDimTotal,
+			      m_noiseInput.begin(),
+			      internal::genNoise(-1.0 * m_noiseMag, m_noiseMag,
+						 (int)(misFuncs::GetRandomNumber()*10000.0)));
+	}
+
 
 	if (m_phaseNoiseMag > 0.0){
 	    thrust::transform(index_sequence_begin,
@@ -600,6 +686,7 @@ namespace layers{
 						 (int)(misFuncs::GetRandomNumber()*10000.0)));
 	}else{
 	    thrust::fill(m_phaseNoise.begin(), m_phaseNoise.end(), 0.0);
+	    
 	}	
 
 	// generate signal
@@ -637,6 +724,7 @@ namespace layers{
 
 		fn1.f0Mag         = this->m_freqSignalMag;
 		fn1.addtiveNoiseMag= this->m_noiseMag;
+		fn1.noNoiseInSince = m_noNoiseInSine;
 		fn1.parallel       = this->parallelSequences();
 		fn1.genSignalBuff  = helpers::getRawPointer(this->outputs());
 		fn1.sourceData     = helpers::getRawPointer(this->precedingLayer().outputs());
@@ -697,7 +785,7 @@ namespace layers{
 
 		fn1.f0Mag         = this->m_freqSignalMag;
 		fn1.addtiveNoiseMag= this->m_noiseMag;
-		
+		fn1.noNoiseInSince = m_noNoiseInSine;		
 		fn1.HmnNum         = this->m_freqHmn;
 		
 		fn1.parallel       = this->parallelSequences();
