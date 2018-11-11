@@ -75,6 +75,7 @@ def createMdnConfig(mdnConfigFile, MDNType, MDNTargetDim, ARDynamic=None, tieVar
         elif mdnConfig < 0:
             assert mdntarDim[1]-mdntarDim[0]==1, "Softmax to 1 dimension targert"
             tmp = tmp + 1
+            mdnConfig = -1 # change it back to -1
         else:
             tmp = tmp + tmp2
         mdnconfigdata[(idx*5+1):((idx+1)*5+1)] = [mdnoutDim[0],mdnoutDim[1],
@@ -114,6 +115,16 @@ def modifyNetworkFile(inputNetwork, inputSize, outputSize, mdnconfig, outputPath
     
     
 if __name__ == "__main__":
-    pass
+    
+    # 
+    mdn_output_path = sys.argv[1]
+    template = sys.argv[2]
+    
+    if template == 'wavenet-mu-law':
+        # generate a template file wavenet-mu-law mdn.config
+        bit_num = int(sys.argv[3])
+        createMdnConfig(mdn_output_path, [-1 * np.power(2, bit_num)], [[0, 1]])
+    else:
+        print "template option is unknown: %s" % (template)
     
     
