@@ -2,6 +2,8 @@
 
 ##############################
 #
+from __future__ import absolute_import
+from __future__ import print_function
 import numpy as np
 
 import re
@@ -20,11 +22,11 @@ except ImportError:
     try:
         from binaryTools import readwriteC2_220 as funcs
     except ImportError:
-        print "Please add ~/CODE/pyTools to PYTHONPATH"
+        print("Please add ~/CODE/pyTools to PYTHONPATH")
         try: 
             from ioTools import readwrite as funcs
         except ImportError:
-            print "Can't not import binaryTools/readwriteC2 or funcs"
+            print("Can't not import binaryTools/readwriteC2 or funcs")
 
 def F0Transform(data):
     #data_out = (np.exp(data/1127.0)-1)*700
@@ -134,30 +136,30 @@ def RMSECal(scp1, dim, g_resolu, g_escape):
     errorSum[fileNM,:] = errorSum[0:fileNM,:].mean(axis=0)
     corrStack = np.array(corrStack)
     if dim==1:
-        print "RMSE: %f\tCor: %f\t VU:%f\t" % (
+        print("RMSE: %f\tCor: %f\t VU:%f\t" % (
             errorSum[fileNM,0], 
             corrStack.mean(), 
-            errorSum[fileNM,1]),
+            errorSum[fileNM,1]), end=' ')
         #print "Corre: %f\t" % ()
         corrStack = np.concatenate((corrStack, np.array([corrStack.mean()])))
         corrStack = np.expand_dims(corrStack, axis=1)
         errorSum = np.concatenate((errorSum, corrStack), axis=1)
     else:
-        print "RMSE: %f\t" % (errorSum[fileNM,0]),
+        print("RMSE: %f\t" % (errorSum[fileNM,0]), end=' ')
     return errorSum
 
 def showRMSE(dim, rmseFile):
     if dim == 1:
         # F0
         data = funcs.read_raw_mat(rmseFile, 3)
-        print "RMSE: %f\tCor: %f\t VU:%f\t" % (
+        print("RMSE: %f\tCor: %f\t VU:%f\t" % (
             data[-1,0], 
             data[-1,2], 
-            data[-1,1]),
+            data[-1,1]), end=' ')
     else:
         # MGC
         data = funcs.read_raw_mat(rmseFile, dim+1)
-        print "RMSE: %f\t" % (data[-1,-1]),
+        print("RMSE: %f\t" % (data[-1,-1]), end=' ')
         
     
 if __name__ == "__main__":

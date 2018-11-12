@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+from __future__ import absolute_import
 from ioTools import readwrite as py_rw
 import numpy as np
 import multiprocessing

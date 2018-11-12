@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+from __future__ import print_function
 class pyToolsDcolors:
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
@@ -16,8 +17,8 @@ def self_print(message, opt):
         
     """
     if opt == 'warning':
-        print pyToolsDcolors.WARNING + message + pyToolsDcolors.ENDC
+        print(pyToolsDcolors.WARNING + message + pyToolsDcolors.ENDC)
     elif opt == 'highlight':
-        print pyToolsDcolors.OKGREEN + message + pyToolsDcolors.ENDC
+        print(pyToolsDcolors.OKGREEN + message + pyToolsDcolors.ENDC)
     else:
-        print message
+        print(message)

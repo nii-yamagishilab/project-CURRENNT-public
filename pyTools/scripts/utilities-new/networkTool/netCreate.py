@@ -1,5 +1,7 @@
 #!/usr/bin/python
 
+from __future__ import absolute_import
+from __future__ import print_function
 import os
 import sys
 import json
@@ -125,6 +127,6 @@ if __name__ == "__main__":
         bit_num = int(sys.argv[3])
         createMdnConfig(mdn_output_path, [-1 * np.power(2, bit_num)], [[0, 1]])
     else:
-        print "template option is unknown: %s" % (template)
+        print("template option is unknown: %s" % (template))
     
     

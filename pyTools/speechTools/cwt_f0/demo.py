@@ -1,7 +1,10 @@
-import cwt_utils, f0_processing
+from __future__ import absolute_import
+from . import cwt_utils, f0_processing
 
 import numpy as np
 import sys
+from six.moves import range
+from six.moves import input
 
 PLOT = False
 if PLOT:
@@ -74,7 +77,7 @@ def main():
         pylab.plot(np.exp(f0_interp_fix2), 'red',label="cubic hermite spline",linewidth=2)
         pylab.plot(np.exp(f0_interp_fix), 'blue',label="TE-style",linewidth=2)
         pylab.legend()
-        raw_input("press any key to continue")
+        input("press any key to continue")
 
 
     # do continuous wavelet tranform , returns scale matrix
@@ -94,7 +97,7 @@ def main():
             _std = np.std(f0_interp_fix)
             pylab.plot(scales[i]/_std*1.5+i,'black')
         pylab.contourf(scales, 100,cmap='afmhot')
-        raw_input("press any key to continue")
+        input("press any key to continue")
         
     # combine adjacent scales as in SSW paper,
     # -> less parameters
@@ -119,7 +122,7 @@ def main():
         for i in range(0,len(phon_scales)):
             _std = np.std(f0_interp_fix)
             pylab.plot(phon_scales[i]/_std*0.5+i,'black')
-        raw_input("press any key to continue")
+        input("press any key to continue")
 
     # cwt produces zero mean, have to add mean to reconstruct the original
     orig_mean = np.mean(f0_interp_fix)
@@ -133,7 +136,7 @@ def main():
         pylab.plot(f0_interp_fix, label="original")
         pylab.plot(reconstructed, label="reconstructed")
         pylab.legend()
-        raw_input("press any key to continue")
+        input("press any key to continue")
         
         pylab.figure()
         pylab.title("Example of CWT manipulations")
@@ -145,7 +148,7 @@ def main():
         pylab.plot(postfiltered, label="word level enhanced")
         pylab.legend()
         
-    raw_input()
+    input()
 
 if __name__=="__main__":
     main()

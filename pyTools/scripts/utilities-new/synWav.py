@@ -1,5 +1,7 @@
 #!/usr/bin/python
 
+from __future__ import absolute_import
+from __future__ import print_function
 import numpy as np
 import multiprocessing
 import os
@@ -14,12 +16,12 @@ def tempWarpper(scriptDir, fileLst, batch, mlpgFlag, mainDataDir, nndataDir, bat
         command = "perl %s/utilities/wavGen_STRAIGHT/Synthesis.pl %s/utilities/wavGen_STRAIGHT/Config.pm" % (scriptDir, scriptDir)
         command = command + " %s/utilities/wavGen_STRAIGHT/Utils.pm DNN_GNWAV %d" % (scriptDir, batch)
     else:
-        print "Unknown vocoder type %s" % (vocoder)
+        print("Unknown vocoder type %s" % (vocoder))
         
     command = command + " %d 0 %s %s"  % (mlpgFlag, fileLst, mainDataDir)
     command = command + " %s %d 1 0"   % (nndataDir, batchNum)
     command = command + " %s %s %s %f" % (mainDataDir, mainDataDir, mainDataDir, postFilter)
-    print command
+    print(command)
     os.system(command)
     
 if __name__ == "__main__":

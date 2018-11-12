@@ -1,4 +1,5 @@
 #!/usr/bin/python
+from __future__ import absolute_import
 import numpy as np
 import sys
 from scipy.io import wavfile

@@ -1,4 +1,6 @@
 #!/usr/bin/python
+from __future__ import absolute_import
+from __future__ import print_function
 import numpy as np
 from ioTools import readwrite as py_rw
 
@@ -18,7 +20,7 @@ def weightNumber(i, o, layertype):
     elif layertype==4:
         return 0                        # skipadd layer
     else:
-        print "Not implemented"
+        print("Not implemented")
         return 0
 
 def getNetStruct(netStruc, subnet, layeType):
@@ -30,7 +32,7 @@ def getNetStruct(netStruc, subnet, layeType):
         layerNM.append(weightNumber(netStruc[idx], subnet[idx], layeType[idx+1]))
         idx = idx + 1;
         
-    print "Weight Numer: %s\nTotal:%d" % (str(layerNM), num)
+    print("Weight Numer: %s\nTotal:%d" % (str(layerNM), num))
     return layerNM, num
 
 def genWeightMast(TotalWNum, netconfig, layerNM, netTopoNoInput, netTopo,
@@ -120,23 +122,23 @@ def genWeightMast(TotalWNum, netconfig, layerNM, netTopoNoInput, netTopo,
                 
         # layerNM = elements + bias number
         if flag_verbose:
-            print "Transform matrix of layer %d" % (idx+1)
+            print("Transform matrix of layer %d" % (idx+1))
             if layerType[idx+1]==2 or layerType[idx+1]==3:
-                print "P-L"
+                print("P-L")
                 if len(layer) is not 0:
-                    print elements1[0:len(elements1)/4].reshape([netTopoNoInput[idx],netTopo[idx]])
+                    print(elements1[0:len(elements1)/4].reshape([netTopoNoInput[idx],netTopo[idx]]))
                 else:
-                    print "All ones (full connection)"
-                print "L-L"
+                    print("All ones (full connection)")
+                print("L-L")
                 if len(layer) is not 0:
-                    print elements2[0:netTopoNoInput[idx]*netTopoNoInput[idx]].reshape([netTopoNoInput[idx],netTopoNoInput[idx]])
+                    print(elements2[0:netTopoNoInput[idx]*netTopoNoInput[idx]].reshape([netTopoNoInput[idx],netTopoNoInput[idx]]))
                 else:
-                    print "All ones (full connection)"
+                    print("All ones (full connection)")
             else:
                 if len(layer) is not 0:
-                    print elements
+                    print(elements)
                 else:
-                    print "All ones (full connection)"
+                    print("All ones (full connection)")
 
         # only specify the necessary part
         weight[offset:offset+len(elements.flatten())] = elements.flatten()

@@ -1,6 +1,9 @@
+from __future__ import absolute_import
 import numpy as np
 import scipy.interpolate
 import scipy.stats
+from six.moves import range
+from six.moves import input
 
 def rolling_window(a, window):
     shape = a.shape[:-1] + (a.shape[-1] - window + 1, window)
@@ -88,7 +91,7 @@ def _peak_smooth(params, max_iter, win,min_win=2,voicing=[]):
             if i> 0 and i % 5 == 0:
                 pass
                 pylab.plot(smooth,'gray',linewidth=1)
-                raw_input()
+                input()
 
         if len(voicing) >0:
             smooth = _smooth(smooth,int(win+0.5))
@@ -100,7 +103,7 @@ def _peak_smooth(params, max_iter, win,min_win=2,voicing=[]):
     
     if TRACE:
         pylab.plot(smooth,'red',linewidth=2)
-        raw_input()
+        input()
 
     return smooth
     
@@ -161,7 +164,7 @@ def remove_outliers(lf0, trace=False):
         interp = _interpolate_zeros(fixed,'linear')
    
     if trace:
-        raw_input("press any key to continue")
+        input("press any key to continue")
 
     return fixed
 
@@ -189,4 +192,4 @@ def interpolate(f0, method="true_envelope"):
         interp = _peak_smooth(interp, 5, 2) #,voicing=raw)
         return interp
     else:
-        raise("no such interpolation method: %s", method)
+        raise "no such interpolation method: %s"

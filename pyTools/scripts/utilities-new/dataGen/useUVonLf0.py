@@ -1,5 +1,7 @@
 #!/usr/bin/python
 
+from __future__ import absolute_import
+from __future__ import print_function
 from ioTools import readwrite as py_rw
 import numpy as np
 import os
@@ -10,16 +12,16 @@ import sys
 def split(fileName, inDir, uvDir, uvT, f0Ext, vuExt):
     conlf0Name = inDir + os.path.sep + fileName + f0Ext
     vuName     = uvDir + os.path.sep + fileName + vuExt
-    print fileName,
+    print(fileName, end=' ')
     if os.path.isfile(conlf0Name) and os.path.isfile(vuName):
         conlf0 = py_rw.read_raw_mat(conlf0Name, 1)
         vu     = py_rw.read_raw_mat(vuName, 1)
         assert conlf0.shape[0] == vu.shape[0], ': lf0 uv unequal length'
         conlf0[vu < uvT] = -1.0e+10
         py_rw.write_raw_mat(conlf0, conlf0Name)
-        print ': done'
+        print(': done')
     else:
-        print ': not found'
+        print(': not found')
     
 
 if __name__ == "__main__":

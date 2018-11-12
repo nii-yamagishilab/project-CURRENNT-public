@@ -1,7 +1,9 @@
 #!/usr/bin/python
 
+from __future__ import absolute_import
 import numpy as np
 from tqdm import tqdm
+from six.moves import range
 
 np.random.seed(123)
 
@@ -56,7 +58,7 @@ class SpeechProcessing(object):
 
     def _griffinLim(self, A, N=300):
         P = np.pi * np.random.rand(A.shape[0], A.shape[1])
-        for _ in tqdm(range(N)):
+        for _ in tqdm(list(range(N))):
             X = self._overlapadd(self._synwindow(self._irfft(self._polar_to_rectangular(A, P))))
             P = self._phase(self._rfft(self._anawindow(self._frame(X))))
         return X

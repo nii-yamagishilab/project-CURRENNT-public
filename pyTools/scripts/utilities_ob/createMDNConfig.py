@@ -5,6 +5,8 @@ Please add PYTHONPATH to pyTools
 Please config and python createMDNConfig.py
 """
 
+from __future__ import absolute_import
+from __future__ import print_function
 import sys, os
 import numpy as np
 from ioTools import readwrite as py_rw
@@ -64,7 +66,7 @@ for idx, x in enumerate(MDNType):
     temp = kmixPara(MDNTargetDim[idx][1]-MDNTargetDim[idx][0], x)
     MDNNNOutDim.append([bias, bias+temp])
     bias = temp+bias
-print MDNNNOutDim
+print(MDNNNOutDim)
 
 # check and generating the MDN configuration
 mdnconfigdata = np.zeros([1+len(MDNType)*5], dtype = np.float32)
@@ -90,5 +92,5 @@ for idx, mdntype in enumerate(MDNType):
                                               mdntarDim[0],mdntarDim[1],
                                               mdntype]
 
-print "Dimension of output of NN should be %d" % (tmp)
+print("Dimension of output of NN should be %d" % (tmp))
 py_rw.write_raw_mat(mdnconfigdata, mdnconfig)

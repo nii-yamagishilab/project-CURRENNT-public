@@ -1,9 +1,12 @@
 #!/usr/bin/python
+from __future__ import absolute_import
+from __future__ import print_function
 import scipy
 import os, sys
 from scipy import io
 import numpy as np
 import time
+from six.moves import range
 #try:
 #    import funcs as py_rw
 #except ImportError:
@@ -24,7 +27,7 @@ except ImportError:
         try: 
             from ioTools import readwrite as py_rw
         except ImportError:
-            print "Please add pyTools to PYTHONPATH"
+            print("Please add pyTools to PYTHONPATH")
             raise Exception("Can't not import binaryTools/readwriteC2 or ioTools/readwrite")
 
 
@@ -60,14 +63,14 @@ def readmv(data):
         mi = data.variables['inputMeans'][:].copy()
         vi = data.variables['inputStdevs'][:].copy()
     except KeyError:
-        print "Can't find mv input"
+        print("Can't find mv input")
         mi, vi = None, None
         
     try:
         mo = data.variables['outputMeans'][:].copy()
         vo = data.variables['outputStdevs'][:].copy()
     except KeyError:
-        print "Can't find mv output"
+        print("Can't find mv output")
         mo, vo = None, None
     data.close()
     return mi, vi, mo, vo
@@ -93,7 +96,7 @@ def norm(ncFile, mvFile, ncTarget=None, mask=None, flagKeepOri=1,
     mask: 1: normalize it
           0: not normalize it
     """
-    print "norm %s " % (ncFile)
+    print("norm %s " % (ncFile))
     if mask is not None:
         maskData = py_rw.read_raw_mat(mask, 1)
         if reverse:
@@ -113,7 +116,7 @@ def denorm(ncFile, mvFile, ncTarget=None, mask=None, flagKeepOri=1,
     mask: 1: denormalize it
           0: not denormalize it
     """
-    print "denorm %s" % (ncFile)
+    print("denorm %s" % (ncFile))
     if mask is not None:
         maskData = py_rw.read_raw_mat(mask, 1)
         if reverse:
@@ -133,7 +136,7 @@ def normnom(ncFile, mvFile, ncTarget=None, mask=None, reverse=0, flagKeepOri=1,
     mask: 1: normalize it without shifting mean
           0: normalize it
     """
-    print "normlizing without mean shift %s" % (ncFile)
+    print("normlizing without mean shift %s" % (ncFile))
     if mask is not None:
         maskData = py_rw.read_raw_mat(mask, 1)
         if reverse:
@@ -152,7 +155,7 @@ def compennom(ncFile, mvFile, ncTarget=None, mask=None, reverse=0, flagKeepOri=1
     mask: 1: compensente it
           0: not compensente
     """
-    print "compensente %s" % (ncFile)
+    print("compensente %s" % (ncFile))
     if mask is not None:
         maskData = py_rw.read_raw_mat(mask, 1)
         if reverse:
@@ -176,9 +179,9 @@ def ncFileManipulate(ncFile, mvFile, operation, ncTarget=None, flagKeepOri=1,
     if ncTarget is None:
         ncTarget = ncFile+'Manipulated'
     if ncTarget == ncFile:
-        print "the same input and output ncFile name detected"
+        print("the same input and output ncFile name detected")
         ncTarget = ncFile+'Manipulated'
-        print "use %s as output name if you don't turn on flagKeepOri" % (ncTarget)
+        print("use %s as output name if you don't turn on flagKeepOri" % (ncTarget))
     dataOut = io.netcdf.netcdf_file(ncTarget,'w',version=2)
     dataIn  = io.netcdf_file(ncFile)
     dataMV  = io.netcdf_file(mvFile)
@@ -213,7 +216,7 @@ def ncFileManipulate(ncFile, mvFile, operation, ncTarget=None, flagKeepOri=1,
     assert stdOut.shape[0] == outPatSize, errorMes([mvFile, ncFile], 1)
     
     if maskData is not None:
-        print "manipulate with Mask %s %s" % (maskData.shape[0], inputPatSize+outPatSize)
+        print("manipulate with Mask %s %s" % (maskData.shape[0], inputPatSize+outPatSize))
         assert maskData.shape[0]==inputPatSize+outPatSize, errorMes(['data_config.py'], 2) + \
             "\nThe length of mask is not equal to input and output dim %d %d" % \
             (maskData.shape[0], inputPatSize+outPatSize)
@@ -247,7 +250,7 @@ def ncFileManipulate(ncFile, mvFile, operation, ncTarget=None, flagKeepOri=1,
             print "*"
     """
     dataBatchNum = (numTimes / flushT + ((numTimes % flushT)>0))
-    for t in xrange(dataBatchNum):
+    for t in range(dataBatchNum):
         st = 0
         et = 0
         if t == (dataBatchNum - 1):
@@ -273,13 +276,13 @@ def ncFileManipulate(ncFile, mvFile, operation, ncTarget=None, flagKeepOri=1,
             )
             
         dataOut.flush()
-        print "%d/(%d-%d), Let's wait netCDF for %d(s)" % (numTimes, st, et, waitT)
+        print("%d/(%d-%d), Let's wait netCDF for %d(s)" % (numTimes, st, et, waitT))
         #raw_input("Enter")
-        for x in xrange(waitT):
-            print "*",
+        for x in range(waitT):
+            print("*", end=' ')
             sys.stdout.flush()
             time.sleep(1)
-        print "*"
+        print("*")
            
     
     # add MV is necessary
@@ -296,9 +299,9 @@ def ncFileManipulate(ncFile, mvFile, operation, ncTarget=None, flagKeepOri=1,
     if flagKeepOri==0:
         os.system("rm %s" % (ncFile))
         os.system("mv %s %s" % (ncTarget, ncFile))
-        print "*** %s prepared (original file deleted) " % (ncFile)
+        print("*** %s prepared (original file deleted) " % (ncFile))
     else:
-        print "*** %s prepared " % (ncTarget)
+        print("*** %s prepared " % (ncTarget))
     
 
 def meanStd(ncScp, mvFile, normMethod=None):
@@ -311,7 +314,7 @@ def meanStd(ncScp, mvFile, normMethod=None):
         for idx, ncFile in enumerate(filePtr):
             ncFile = ncFile.rstrip('\n')
             data = io.netcdf_file(ncFile)
-            print "Processing %s" % (ncFile)
+            print("Processing %s" % (ncFile))
             if idx==0:
                 # for the first file, get the dimension of data
                 # create the buffer
@@ -327,12 +330,12 @@ def meanStd(ncScp, mvFile, normMethod=None):
                     maxminInBuf      = np.zeros([inputSize, 2], dtype=np.float64)
                     maxminInBuf[:,0] = data.variables['inputs'][:].max(axis = 0)
                     maxminInBuf[:,1] = data.variables['inputs'][:].min(axis = 0)
-                    print "Input max %f\tmin %f" % (maxminInBuf[:,0].max(), maxminInBuf[:,1].min())
+                    print("Input max %f\tmin %f" % (maxminInBuf[:,0].max(), maxminInBuf[:,1].min()))
                     maxminOutBuf      = np.zeros([outSize, 2], dtype=np.float64)
                     maxminOutBuf[:,0] = data.variables['targetPatterns'][:].max(axis = 0)
                     maxminOutBuf[:,1] = data.variables['targetPatterns'][:].min(axis = 0)
-                    print "Output max %f\tmin %f" % (maxminOutBuf[:,0].max(), 
-                                                     maxminOutBuf[:,1].min())
+                    print("Output max %f\tmin %f" % (maxminOutBuf[:,0].max(), 
+                                                     maxminOutBuf[:,1].min()))
                 #
             else:
                 # for the remaining data files
@@ -341,22 +344,22 @@ def meanStd(ncScp, mvFile, normMethod=None):
                     maxminInBuf[:,0] = np.maximum(tmp, maxminInBuf[:,0])
                     tmp = data.variables['inputs'][:].min(axis = 0)
                     maxminInBuf[:,1] = np.minimum(tmp, maxminInBuf[:,1])
-                    print "Input max %f\tmin %f" % (maxminInBuf[:,0].max(), maxminInBuf[:,1].min())
+                    print("Input max %f\tmin %f" % (maxminInBuf[:,0].max(), maxminInBuf[:,1].min()))
                     tmp = data.variables['targetPatterns'][:].max(axis = 0)
                     maxminOutBuf[:,0] = np.maximum(tmp, maxminOutBuf[:,0])
                     tmp = data.variables['targetPatterns'][:].min(axis = 0)
                     maxminOutBuf[:,1] = np.minimum(tmp, maxminOutBuf[:,1])
-                    print "Output max %f\tmin %f" % (maxminOutBuf[:,0].max(), 
-                                                     maxminOutBuf[:,1].min())
+                    print("Output max %f\tmin %f" % (maxminOutBuf[:,0].max(), 
+                                                     maxminOutBuf[:,1].min()))
             
             numTimes = data.dimensions['numTimesteps']
-            print "Processing %s of %s frames" % (ncFile, numTimes)
-            print "Input max %f\tmin %f"  % (data.variables['inputs'][:].max(),
-                                             data.variables['inputs'][:].min())
-            print "Output max %f\tmin %f" % (data.variables['targetPatterns'][:].max(),
-                                             data.variables['targetPatterns'][:].min())
+            print("Processing %s of %s frames" % (ncFile, numTimes))
+            print("Input max %f\tmin %f"  % (data.variables['inputs'][:].max(),
+                                             data.variables['inputs'][:].min()))
+            print("Output max %f\tmin %f" % (data.variables['targetPatterns'][:].max(),
+                                             data.variables['targetPatterns'][:].min()))
             
-            for t in xrange(numTimes):
+            for t in range(numTimes):
                 tmpIn = (data.variables['inputs'][t, :]-meanInBuf)
                 meanInBuf = meanInBuf + tmpIn*1.0/(timeStep+t+1)
                 tmpOut = (data.variables['targetPatterns'][t, :]-meanOutBuf)
@@ -445,7 +448,7 @@ def meanStd(ncScp, mvFile, normMethod=None):
             maxminIndex = outNormIdx < 0
             meanOutBuf[maxminIndex] = tmpMin[maxminIndex]
             stdOutBuf[maxminIndex]  = tmpMax[maxminIndex]-tmpMin[maxminIndex]
-        print "Combing maxmin done"
+        print("Combing maxmin done")
 
     f.variables['inputMeans'][:] = np.asarray(meanInBuf, np.float32)
     f.variables['inputStdevs'][:] = np.asarray(stdInBuf, np.float32)
@@ -454,8 +457,8 @@ def meanStd(ncScp, mvFile, normMethod=None):
 
     f.flush()
     f.close()
-    print "*** please check max/min above\n"
-    print "*** writing done %s\n" % (mvFile) 
+    print("*** please check max/min above\n")
+    print("*** writing done %s\n" % (mvFile)) 
     
     
 
@@ -500,7 +503,7 @@ def pre_process(fileScp, maskFile = None):
 
             slotBias = 4 # start from the [4] slot
             tmpInputDim = 0
-            for idx2 in xrange(numInputFile):
+            for idx2 in range(numInputFile):
                 tmp = int(lineSlots[slotBias+idx2*2])
                 tmpInputDim += tmp
                 if idx==0:
@@ -523,7 +526,7 @@ def pre_process(fileScp, maskFile = None):
 
             slotBias = 4+numInputFile*2 # skip the head and input part
             tmpOutputDim = 0
-            for idx2 in xrange(numOutputFile):
+            for idx2 in range(numOutputFile):
                 tmp = int(lineSlots[slotBias+idx2*2])
                 tmpOutputDim += tmp
                 if idx==0:
@@ -601,12 +604,12 @@ def bmat2nc_sub1(fileScp, outputfile, maskFile=None, flushT=300, waitT=30):
     numSeqs, timeSteps, maxSeqLength, inputPattSize, outputPattSize, \
         inputDim, outputDim, inputDimSE, outDimSE, \
         allTxtLength, maxTxtLength, txtPatSize  = pre_process(fileScp, maskFile)
-    print "Creating nc file %s" % (outputfile)
-    print "Input dimension:  %s\n output dimension: %s" % (str(inputPattSize), str(outputPattSize))
+    print("Creating nc file %s" % (outputfile))
+    print("Input dimension:  %s\n output dimension: %s" % (str(inputPattSize), str(outputPattSize)))
 
     # create the dimension
     if os.path.exists(outputfile):
-        print "*** %s exists. It will be overwritten" % (outputfile)
+        print("*** %s exists. It will be overwritten" % (outputfile))
     f = io.netcdf.netcdf_file(outputfile, mode = 'w',version=2)
     f.createDimension('numSeqs', numSeqs)
     f.createDimension('numTimesteps', timeSteps)
@@ -630,11 +633,11 @@ def bmat2nc_sub1(fileScp, outputfile, maskFile=None, flushT=300, waitT=30):
         for idx1, line in enumerate(filePtr):
             
             temp          = line.split()
-            print "Reading %s" % (temp[0])
+            print("Reading %s" % (temp[0]))
             seqFrame      = int(temp[3])
 
             if seqFrame < 1:
-                print "Error: data is empty. Please check %s in %s" % (temp[0], fileScp)
+                print("Error: data is empty. Please check %s in %s" % (temp[0], fileScp))
                 assert 1==0, errorMes([datafile], 3) + "Error in preparing data" % (datafile)
             
             seqLVar[idx1] = seqFrame #int(temp[3])
@@ -644,7 +647,7 @@ def bmat2nc_sub1(fileScp, outputfile, maskFile=None, flushT=300, waitT=30):
             outFileNum    = int(temp[2])
             slotBias      = 4
             
-            for idx2 in xrange(inputFileNum):
+            for idx2 in range(inputFileNum):
                 [sDim, eDim] = inputDimSE[idx2,2:4]         # start, end dimension in raw data
                 dim          = int(temp[slotBias+(idx2)*2]) # raw data dim
                 datafile     = temp[slotBias+(idx2)*2+1]    # path to raw data
@@ -657,7 +660,7 @@ def bmat2nc_sub1(fileScp, outputfile, maskFile=None, flushT=300, waitT=30):
                 else:
                     data = py_rw.read_raw_mat(datafile, dim)
                 if (data.shape[0]-seqFrame)>seqFrame*0.3:
-                    print "Error: please check the data named by %s" % (temp[0])
+                    print("Error: please check the data named by %s" % (temp[0]))
                     assert 1==0, errorMes([datafile], 3) + "Error in preparing data" % (datafile)
                 if dim==1 and data.ndim==1:
                     #data = data[0:seqFrame]
@@ -667,7 +670,7 @@ def bmat2nc_sub1(fileScp, outputfile, maskFile=None, flushT=300, waitT=30):
                     inputVar[tS:tE,dS:dE] = data[0:seqFrame, sDim:eDim].copy()
 
             slotBias = 4+inputFileNum*2
-            for idx2 in xrange(outFileNum):
+            for idx2 in range(outFileNum):
                 [sDim, eDim] = outDimSE[idx2,2:4]
                 dim          = int(temp[slotBias+(idx2)*2])
                 datafile     = temp[slotBias+(idx2)*2+1]
@@ -691,15 +694,15 @@ def bmat2nc_sub1(fileScp, outputfile, maskFile=None, flushT=300, waitT=30):
             if count > flushT:
                 count = 0
                 _write(f) #.flush()
-                print "Have read %d. Let's wait netCDF for %d(s)" % (idx1, waitT)
+                print("Have read %d. Let's wait netCDF for %d(s)" % (idx1, waitT))
                 #raw_input("Enter")
-                for x in xrange(waitT):
-                    print "*",
+                for x in range(waitT):
+                    print("*", end=' ')
                     sys.stdout.flush()
                     time.sleep(1)
             count += 1
             timeStart += seqFrame
-    print "Read and write done\n"
+    print("Read and write done\n")
     f.close()
 
 
@@ -719,15 +722,15 @@ def bmat2nc_sub2(fileScp, outputfile, shiftInput, shiftOutput, maskFile=None, fl
     numSeqs, timeSteps, maxSeqLength, inputPattSize, outputPattSize, \
         inputDim, outputDim, inputDimSE, outDimSE, \
         allTxtLength, maxTxtLength, txtPatSize  = pre_process(fileScp, maskFile)
-    print "Data format input: %s, output: %s" % (str(inputPattSize), str(outputPattSize))
-    print "Creating nc file %s" % (outputfile)
+    print("Data format input: %s, output: %s" % (str(inputPattSize), str(outputPattSize)))
+    print("Creating nc file %s" % (outputfile))
     if txtPatSize > 0 and maxTxtLength > 0:
-        print "Using txt data, maxlength and dimension %d %d" % (maxTxtLength, txtPatSize)
+        print("Using txt data, maxlength and dimension %d %d" % (maxTxtLength, txtPatSize))
     
     
     # create the dimension
     if os.path.exists(outputfile):
-        print "*** %s exists. It will be overwritten" % (outputfile)
+        print("*** %s exists. It will be overwritten" % (outputfile))
     f = io.netcdf.netcdf_file(outputfile, mode = 'w',version=2)
     f.createDimension('numSeqs', numSeqs)
     f.createDimension('numTimesteps', timeSteps)
@@ -762,7 +765,7 @@ def bmat2nc_sub2(fileScp, outputfile, shiftInput, shiftOutput, maskFile=None, fl
     with open(fileScp, 'r') as filePtr:
         for idx1, line in enumerate(filePtr):
             temp = line.split()
-            print "Reading %s" % (temp[0])
+            print("Reading %s" % (temp[0]))
             seqFrame      = int(temp[3])
             seqLVar[idx1] = seqFrame #int(temp[3])
             
@@ -783,7 +786,7 @@ def bmat2nc_sub2(fileScp, outputfile, shiftInput, shiftOutput, maskFile=None, fl
                 txtStart = txtStart + txtLength
                 txtLVar[idx1] = txtLength
 
-            for idx2 in xrange(inputFileNum):
+            for idx2 in range(inputFileNum):
                 [sDim, eDim] = inputDim[idx2,0:2]
                 dim = int(temp[slotBias+(idx2)*2])
                 datafile = temp[slotBias+(idx2)*2+1]
@@ -813,7 +816,7 @@ def bmat2nc_sub2(fileScp, outputfile, shiftInput, shiftOutput, maskFile=None, fl
                                                  inputDimSE[idx2][2]:inputDimSE[idx2][3]].copy()
 
             slotBias = 4+inputFileNum*2
-            for idx2 in xrange(outFileNum):
+            for idx2 in range(outFileNum):
                 [sDim, eDim] = outputDim[idx2,0:2]
                 dim = int(temp[slotBias+(idx2)*2])
                 datafile = temp[slotBias+(idx2)*2+1]
@@ -854,15 +857,15 @@ def bmat2nc_sub2(fileScp, outputfile, shiftInput, shiftOutput, maskFile=None, fl
             if count > flushT:
                 count = 0
                 _write(f) #.flush()
-                print "Have read %d. Let's wait netCDF for %d(s)" % (idx1, waitT)
+                print("Have read %d. Let's wait netCDF for %d(s)" % (idx1, waitT))
                 #raw_input("Enter")
-                for x in xrange(waitT):
-                    print "*",
+                for x in range(waitT):
+                    print("*", end=' ')
                     sys.stdout.flush()
                     time.sleep(1)
             count += 1
             timeStart += seqFrame
-    print "Reading and writing done " 
+    print("Reading and writing done ") 
     f.close()
 
 

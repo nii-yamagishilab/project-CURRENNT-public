@@ -1,5 +1,7 @@
 #!/usr/bin/python
 
+from __future__ import absolute_import
+from __future__ import print_function
 import numpy as np
 import scipy.io.wavfile
 from ioTools import readwrite as py_rw
@@ -17,7 +19,7 @@ def tempWarpper(fileIn, outFile, outWav, quanLevel):
     elif wavdata.dtype == np.int32:
         transData = wavTool.wavformConvert(wavdata, 32, True, quanLevel)
     else:
-        print "Unsupported data type"
+        print("Unsupported data type")
     py_rw.write_raw_mat(transData, outFile)
     
     if outWav is not None:
@@ -58,7 +60,7 @@ if __name__ == "__main__":
                 outFile = outDir + os.path.sep + fileName + outExt
                 outWav  = outDir + os.path.sep + fileName + '.wav'
                 tempWarpper(inFile, outFile, outWav, muQuanLevel)
-                print inFile
+                print(inFile)
                 break
     else:
         # batch processing

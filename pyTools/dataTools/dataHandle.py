@@ -5,13 +5,17 @@ Created on Thu Mar 12 11:20:07 2015
 @author: wangx
 """
 
+from __future__ import absolute_import
+from __future__ import print_function
 import os
 import numpy as np
 #import data_raw_handle as drh
 from ioTools import readwrite as drh
-import cPickle
+import six.moves.cPickle
 import math
 import random
+from six.moves import range
+from six.moves import zip
 
 def prepare_data_s_b(data_dir, data_in_name, data_out_name, batch_num, dim_in, 
                      dim_out, buffer_size, out_data_in_name, out_data_out_name,
@@ -23,7 +27,7 @@ def prepare_data_s_b(data_dir, data_in_name, data_out_name, batch_num, dim_in,
     buffer_out= np.zeros([1, dim_out], dtype=np.float32)
     
     data_counter = 0
-    for i in xrange(batch_num):
+    for i in range(batch_num):
         # the batch data is assumed to start from data1
         data_tmp_in = os.path.join(data_dir, data_in_name, str(i+1)) 
         data_tmp_out= os.path.join(data_dir, data_out_name, str(i+1)) 
@@ -33,7 +37,7 @@ def prepare_data_s_b(data_dir, data_in_name, data_out_name, batch_num, dim_in,
         data_tmp_out= drh.read_raw_mat(data_tmp_out, dim_out, p_format=p_format)
         buffer_in = np.append(buffer_in, data_tmp_in)
         buffer_out= np.append(buffer_out, data_tmp_out)
-        print 'processing %d/%d batch' % (i,batch_num)
+        print('processing %d/%d batch' % (i,batch_num))
     
     # randomlize
     data_idx = np.random.permutation(buffer_in.shape[0]-1) + 1
@@ -54,17 +58,17 @@ def prepare_data_s_b(data_dir, data_in_name, data_out_name, batch_num, dim_in,
     for s_idx, e_idx in zip(index1,index2):
         buffer_data = (buffer_in[s_idx:e_idx], buffer_out[s_idx:e_idx])
         fid = open(os.path.join(data_dir,out_data_in_name,str(file_counter)),'rb')
-        cPickle.dump(fid,buffer_data)
+        six.moves.cPickle.dump(fid,buffer_data)
         fid.cloe()
         file_counter += 1
     
     if val_set > 0:
         buffer_data = (buffer_in[train_size:], buffer_out[train_size:])
         fid = open(os.path.join(data_dir,out_data_in_name,'val'),'rb')
-        cPickle.dump(fid,buffer_data)
+        six.moves.cPickle.dump(fid,buffer_data)
         fid.cloe()
     
-    print 'Processing Done'
+    print('Processing Done')
 
 
 def data_normalize(dataFile, dim, mask=None, ran=False):
@@ -73,17 +77,17 @@ def data_normalize(dataFile, dim, mask=None, ran=False):
     if ran==True:
         ranfile = os.path.dirname(dataFile)+os.path.sep+'random_index'
         if os.path.isfile(ranfile):
-            print "Found random index %s" % (ranfile)
+            print("Found random index %s" % (ranfile))
             randidx = np.asarray(drh.read_raw_mat(ranfile,1), dtype=np.int32)
             if randidx.shape[0]!=data.shape[0]:
-                print "But it unmatches the data. New random_index will be generated"
-                randidx = np.array(range(data.shape[0]))
+                print("But it unmatches the data. New random_index will be generated")
+                randidx = np.array(list(range(data.shape[0])))
                 random.shuffle(randidx)
                 drh.write_raw_mat(randidx, ranfile)
             else:
                 pass
         else:
-            randidx = np.array(range(data.shape[0]))
+            randidx = np.array(list(range(data.shape[0])))
             random.shuffle(randidx)
             drh.write_raw_mat(randidx, ranfile)
         data = data[randidx,:]
