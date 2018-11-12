@@ -25,7 +25,7 @@ else
     sox ${INPUT} ${RAWORIG}
 fi
 
-if [ -e ${SV56} ];
+if [ ! -z "${SV56}" ] && [ -e "${SV56}" ];
 then
     
     # norm the waveform
