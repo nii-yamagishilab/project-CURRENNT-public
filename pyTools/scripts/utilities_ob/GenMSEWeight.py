@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+from __future__ import print_function
 import numpy as np
 import scipy
 from scipy import io
@@ -16,7 +18,7 @@ except ImportError:
         try: 
             from ioTools import readwrite as funcs
         finally:
-            print "Please add ~/CODE/pyTools to PYTHONPATH"
+            print("Please add ~/CODE/pyTools to PYTHONPATH")
             raise Exception("Can't not import binaryTools/readwriteC2 or funcs")
 
 
@@ -32,4 +34,4 @@ if __name__ == "__main__":
 
     # test
     data = funcs.read_raw_mat(outFile, outDim)
-    print data
+    print(data)

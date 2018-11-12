@@ -23,7 +23,9 @@ As metrics, they must satisfy the following three requirements:
 from __future__ import print_function
 from __future__ import division
 
+from __future__ import absolute_import
 import numpy as np
+from six.moves import range
 
 def defaultDis(c1, c2):
     if c1 != c2:

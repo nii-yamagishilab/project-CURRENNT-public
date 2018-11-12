@@ -1,5 +1,7 @@
+from __future__ import absolute_import
 import numpy as np
-import cwt
+from . import cwt
+from six.moves import range
 
 def _unpad(matrix, num):
     unpadded = matrix[:,num:len(matrix[0])-num]

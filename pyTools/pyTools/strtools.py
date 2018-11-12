@@ -1,5 +1,9 @@
 
+from __future__ import absolute_import
+from __future__ import print_function
 import re
+from six.moves import map
+from six.moves import range
 
 ##########################################################
 # functions
@@ -38,12 +42,12 @@ def str_pathgen_sub(InStrList):
             if subList[0] == '*':
                 tempStr = subList[1:]
                 pat1 = re.compile(r'\-')
-                se   = map(int, pat1.split(tempStr))
+                se   = list(map(int, pat1.split(tempStr)))
                 if len(se) != 2:
-                    print "Possible Error str_pathgen_sub:"+str(se)
+                    print("Possible Error str_pathgen_sub:"+str(se))
                     return InStrList
                 se[1] +=  1
-                InStrList[ind] = range(se[0],se[1])
+                InStrList[ind] = list(range(se[0],se[1]))
     return InStrList
 
 def str_chop(InStr, FChopMore=True):
@@ -67,13 +71,13 @@ def str_in_ord(InStr):
         Return the string in ordinary number
         
     """
-    return map(ord,InStr)
+    return list(map(ord,InStr))
     
 def str_in_hex(InStr):
     """str2hex(InStr):
         Return the string in string hex number
     """
-    return map(hex,str_in_ord(InStr))
+    return list(map(hex,str_in_ord(InStr)))
 
 
 if __name__ == "__main__":

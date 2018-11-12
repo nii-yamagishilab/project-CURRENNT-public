@@ -35,6 +35,8 @@ Intrustruction:
                 []]  # void for the 3rd-4th layer
 
 """
+from __future__ import absolute_import
+from __future__ import print_function
 import sys, os
 import numpy as np
 from ioTools import readwrite as py_rw
@@ -48,7 +50,7 @@ def weightNumber(i, o, layertype):
     elif layertype==3:
         return o*(4*(i+1)+4*o+3)        # lstm
     else:
-        print "Not implemented"
+        print("Not implemented")
         return 0
 
 def getNetStruct(netStruc, subnet, layeType):
@@ -60,7 +62,7 @@ def getNetStruct(netStruc, subnet, layeType):
         layerNM.append(weightNumber(netStruc[idx], subnet[idx], layeType[idx+1]))
         idx = idx + 1;
         
-    print "Weight Numer: %s\nTotal:%d" % (str(layerNM), num)
+    print("Weight Numer: %s\nTotal:%d" % (str(layerNM), num))
     return layerNM, num
 
 def genWeightMast(TotalWNum, netconfig, layerNM, netTopoNoInput, netTopo,
@@ -151,14 +153,14 @@ def genWeightMast(TotalWNum, netconfig, layerNM, netTopoNoInput, netTopo,
                 
         # layerNM = elements + bias number
         if flag_verbose:
-            print "Transform matrix of layer %d" % (idx+1)
+            print("Transform matrix of layer %d" % (idx+1))
             if (layerType[idx+1]==2 or layerType[idx+1]==3) and (len(layer)>0):
-                print "P-L: input x_t to current hidden h_t (show one matrix)"
-                print elements1[0:len(elements1)/4].reshape([netTopoNoInput[idx],netTopo[idx]])
-                print "L-L: previous hidden h_t-1 to current hidden h_t (show one matrix)"
-                print elements2[0:netTopoNoInput[idx]*netTopoNoInput[idx]].reshape([netTopoNoInput[idx],netTopoNoInput[idx]])
+                print("P-L: input x_t to current hidden h_t (show one matrix)")
+                print(elements1[0:len(elements1)/4].reshape([netTopoNoInput[idx],netTopo[idx]]))
+                print("L-L: previous hidden h_t-1 to current hidden h_t (show one matrix)")
+                print(elements2[0:netTopoNoInput[idx]*netTopoNoInput[idx]].reshape([netTopoNoInput[idx],netTopoNoInput[idx]]))
             else:
-                print elements
+                print(elements)
 
         # only specify the necessary part
         weight[offset:offset+len(elements.flatten())] = elements.flatten()

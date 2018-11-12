@@ -2,6 +2,8 @@
 
 ##############################
 #
+from __future__ import absolute_import
+from __future__ import print_function
 import numpy as np
 
 import re
@@ -16,11 +18,11 @@ except ImportError:
     try:
         from binaryTools import readwriteC2_220 as funcs
     except ImportError:
-        print "Please add ~/CODE/pyTools to PYTHONPATH"
+        print("Please add ~/CODE/pyTools to PYTHONPATH")
         try: 
             from ioTools import readwrite as funcs
         except ImportError:
-            print "Can't not import binaryTools/readwriteC2 or funcs"
+            print("Can't not import binaryTools/readwriteC2 or funcs")
 
 def F0Transform(data):
     #data_out = (np.exp(data/1127.0)-1)*700
@@ -105,7 +107,7 @@ def RMSECal(scp1, dim, g_resolu, g_escape):
                         try:
                             [sTime, eTime, labEntry, temp] = line2.split()
                         except ValueError:
-                            print "Fail to parse %s" % (line2)
+                            print("Fail to parse %s" % (line2))
                     #if 1:
                     if not re.search(g_escape, labEntry):
                         sTime = int(sTime)/g_resolu
@@ -135,16 +137,16 @@ def RMSECal(scp1, dim, g_resolu, g_escape):
     errorSum[fileNM,:] = errorSum[0:fileNM,:].mean(axis=0)
     corrStack = np.array(corrStack)
     if dim==1:
-        print "RMSE: %f\tCor: %f\t VU:%f\t" % (
+        print("RMSE: %f\tCor: %f\t VU:%f\t" % (
             errorSum[fileNM,0], 
             corrStack.mean(), 
-            errorSum[fileNM,1]),
+            errorSum[fileNM,1]), end=' ')
         #print "Corre: %f\t" % ()
         corrStack = np.concatenate((corrStack, np.array([corrStack.mean()])))
         corrStack = np.expand_dims(corrStack, axis=1)
         errorSum = np.concatenate((errorSum, corrStack), axis=1)
     else:
-        print "RMSE: %f\t" % (errorSum[fileNM,0]),
+        print("RMSE: %f\t" % (errorSum[fileNM,0]), end=' ')
     return errorSum
     
     

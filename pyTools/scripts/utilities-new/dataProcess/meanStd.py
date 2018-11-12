@@ -1,10 +1,13 @@
 #!/usr/bin/python
 
+from __future__ import absolute_import
+from __future__ import print_function
 import os
 import sys
 from   mlTools import stats
 from   ioTools import readwrite as py_rw
 import numpy as np
+from six.moves import zip
 
 def meanStdNorm(fileScps, fileDims, meanStdOutPath):
     """ Calculate the mean and std from a list of file lists
@@ -47,8 +50,8 @@ def meanStdNormMask(fileScps, fileDims, fileNormMask, meanStdOutPath, f0Dim=-1):
             meanStdData[normMask[0]:normMask[1]] = 0.0
             meanStdData[normMask[0]+sum(fileDims):normMask[1]+sum(fileDims)] = 1.0
         else:
-            print "Wrong format of NormMask %s" % (str(normMask))
-        print 'normmask %s' % (str(normMask))
+            print("Wrong format of NormMask %s" % (str(normMask)))
+        print('normmask %s' % (str(normMask)))
         
     py_rw.write_raw_mat(meanStdData, meanStdOutPath)
     

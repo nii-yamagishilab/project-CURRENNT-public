@@ -1,5 +1,7 @@
 #!/usr/bin/python
 
+from __future__ import absolute_import
+from __future__ import print_function
 import os
 import sys
 import numpy as np
@@ -56,7 +58,7 @@ if __name__ == "__main__":
                 cnt = cnt + 1
                 #print fileName
         py_rw.write_raw_mat(gvData, fileOut + os.path.sep + 'gv.data.bin')
-        print fileOut, '\t', np.median(gvData, axis=0)
+        print(fileOut, '\t', np.median(gvData, axis=0))
                 
                 
         

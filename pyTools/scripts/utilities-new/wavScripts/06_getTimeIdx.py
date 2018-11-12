@@ -1,5 +1,7 @@
 #!/usr/bin/python
 
+from __future__ import absolute_import
+from __future__ import print_function
 from ioTools import readwrite as py_rw
 from speechTools import htslab
 import numpy as np
@@ -34,7 +36,7 @@ def tempWarpper(fileName, labDir, labDim, featExt, outDir, resolution):
         #print fileName
         generateLabIndex(inFile, outFile, labDim, resolution)
     else:
-        print "Skip:" + fileName
+        print("Skip:" + fileName)
 
 
 if __name__ == "__main__":

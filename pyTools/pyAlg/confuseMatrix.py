@@ -1,6 +1,9 @@
 #!/usr/bin/python
+from __future__ import absolute_import
+from __future__ import print_function
 import numpy as np
 import os
+from six.moves import range
 
 
 def preRec(mat, verBose = True):
@@ -15,14 +18,14 @@ def preRec(mat, verBose = True):
     matNew[0:-1, -1] = mat.sum(axis=1)
     matNew[-1,-1] = mat.sum().sum()
    
-    rec = mat[range(mat.shape[0]), range(mat.shape[0])]/matNew[-1,:mat.shape[0]]
-    pre = mat[range(mat.shape[0]), range(mat.shape[0])]/matNew[:mat.shape[0],-1]
-    acc = mat[range(mat.shape[0]), range(mat.shape[0])].sum()/matNew[-1,-1]
+    rec = mat[list(range(mat.shape[0])), list(range(mat.shape[0]))]/matNew[-1,:mat.shape[0]]
+    pre = mat[list(range(mat.shape[0])), list(range(mat.shape[0]))]/matNew[:mat.shape[0],-1]
+    acc = mat[list(range(mat.shape[0])), list(range(mat.shape[0]))].sum()/matNew[-1,-1]
     f0  = 2*rec*pre/(rec+pre)
     strtmp = "recall\t" + str(rec) + "\tprecision\t" + str(pre) + "\taccuracy\t" + str(acc)
     if verBose:
-        print strtmp
-        print "f0\t" + str(f0)
+        print(strtmp)
+        print("f0\t" + str(f0))
     return np.concatenate((rec, pre, f0)), acc
     
 
@@ -45,7 +48,7 @@ def mergeMatrix(mat, mergeMap, mergeInfo=None, verBose =True):
     accStack = []
     for idx, mer in enumerate(mergeMap):
         if mergeInfo is not None and verBose:
-            print mergeInfo[idx]
+            print(mergeInfo[idx])
         tmpMat = np.zeros([len(mer), len(mer)], dtype=np.int32)
         
         for idr, rowIndx in enumerate(mer):
@@ -54,7 +57,7 @@ def mergeMatrix(mat, mergeMap, mergeInfo=None, verBose =True):
                 tmpMat[idr, idc] = mat[rowIndx, colIndx].sum()
                 # print mat[rowIndx, colIndx]
         if verBose:
-            print np.array2string(tmpMat, separator='\t')
+            print(np.array2string(tmpMat, separator='\t'))
         result, acc = preRec(np.array(tmpMat), verBose)
         resultStack.append(result)
         accStack.append(acc)
@@ -69,12 +72,12 @@ def confusionMatrix(result, resultMap=None, verBose=True):
     col: golden-tag
     """
     result = np.array(result, dtype=np.int32)
-    mat = np.zeros([len(resultMap.keys()), len(resultMap.keys())], dtype=np.int32)
-    for idx in xrange(result.shape[0]):
+    mat = np.zeros([len(list(resultMap.keys())), len(list(resultMap.keys()))], dtype=np.int32)
+    for idx in range(result.shape[0]):
         mat[result[idx,0], result[idx,1]] += 1
     if verBose:
-        print resultMap
-        print np.array2string(mat,separator='\t')
+        print(resultMap)
+        print(np.array2string(mat,separator='\t'))
     return mat
 
 

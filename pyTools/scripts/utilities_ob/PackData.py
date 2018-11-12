@@ -26,6 +26,8 @@ CONFIGURATION:
              0. not normalize the data
 
 """
+from __future__ import absolute_import
+from __future__ import print_function
 import re, sys, os, traceback
 try:
     from dataTools import ncDataHandle as nc
@@ -82,8 +84,8 @@ if __name__ == "__main__":
                     try:
                         nc.bmat2nc(line, dataline, mask)
                     except:
-                        print "Unexpected error:", sys.exc_info()[0]
-                        print traceback.extract_tb(sys.exc_info()[-1])
+                        print("Unexpected error:", sys.exc_info()[0])
+                        print(traceback.extract_tb(sys.exc_info()[-1]))
                         raise Exception("*** Fail to norm %s" % (line))
                         flagDataValid = False
             
@@ -95,13 +97,13 @@ if __name__ == "__main__":
         try:
             nc.meanStd(datascp, mv, normMethod)
         except:
-            print "Unexpected error:", sys.exc_info()[0]
-            print traceback.extract_tb(sys.exc_info()[-1])
-            print "*** Fail to generate %s" % (mv)
+            print("Unexpected error:", sys.exc_info()[0])
+            print(traceback.extract_tb(sys.exc_info()[-1]))
+            print("*** Fail to generate %s" % (mv))
             raise Exception("*** Fail to norm %s" % (line))
 
     else:
-        print "skip generating mv file"
+        print("skip generating mv file")
 
     if step3==1:
         assert os.path.isfile(mv), "*** Fail to locate %s" % (mv)
@@ -114,9 +116,9 @@ if __name__ == "__main__":
                 try:
                     nc.norm(line, mv, flagKeepOri=0, addMV=addMV, mask=normMask, waitT=0)
                 except:
-                    print "Unexpected error:", sys.exc_info()[0]
-                    print traceback.extract_tb(sys.exc_info()[-1])
+                    print("Unexpected error:", sys.exc_info()[0])
+                    print(traceback.extract_tb(sys.exc_info()[-1]))
                     raise Exception("*** Fail to norm %s" % (line))
                     flagDataValid = False
-                    print "*** Not sure where %s is still valid" % (line) 
+                    print("*** Not sure where %s is still valid" % (line)) 
 

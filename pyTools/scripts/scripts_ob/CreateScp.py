@@ -1,5 +1,7 @@
 #!/usr/bin/python
 
+from __future__ import absolute_import
+from __future__ import print_function
 from ioTools import readwrite as py_rw
 
 fileScp  =  '/work/smg/wang/PROJ/NNWAV/nancy/DATA/lst/train_random.lst'
@@ -24,7 +26,7 @@ for idx2, fileScpOut in enumerate(dataDirs):
     with open(fileScp, 'r') as filePtr:
         for idx1, fileName in enumerate(filePtr):
             fileName = fileName.split('\n')[0]
-            print "Process %s (%d)" % (fileName, idx1)
+            print("Process %s (%d)" % (fileName, idx1))
             fileScpOut.write("%s/%s%s\n" % (fileDir, fileName, fileExt))
 
     fileScpOut.close()

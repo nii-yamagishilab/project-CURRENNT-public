@@ -1,10 +1,13 @@
 #!/usr/bin/python
 
+from __future__ import absolute_import
+from __future__ import print_function
 import scipy
 from scipy import io
 import os
 from ioTools import readwrite as py_rw
 import numpy as np
+from six.moves import range
  
 ncFile = "/home/smg/wang/PROJ/DL/RNNJP/DATA/test_align/F009A/data.nc1"
 labdir = "/home/smg/takaki/FEAT/F009/data/ver01/full"
@@ -30,7 +33,7 @@ for id, sentId in enumerate(sentNa):
     indx = np.concatenate((np.array([0]), np.argwhere(difd).flatten(), np.array([etime])))
     if len(indx)==len(labentrys)+1:
         temp = ''
-        for x in xrange(len(labentrys)):
+        for x in range(len(labentrys)):
             st = indx[x]*resolu
             et = indx[x+1]*resolu
             lab = labentrys[x].split()
@@ -38,9 +41,9 @@ for id, sentId in enumerate(sentNa):
         fil = open(laboutfile, 'w')
         fil.write(temp[0:-1])
         fil.close()
-        print "Writing to %s" % (laboutfile)
+        print("Writing to %s" % (laboutfile))
     else:
-        print "Unmatched %s" % (labinpfile)
+        print("Unmatched %s" % (labinpfile))
     
     start = etime
 
