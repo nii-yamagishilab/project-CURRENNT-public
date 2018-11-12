@@ -12,17 +12,17 @@ RAWORIG=${INPUT}.raw
 RAWNORM=${INPUT}.raw.norm
 BITS16=${INPUT}.16bit.wav
 
-SAMP=`sox --i -r ${INPUT}`
-BITS=`sox --i -b ${INPUT}`
+SAMP=`${SOX} --i -r ${INPUT}`
+BITS=`${SOX} --i -b ${INPUT}`
 
 # make sure input is 16bits int
 if [ ${BITS} -ne 16 ];
 then
-    sox ${INPUT} -b 16 ${BITS16}
-    sox ${BITS16} ${RAWORIG}
+    ${SOX} ${INPUT} -b 16 ${BITS16}
+    ${SOX} ${BITS16} ${RAWORIG}
     rm ${BITS16}
 else
-    sox ${INPUT} ${RAWORIG}
+    ${SOX} ${INPUT} ${RAWORIG}
 fi
 
 if [ ! -z "${SV56}" ] && [ -e "${SV56}" ];
