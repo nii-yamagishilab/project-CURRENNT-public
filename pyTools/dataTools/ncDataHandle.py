@@ -679,8 +679,10 @@ def bmat2nc_sub1(fileScp, outputfile, maskFile=None, flushT=300, waitT=30):
                 else:
                     data = py_rw.read_raw_mat(datafile, dim)
 
-                assert (data.shape[0]-seqFrame)<seqFrame*0.1, \
-                    errorMes([datafile], 3) + "This data has less number of frames" % (datafile)
+                if (data.shape[0]-seqFrame) > seqFrame * 0.3:
+                    print "Error: please check the data named by %s" % (temp[0])
+                    assert 1==0, errorMes([datafile], 3) + "Error in preparing data" % (datafile)
+                
                 if dim==1 and data.ndim==1:
                     outVar[tS:tE,dS] =data[0:seqFrame].copy()
                 else:
