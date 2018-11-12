@@ -25,6 +25,8 @@ To use it:
 :~$ sh setup.sh
 :~$ export PYTHONPATH=PATH_TO_THIS_DIRECTORY:$PYTHONPATH
 
+You need Cython to compile.
+
 There tools are used in CURRENNT_SCIRPTS implicitly. So, no need to write
 instruction here.
 

@@ -370,6 +370,13 @@ def sub_write_mat(data, filename, separator):
     f.close()
     return True
 
+def Bytes(file_path, divide_factor = 1):
+    """ return number_of_data_bytes / divide_factor
+    """
+    data = read_raw_mat(file_path, 1, format='c')
+    return data.shape[0]/divide_factor
+
+
 ##########################################################
 # main function
 def debug_interface():

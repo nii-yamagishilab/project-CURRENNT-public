@@ -88,7 +88,7 @@ And, the code may be dirty !
 2. A small Python toolkit (pyTools) from my github
    This toolkit requires
    2.1 Scipy and Numpy
-   2.2 Cython (optional, to compile a binary interface)
+   2.2 Cython (to compile a binary interface)
 
 ## ----------------------- USAGE   ------------------------------------  #
 
