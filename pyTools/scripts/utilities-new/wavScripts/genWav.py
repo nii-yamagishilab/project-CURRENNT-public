@@ -11,6 +11,11 @@ dirPath = sys.argv[1]
 quantiBitNum = int(sys.argv[2])
 samplingRate = int(sys.argv[3])
 
+try:
+    trimLength = int(sys.argv[4])
+except IndexError:
+    trimLength = 0
+
 fileList = py_rw.read_txt_list(dirPath + '/gen.scp')
 for fileName in fileList:
     fileName = fileName.rstrip('\n')
@@ -19,7 +24,9 @@ for fileName in fileList:
     nameWav  = dirPath + os.path.sep + os.path.basename(fileName).rstrip('.htk') + '.wav'
     print nameRaw, nameWav
     data = py_rw.read_htk(nameHtk, 'f4', 'b')
-    
+    if trimLength < data.shape[0]:
+        data = data[trimLength:data.shape[0]-trimLength]
+        
     if quantiBitNum > 0:
         quantiLevel = np.power(2, quantiBitNum)-1
         py_rw.write_raw_mat(data, nameRaw)

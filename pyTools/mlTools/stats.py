@@ -19,6 +19,7 @@ except ImportError:
 
 
 
+
 def getMeanStd(fileScp, fileDim, stdFloor=0.00001, f0Feature=0):
     """ Calculate the mean and std from a list of files
     """
@@ -38,7 +39,9 @@ def getMeanStd(fileScp, fileDim, stdFloor=0.00001, f0Feature=0):
             if f0Feature and fileDim == 1:
                 # if this is F0 feature, remove unvoiced region
                 data = data[np.where(data>0)]
-            
+                if data.shape[0] < 1:
+                    continue
+                
             # parallel algorithm
             # https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
             dataCount = data.shape[0]
