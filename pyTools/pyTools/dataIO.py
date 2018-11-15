@@ -4,8 +4,10 @@
 Created on Thu Mar 12 09:30:46 2015
 @author: wangx
 """
+from __future__ import absolute_import
+from __future__ import print_function
 
-import cPickle
+import pickle
 import gzip
 import os
 import sys
@@ -45,7 +47,7 @@ def read_raw_mat(dataset, dim, p_format='<f4', f_trans=False):
 
 def write_raw_mat(outfile, data):
     if os.path.isfile(outfile):
-        print '%s will be over-written' % (outfile)
+        print('%s will be over-written' % (outfile))
     assert type(data) is np.ndarray, 'data is not numpy.ndarray'
     data.tofile(outfile)
 
@@ -58,7 +60,7 @@ def load_pickled_data(dataset, f_Gzip=True, f_Pickled=True):
     # LOAD DATA #
     #############
     assert os.path.isfile(dataset), "Can't find file %s" % (dataset)
-    print '... loading data'
+    print('... loading data')
 
     # Load the dataset
     if f_Gzip is True:
@@ -67,9 +69,9 @@ def load_pickled_data(dataset, f_Gzip=True, f_Pickled=True):
         f = open(dataset,'rb')
     
     if f_Pickled is True:
-        data_all = cPickle.load(f)
+        data_all = pickle.load(f)
     else:
-        print "Please use read_raw_mat or other function to read data"
+        print("Please use read_raw_mat or other function to read data")
     f.close()    
     return data_all
 

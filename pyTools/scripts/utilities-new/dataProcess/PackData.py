@@ -26,6 +26,9 @@ CONFIGURATION:
              0. not normalize the data
 
 """
+from __future__ import absolute_import
+from __future__ import print_function
+
 import re, sys, os, traceback
 try:
     from dataTools import ncDataHandle as nc
@@ -65,7 +68,7 @@ if __name__ == "__main__":
             normMethod =  None
         
     if step1==1:
-        print "===== Reading and loading data ====="
+        print("===== Reading and loading data =====")
         filePtr2 = open(datascp, 'w') 
         with open(filescp, 'r') as filePtr:
             for idx, line in enumerate(filePtr):
@@ -84,8 +87,8 @@ if __name__ == "__main__":
                     nc.bmat2nc(line, dataline, mask)
                 except:
                     flagDataValid = False
-                    print "Unexpected error:", sys.exc_info()[0]
-                    print traceback.extract_tb(sys.exc_info()[-1])
+                    #print("Unexpected error:", sys.exc_info()[0])
+                    #print(traceback.extract_tb(sys.exc_info()[-1]))
                     raise Exception("*** Fail to pack data %s" % (line))
                 
             
@@ -93,23 +96,23 @@ if __name__ == "__main__":
                     filePtr2.write(dataline+'\n')
         filePtr2.close()
     else:
-        print "===== Skip reading and loading data ====="
+        print("===== Skip reading and loading data =====")
         
     if step2==1:
-        print "===== Calculating mean and variance ====="
+        print("===== Calculating mean and variance =====")
         try:
             nc.meanStd(datascp, mv, normMethod)
         except:
-            print "Unexpected error:", sys.exc_info()[0]
-            print traceback.extract_tb(sys.exc_info()[-1])
-            print "*** Fail to generate %s" % (mv)
+            #print("Unexpected error:", sys.exc_info()[0])
+            #print(traceback.extract_tb(sys.exc_info()[-1]))
+            print("*** Fail to generate %s" % (mv))
             raise Exception("*** Fail to get mean and std. %s" % (line))
 
     else:
-        print "===== Skip calculating mean and variance ====="
+        print("===== Skip calculating mean and variance =====")
 
     if step3==1:
-        print "===== Normalize data.nc ====="
+        print("===== Normalize data.nc =====")
         assert os.path.isfile(mv), "*** Fail to locate %s" % (mv)
 
         with open(datascp, 'r') as filePtr:
@@ -120,10 +123,10 @@ if __name__ == "__main__":
                 try:
                     nc.norm(line, mv, flagKeepOri=0, addMV=addMV, mask=normMask)
                 except:
-                    print "Unexpected error:", sys.exc_info()[0]
-                    print traceback.extract_tb(sys.exc_info()[-1])
-                    raise Exception("*** Fail to norm %s" % (line))
+                    #print "Unexpected error:", sys.exc_info()[0]
+                    #print traceback.extract_tb(sys.exc_info()[-1])
                     flagDataValid = False
-                    print "*** Not sure where %s is still valid" % (line) 
+                    raise Exception("*** Fail to norm %s" % (line))
+                    #print("*** Not sure where %s is still valid" % (line) )
     else:
-        print "===== skip Normalizing data.nc ====="            
+        print("===== skip Normalizing data.nc =====")

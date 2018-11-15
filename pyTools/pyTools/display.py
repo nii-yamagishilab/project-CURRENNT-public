@@ -1,4 +1,5 @@
 #!/usr/bin/python
+from __future__ import print_function
 import datetime
 
 class pyToolsDcolors:
@@ -17,15 +18,15 @@ def self_print(message, opt='ok'):
         opt: warning, highlight, ok, error
     """
     if opt == 'warning':
-        print pyToolsDcolors.WARNING + str(message) + pyToolsDcolors.ENDC
+        print(pyToolsDcolors.WARNING + str(message) + pyToolsDcolors.ENDC)
     elif opt == 'highlight':
-        print pyToolsDcolors.OKGREEN + str(message) + pyToolsDcolors.ENDC
+        print(pyToolsDcolors.OKGREEN + str(message) + pyToolsDcolors.ENDC)
     elif opt == 'ok':
-        print pyToolsDcolors.OKBLUE + str(message) + pyToolsDcolors.ENDC
+        print(pyToolsDcolors.OKBLUE + str(message) + pyToolsDcolors.ENDC)
     elif opt == 'error':
-        print pyToolsDcolors.FAIL + str(message) + pyToolsDcolors.ENDC
+        print(pyToolsDcolors.FAIL + str(message) + pyToolsDcolors.ENDC)
     else:
-        print message
+        print(message)
 
 def self_print_with_date(message, level='h'):
     """ self_print_with_date(message, level)

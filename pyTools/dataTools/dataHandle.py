@@ -1,15 +1,19 @@
 # -*- coding: utf-8 -*-
 """
+This File is Obsolete
 Created on Thu Mar 12 11:20:07 2015
 
 @author: wangx
 """
 
+from __future__ import absolute_import
+from __future__ import print_function
+ 
 import os
 import numpy as np
 #import data_raw_handle as drh
 from ioTools import readwrite as drh
-import cPickle
+#import cPickle
 import math
 import random
 
@@ -18,7 +22,7 @@ def prepare_data_s_b(data_dir, data_in_name, data_out_name, batch_num, dim_in,
                      p_format='<f4', val_set=0.2):
     '''prepare_data_s_b: prepare the data in Split and Batch_mode
     
-    '''
+    
     buffer_in = np.zeros([1, dim_in], dtype=np.float32)
     buffer_out= np.zeros([1, dim_out], dtype=np.float32)
     
@@ -65,25 +69,26 @@ def prepare_data_s_b(data_dir, data_in_name, data_out_name, batch_num, dim_in,
         fid.cloe()
     
     print 'Processing Done'
-
+    '''
+    raise Exception('dataHandle.prepare_data_s_b is obsolete')
 
 def data_normalize(dataFile, dim, mask=None, ran=False):
-    
+    """ This function is obsolete
     data = drh.read_raw_mat(dataFile, dim)
     if ran==True:
         ranfile = os.path.dirname(dataFile)+os.path.sep+'random_index'
         if os.path.isfile(ranfile):
-            print "Found random index %s" % (ranfile)
+            print("Found random index %s" % (ranfile))
             randidx = np.asarray(drh.read_raw_mat(ranfile,1), dtype=np.int32)
             if randidx.shape[0]!=data.shape[0]:
-                print "But it unmatches the data. New random_index will be generated"
-                randidx = np.array(range(data.shape[0]))
+                print("But it unmatches the data. New random_index will be generated")
+                randidx = np.arange(data.shape[0])
                 random.shuffle(randidx)
                 drh.write_raw_mat(randidx, ranfile)
             else:
                 pass
         else:
-            randidx = np.array(range(data.shape[0]))
+            randidx = np.arange(data.shape[0])
             random.shuffle(randidx)
             drh.write_raw_mat(randidx, ranfile)
         data = data[randidx,:]
@@ -100,9 +105,11 @@ def data_normalize(dataFile, dim, mask=None, ran=False):
     
     drh.write_raw_mat(data,dataFile+'.norm')
     drh.write_raw_mat(np.concatenate((meanData, stdData)), dataFile+'.mv')
-
+    """
+    raise Exception('dataHandle.data_normalize is obsolete')
 
 if __name__ == '__main__':
-    mask = np.zeros([411], dtype=np.int32)
-    mask[-1] = 1
-    data_normalize('/home/smg/wang/DATA/BURNC_PART/datapool/data_v1', 411, mask=mask)
+    raise Exception('dataHandle is obsolete')
+    #mask = np.zeros([411], dtype=np.int32)
+    #mask[-1] = 1
+    #data_normalize('/home/smg/wang/DATA/BURNC_PART/datapool/data_v1', 411, mask=mask)

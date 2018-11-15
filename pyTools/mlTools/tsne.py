@@ -1,4 +1,7 @@
 #!/usr/bin/python
+from __future__ import absolute_import
+from __future__ import print_function
+
 import numpy as Math
 #import pylab as Plot
 from ioTools import readwrite as py_rw
@@ -30,7 +33,7 @@ def x2p(X = Math.array([]), tol = 1e-5, perplexity = 30.0):
     """Performs a binary search to get P-values in such a way that each conditional Gaussian has the same perplexity."""
 
     # Initialize some variables
-    print "Computing pairwise distances..."
+    print("Computing pairwise distances...")
     (n, d) = X.shape;
     sum_X = Math.sum(Math.square(X), 1);
     D = Math.add(Math.add(-2 * Math.dot(X, X.T), sum_X).T, sum_X);
@@ -43,7 +46,7 @@ def x2p(X = Math.array([]), tol = 1e-5, perplexity = 30.0):
     
         # Print progress
         if i % 500 == 0:
-            print "Computing P-values for point ", i, " of ", n, "..."
+            print("Computing P-values for point ", i, " of ", n, "...")
     
         # Compute the Gaussian kernel and entropy for the current precision
         betamin = -Math.inf; 
@@ -79,14 +82,14 @@ def x2p(X = Math.array([]), tol = 1e-5, perplexity = 30.0):
         P[i, Math.concatenate((Math.r_[0:i], Math.r_[i+1:n]))] = thisP;
     
     # Return final P-matrix
-        print "Mean value of sigma: ", Math.mean(Math.sqrt(1 / beta))
+        print("Mean value of sigma: ", Math.mean(Math.sqrt(1 / beta)))
     return P;
     
     
 def pca(X = Math.array([]), no_dims = 50):
     """Runs PCA on the NxD array X in order to reduce its dimensionality to no_dims dimensions."""
 
-    print "Preprocessing the data using PCA..."
+    print("Preprocessing the data using PCA...")
     (n, d) = X.shape;
     X = X - Math.tile(Math.mean(X, 0), (n, 1));
     (l, M) = Math.linalg.eig(Math.dot(X.T, X));
@@ -100,7 +103,7 @@ def tsne(X = Math.array([]), no_dims = 2, initial_dims = 50, perplexity = 30.0):
     
     # Check inputs
     if X.dtype != "float64":
-        print "Error: array X should have type float64.";
+        print("Error: array X should have type float64.")
         return -1;
     #if no_dims.__class__ != "<type 'int'>":            # doesn't work yet!
     #    print "Error: number of dimensions should be an integer.";
@@ -132,7 +135,7 @@ def tsne(X = Math.array([]), no_dims = 2, initial_dims = 50, perplexity = 30.0):
         # Compute pairwise affinities
         sum_Y = Math.sum(Math.square(Y), 1);        
         num = 1 / (1 + Math.add(Math.add(-2 * Math.dot(Y, Y.T), sum_Y).T, sum_Y));
-        num[range(n), range(n)] = 0;
+        num[list(range(n)), list(range(n))] = 0;
         Q = num / Math.sum(num);
         Q = Math.maximum(Q, 1e-12);
         
@@ -155,7 +158,7 @@ def tsne(X = Math.array([]), no_dims = 2, initial_dims = 50, perplexity = 30.0):
         # Compute current value of cost function
         if (iter + 1) % 10 == 0:
             C = Math.sum(P * Math.log(P / Q));
-            print "Iteration ", (iter + 1), ": error is ", C
+            print("Iteration ", (iter + 1), ": error is ", C)
             
         # Stop lying about P-values
         if iter == 100:

@@ -1,5 +1,11 @@
+#!/usr/bin/python
+
+from __future__ import absolute_import
+from __future__ import print_function
+
 import numpy as np
 import os
+
 #if __name__ == "__main__" and __package__ is None:
 #    import os, sys
 #    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -116,7 +122,7 @@ def read_htk(filename, format='f4', end='l'):
     if 'f' in format:
         sample_ize = head_info['SampleSize'][0]/4
     else:
-        print "Error in read_htk: input should be float32"
+        print("Error in read_htk: input should be float32")
         return False
         
     datatype = np.dtype((format,(sample_ize,)))
@@ -168,7 +174,7 @@ def write_raw_mat(data,filename,format='f4',end='l'):
              f.write(data[a][b]), but it is too slow
     """
     if not isinstance(data, np.ndarray):
-        print 'Error write_raw_mat: input shoul be np.array'
+        print("Error write_raw_mat: input shoul be np.array")
         return False
     f = open(filename,'wb')
     if len(format)>0:
@@ -259,7 +265,7 @@ def append_raw_mat(data,filename,format='f4',end='l'):
              f.write(data[a][b]), but it is too slow
     """
     if not isinstance(data, np.ndarray):
-        print 'Error write_raw_mat: input shoul be np.array'
+        print("Error write_raw_mat: input shoul be np.array")
         return False
     f = open(filename,'ab')
     if len(format)>0:
@@ -308,7 +314,7 @@ def write_vec2txt(data, filename):
     if isinstance(data,np.ndarray) and data.ndim==1:
         return sub_write_mat(data[:,np.newaxis], filename, '\x0a')
     else:
-        print 'Error write_vec2txt: input shoul be 1 dim'
+        print("Error write_vec2txt: input shoul be 1 dim")
         return False
 
 def write_log(name, dirOut):
@@ -349,7 +355,7 @@ def sub_write_mat(data, filename, separator):
         dependency: numpy
     """
     if not isinstance(data, np.ndarray):
-        print 'Error sub_write_mat: input shoul be np.array'
+        print("Error sub_write_mat: input shoul be np.array")
         return False
     f = open(filename,'w')
     if data.ndim == 1:
@@ -357,7 +363,7 @@ def sub_write_mat(data, filename, separator):
     elif data.ndim == 2:
         temp_data = data
     else:
-        print 'Error write_mat2csv: input must be 1 or 2 dimension'
+        print("Error write_mat2csv: input must be 1 or 2 dimension")
         return False
         
     row, col = temp_data.shape
@@ -388,5 +394,5 @@ if __name__ == "__main__":
     # for debugging
     #data = np.arange(10)
     #read_htk(r'f:\temp\temp\temp.cmp')
-    print read_txt_list('/home/smg/wang/PROJ/DL/DNNAM/data/lists/mono.list')
+    #print(read_txt_list('/home/smg/wang/PROJ/DL/DNNAM/data/lists/mono.list'))
     pass

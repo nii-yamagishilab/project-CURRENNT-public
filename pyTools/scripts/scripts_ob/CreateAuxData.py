@@ -1,4 +1,6 @@
 #!/usr/bin/python
+from __future__ import absolute_import
+from __future__ import print_function
 from   ioTools     import readwrite as py_rw
 from   speechTools import htslab 
 import numpy       as np
@@ -63,7 +65,7 @@ def CreateTimeMatrix(DataFile):
     wordata  = htslab.read_full_lab(worfile)
     
     if len(wordata[1]) != len(syldata[1]) or wordata[1][-1] != syldata[1][-1]:
-        print "\t Unequal Length %s" % (DataFile)
+        print("\t Unequal Length %s" % (DataFile))
         return 0
     
     DataTime = np.int(syldata[1][-1])
@@ -74,7 +76,7 @@ def CreateTimeMatrix(DataFile):
     preSyl = ''
     preWor = ''
     
-    for idx1 in xrange(len(syldata[0])):
+    for idx1 in range(len(syldata[0])):
         frameStart = syldata[0][idx1]
         frameEnd   = syldata[1][idx1]
         
@@ -95,8 +97,8 @@ def CreateTimeMatrix(DataFile):
         if CheckBinary:
             pholabel   = phodata[2][idx1]
             for t in range(np.int(frameStart), np.int(frameEnd)):
-                print "%d, %s [%s %s %s]" % (t,np.binary_repr(dataMat[t], len(bitInfo)),
-                                             pholabel[0:6], syllabel[0:6], worlabel[0:6])
+                print("%d, %s [%s %s %s]" % (t,np.binary_repr(dataMat[t], len(bitInfo)),
+                                             pholabel[0:6], syllabel[0:6], worlabel[0:6]))
 
     py_rw.write_raw_mat(dataMat, DataDir+os.path.sep+DataFile+'.bin', 'u1')
     return DataTime
@@ -105,10 +107,10 @@ def CreateTimeMatrix(DataFile):
 DataFiles    = py_rw.read_txt_list(DataList)
 frameNum     = 0
 for idx1, DataFile in enumerate(DataFiles):
-    print "Process %s (%d / %d)" % (DataFile, idx1+1, len(DataFiles))
+    print("Process %s (%d / %d)" % (DataFile, idx1+1, len(DataFiles)))
     frameNum = frameNum + CreateTimeMatrix(DataFile)
 
-print "Total %d frames" % (frameNum)    
+print("Total %d frames" % (frameNum))
  
 
 

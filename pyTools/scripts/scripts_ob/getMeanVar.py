@@ -1,12 +1,13 @@
 #!/usr/bin/python
-
+from __future__ import absolute_import
+from __future__ import print_function
 from ioTools import readwrite as py_rw
 import numpy as np
 
 
 def WelFord(dataMatrix, dataMv, dataCounter):
     assert dataMatrix.shape[1] == dataMv.shape[1], 'Dimension mismatch'
-    for t in xrange(dataMatrix.shape[0]):
+    for t in range(dataMatrix.shape[0]):
         tmpBias = dataMatrix[t, : ] - dataMv[0]
         dataMv[0] = dataMv[0] + tmpBias * 1.0/(dataCounter + (t + 1))
         dataMv[1] = dataMv[1] + tmpBias * (dataMatrix[t, :] - dataMv[0])
@@ -55,7 +56,7 @@ if __name__ == "__main__":
         with open(fileList, 'r') as filePtr:
             for fileName in filePtr:
                 fileName = fileName.rstrip('\n')
-                print fileName
+                print(fileName)
                 fileName = fileDir + '/' + fileName + fileExt
                 dataMv, dataCounter = temprapper(fileName, dataDim,
                                                  dataMv, dataCounter)

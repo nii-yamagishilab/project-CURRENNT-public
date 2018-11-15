@@ -2,6 +2,9 @@
 
 ##############################
 #
+from __future__ import absolute_import
+from __future__ import print_function
+
 import numpy as np
 
 import re
@@ -19,8 +22,8 @@ except ImportError:
         try: 
             from ioTools import readwrite as funcs
         except ImportError:
-            print "Please add ~/CODE/pyTools to PYTHONPATH"
-            print "Can't not import binaryTools/readwriteC2 or funcs"
+            print("Please add ~/CODE/pyTools to PYTHONPATH")
+            raise Exception("Can't not import binaryTools/readwriteC2 or funcs")
 
 def F0Transform(data):
     #data_out = (np.exp(data/1127.0)-1)*700
@@ -80,7 +83,7 @@ def RMSECalcore(file1, file2, dim):
             v_cover = voiceFrame * 1.0 / valid_length
                 
         else:
-            print 'Only for F0 data'
+            print('Only for F0 data')
             
         if v_cover > max_v_cover:
             max_corr = corr[0]
@@ -131,7 +134,7 @@ def RMSECal(scp1, dim, g_resolu, g_escape):
                     #F0:
                     errorSum[fileNM,0] = np.sqrt(errorSum[fileNM,0]/voiceFrame)
                     errorSum[fileNM,1] = errorSum[fileNM,1]/frame
-                    print file1, errorSum[fileNM,1], corr[0]
+                    print(file1, errorSum[fileNM,1], corr[0])
                 else:
                     errorSum[fileNM,:] = np.sqrt(errorSum[fileNM,:]/frame)
                 
@@ -140,7 +143,7 @@ def RMSECal(scp1, dim, g_resolu, g_escape):
                     #F0:
                     errorSum[fileNM,0] = np.nan
                     errorSum[fileNM,1] = np.nan
-                    print file1, 'nan'
+                    print(file1, 'nan')
                 else:
                     errorSum[fileNM,:] = np.nan
             fileNM += 1
@@ -150,15 +153,15 @@ def RMSECal(scp1, dim, g_resolu, g_escape):
 
     
     if dim==1:
-        print "Average: RMSE: %f\tCor: %f\t VU:%f\t\n" % (
+        print("Average: RMSE: %f\tCor: %f\t VU:%f\t\n" % (
             errorSum[fileNM,0], 
             corrStack.mean(), 
-            errorSum[fileNM,1]),
+            errorSum[fileNM,1]), end = ' ')
         corrStack = np.concatenate((corrStack, np.array([corrStack.mean()])))
         corrStack = np.expand_dims(corrStack, axis=1)
         errorSum = np.concatenate((errorSum, corrStack), axis=1)
     else:
-        print "Average: RMSE: %f\t" % (errorSum[fileNM, -1]),
+        print("Average: RMSE: %f\t" % (errorSum[fileNM, -1]), end=' ')
         
     return errorSum
 
@@ -166,14 +169,14 @@ def showRMSE(dim, rmseFile):
     if dim == 1:
         # F0
         data = funcs.read_raw_mat(rmseFile, 3)
-        print "RMSE: %f\tCor: %f\t VU:%f\t" % (
+        print("RMSE: %f\tCor: %f\t VU:%f\t" % (
             data[-1,0], 
             data[-1,2], 
-            data[-1,1]),
+            data[-1,1]),end = ' ')
     else:
         # MGC
         data = funcs.read_raw_mat(rmseFile, dim+1)
-        print "RMSE: %f\t" % (data[-1,-1]),
+        print("RMSE: %f\t" % (data[-1,-1]), end=' ')
     
         
     

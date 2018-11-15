@@ -1,3 +1,6 @@
+from __future__ import absolute_import
+from __future__ import print_function
+
 # -*- coding: iso-8859-1 -*-
 """
 Continuous wavelet transform module for Python. Includes a collection
@@ -158,13 +161,13 @@ class Paul:
     def psi_ft(self, f):
 
         """Fourier transform of the Paul wavelet."""
-        return (2 ** self.m / sqrt(self.m * prod(range(2, 2 * self.m))) *
+        return (2 ** self.m / sqrt(self.m * prod(list(range(2, 2 * self.m)))) *
                 f ** self.m * exp(-f) * (f > 0))
 
     def psi(self, t):
         """Paul wavelet as described in Torrence and Compo (1998)."""
-        return (2 ** self.m * 1j ** self.m * prod(range(2, self.m - 1)) /
-                sqrt(pi * prod(range(2, 2 * self.m + 1))) * (1 - 1j * t) **
+        return (2 ** self.m * 1j ** self.m * prod(list(range(2, self.m - 1))) /
+                sqrt(pi * prod(list(range(2, 2 * self.m + 1)))) * (1 - 1j * t) **
                 (-(self.m + 1)))
 
     def flambda(self):
@@ -719,17 +722,17 @@ def significance(signal, dt, scales, sigma_test=0, alpha=None,
             signif[n] = fft_theor[n] * chisquare
     elif sigma_test == 2:  # Time-averaged significance
         if len(dof) != 2:
-            raise Exception, ('DOF must be set to [s1, s2], '
-                              'the range of scale-averages')
+            raise Exception('DOF must be set to [s1, s2], '
+                            'the range of scale-averages')
         if Cdelta == -1:
-            raise Exception, ('Cdelta and dj0 not defined for %s with f0=%f' %
-                             (wavelet.name, wavelet.f0))
+            raise Exception('Cdelta and dj0 not defined for %s with f0=%f' %
+                            (wavelet.name, wavelet.f0))
 
         s1, s2 = dof
         sel = find((scales >= s1) & (scales <= s2));
         navg = sel.size
         if navg == 0:
-            raise Exception, 'No valid scales between %d and %d.' % (s1, s2)
+            raise Exception('No valid scales between %d and %d.' % (s1, s2))
 
         # As in Torrence and Compo (1998), equation 25
         Savg = 1 / sum(1. / scales[sel])
@@ -744,7 +747,7 @@ def significance(signal, dt, scales, sigma_test=0, alpha=None,
         # As in Torrence and Compo (1998), equation 26
         signif = (dj * dt / Cdelta / Savg) * fft_theor * chisquare
     else:
-        raise Exception, 'sigma_test must be either 0, 1, or 2.'
+        raise Exception('sigma_test must be either 0, 1, or 2.')
 
     return (signif, fft_theor)
 
@@ -798,13 +801,13 @@ def xwt(x1, y1, x2, y2, significance_level=0.95, normalize=True, result=None,
     n1 = x1.size
     n2 = x2.size
     n = min(n1, n2)
-    if 'dt' not in kwargs.keys():
+    if 'dt' not in list(kwargs.keys()):
         dx1 = x1[1] - x1[0]
         dx2 = x2[1] - x2[0]
         if abs(dx1 - dx2) < e:
             kwargs['dt'] = dx1
         else:
-            raise Warning, 'Time step of both series do not match.'
+            raise Warning('Time step of both series do not match.')
     if normalize:
         std1 = y1.std()
         std2 = y2.std()
@@ -918,13 +921,13 @@ def wct(x1, y1, x2, y2, significance_level=0.95, normalize=True, result=None,
     n1 = x1.size
     n2 = x2.size
     n = min(n1, n2)
-    if 'dt' not in kwargs.keys():
+    if 'dt' not in list(kwargs.keys()):
         dx1 = x1[1] - x1[0]
         dx2 = x2[1] - x2[0]
         if abs(dx1 - dx2) < e:
             kwargs['dt'] = dx1
         else:
-            raise Warning, 'Time step of both series do not match.'
+            raise Warning('Time step of both series do not match.')
     if normalize:
         std1 = y1.std()
         std2 = y2.std()

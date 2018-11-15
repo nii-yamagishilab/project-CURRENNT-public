@@ -2,6 +2,8 @@
 
 ##############################
 #
+from __future__ import absolute_import
+from __future__ import print_function
 import numpy as np
 import os
 import re
@@ -19,8 +21,8 @@ except ImportError:
         try: 
             from ioTools import readwrite as funcs
         except ImportError:
-            print "Please add ~/CODE/pyTools to PYTHONPATH"
-            print "Can't not import binaryTools/readwriteC2 or funcs"
+            print("Please add ~/CODE/pyTools to PYTHONPATH")
+            raise Exception("Can't not import binaryTools/readwriteC2 or funcs")
 
 def F0Transform(data):
     #data_out = (np.exp(data/1127.0)-1)*700
@@ -34,8 +36,8 @@ def RMSECalcore(file1, file2, dim):
 
     # check the data length
     if np.abs(data1.shape[0] - data2.shape[0]) * 2.0 / (data1.shape[0] + data2.shape[0]) > 0.2:
-        print "Warning: length mis-match: %s %d, %s %d" % (file1, data1.shape[0],
-                                                           file2, data2.shape[0])
+        print("Warning: length mis-match: %s %d, %s %d" % (file1, data1.shape[0],
+                                                           file2, data2.shape[0]))
         
     # slightly change the length of data
     if data1.shape[0]>data2.shape[0]:
@@ -160,30 +162,30 @@ def RMSECal(scp1, dim, g_resolu, g_escape):
     
     if dim==1:
         # errorSum = [RMSE, UV]
-        print "Average RMSE: %f\tCor: %f\t VU:%f\t" % (
+        print("Average RMSE: %f\tCor: %f\t VU:%f\t" % (
             errorSum[fileNM,0], 
             corrStack.mean(), 
-            errorSum[fileNM,1]),
+            errorSum[fileNM,1]), end=' ')
         corrStack = np.concatenate((corrStack, np.array([corrStack.mean()])))
         corrStack = np.expand_dims(corrStack, axis=1)
         errorSum = np.concatenate((errorSum, corrStack), axis=1)
     else:
         # errorSum[RMSE 1st dim, RMSE 2nd dim, ..., RMSE average over dim]
-        print "Average RMSE: %f\t" % (errorSum[fileNM, -1]),
+        print("Average RMSE: %f\t" % (errorSum[fileNM, -1]), end = ' ')
     return errorSum
 
 def showRMSE(dim, rmseFile):
     if dim == 1:
         # F0
         data = funcs.read_raw_mat(rmseFile, 3)
-        print "RMSE: %f\tCor: %f\t VU:%f\t" % (
+        print("RMSE: %f\tCor: %f\t VU:%f\t" % (
             data[-1,0], 
             data[-1,2], 
-            data[-1,1]),
+            data[-1,1]),end=' ')
     else:
         # MGC
         data = funcs.read_raw_mat(rmseFile, dim+1)
-        print "RMSE: %f\t" % (data[-1,-1]),
+        print("RMSE: %f\t" % (data[-1,-1]),end=' ')
         
     
 if __name__ == "__main__":

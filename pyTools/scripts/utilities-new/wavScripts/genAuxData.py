@@ -1,3 +1,8 @@
+#!/usr/bin/python
+
+from __future__ import absolute_import
+from __future__ import print_function
+
 from ioTools import readwrite as py_rw
 from speechTools import htslab
 import numpy as np
@@ -7,10 +12,10 @@ import sys
 
 def generateData(inFile, outFile, vuvInFile, vuvOutFile, featDim, resolution, thre=0.5):
     if not os.path.isfile(inFile):
-        print inFile
+        print(inFile)
         return
     if not os.path.isfile(vuvInFile):
-        print vuvInFile
+        print(vuvInFile)
         return
     
     labData = py_rw.read_raw_mat(inFile, featDim)

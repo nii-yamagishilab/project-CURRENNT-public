@@ -2,7 +2,8 @@
 """ This script extract the phoneme labels from data.nc
     
 """
-
+from __future__ import absolute_import
+from __future__ import print_function
 import scipy
 import re, os
 from   scipy   import io
@@ -84,13 +85,13 @@ if dataMV is not None:
         varVec  = mv.variables['outputStdevs'][:].copy()
     mv.close()
 else:
-    print 'dataMV is not specified. Extracted data will be normalized data.\n'
+    print('dataMV is not specified. Extracted data will be normalized data.\n')
 
 # 
 dataList = os.listdir(dataDir)
 for dataFile in dataList:
     if re.search(dataPattern, dataFile):
-        print dataFile
+        print(dataFile)
 if os.path.isdir(dataOut):
     pass
 else:
@@ -109,7 +110,7 @@ for dataFile in dataList:
         else:
             dataAll = data.variables['targetPatterns'][:]
 
-        for i in xrange(uttNum):
+        for i in range(uttNum):
             outName = dataOut+os.path.sep+''.join(seqTags[i])
 
             for j, suf in enumerate(name):
@@ -118,7 +119,7 @@ for dataFile in dataList:
                 if dataMV is not None:
                     tmpdata = tmpdata*varVec[dim[j][0]:dim[j][1]]+meanVec[dim[j][0]:dim[j][1]]
                 genLabel(tmpdata, outFile)
-            print "%s Utt %d" % (dataFile, i)
+            print("%s Utt %d" % (dataFile, i))
         del dataAll, seqTags, seqLengths, uttNum
         data.close()
 

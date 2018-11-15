@@ -1,5 +1,5 @@
 #!/usr/bin/python
-
+from __future__ import absolute_import
 import numpy as np
 import sys, os
 import scipy

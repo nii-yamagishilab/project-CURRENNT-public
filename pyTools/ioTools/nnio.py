@@ -1,5 +1,6 @@
 #!/usr/bin/python
-
+from __future__ import absolute_import
+from __future__ import print_function
 import numpy as np
 from ioTools import readwrite as py_rw
 
@@ -172,8 +173,8 @@ def sarFilterGet(weightCoeff, arOrder, filtertype, tanh):
         return outCoeff
         
     else:
-        print "Unknown type"
-        print "Please check help message of this function"
+        print("Unknown type")
+        print("Please check help message of this function")
         return []
     
 def sarWeightArange(weightCoeff, filterDim, arOrder):
@@ -194,4 +195,4 @@ def sarWeightArange(weightCoeff, filterDim, arOrder):
 if __name__ == "__main__":
     weightCoeff = np.array([ 0.180554,  0.180554])
     temp = sarFilterGet(weightCoeff, 2, 2, 1)
-    print temp
+    print(temp)

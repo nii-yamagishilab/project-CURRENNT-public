@@ -1,4 +1,6 @@
 #!/usr/bin/python
+from __future__ import absolute_import
+from __future__ import print_function
 
 from speechTools import wavTool
 from scipy.io import wavfile
@@ -22,7 +24,7 @@ for fileName in fileList:
     nameHtk  = dirPath + os.path.sep + os.path.basename(fileName).rstrip('.htk') + '.htk'
     nameRaw  = dirPath + os.path.sep + os.path.basename(fileName).rstrip('.htk') + '.raw'
     nameWav  = dirPath + os.path.sep + os.path.basename(fileName).rstrip('.htk') + '.wav'
-    print nameRaw, nameWav
+    print(nameRaw, nameWav)
     data = py_rw.read_htk(nameHtk, 'f4', 'b')
     if trimLength < data.shape[0]:
         data = data[trimLength:data.shape[0]-trimLength]

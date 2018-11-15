@@ -1,5 +1,7 @@
 #!/usr/bin/python
 
+from __future__ import absolute_import
+from __future__ import print_function
 
 import numpy as np
 import multiprocessing
@@ -15,7 +17,7 @@ except ImportError:
         try: 
             from ioTools import readwrite as py_rw
         except ImportError:
-            print "Please add pyTools to PYTHONPATH"
+            print("Please add pyTools to PYTHONPATH")
             raise Exception("Can't not import binaryTools/readwriteC2 or ioTools/readwrite")
         
 def generateLabIndex(labfile, outfile, featDim):
@@ -24,7 +26,7 @@ def generateLabIndex(labfile, outfile, featDim):
         outBuf = np.arange(labFile.shape[0])
         py_rw.write_raw_mat(outBuf, outfile)
     else:
-        print "Not found %s" % (labfile)
+        print("Not found %s" % (labfile))
     
 
 def tempWarpper(fileName, labDir, labExt, outDir, outExt, featDim):

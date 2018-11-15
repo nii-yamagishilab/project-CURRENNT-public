@@ -1,3 +1,6 @@
+from __future__ import absolute_import
+from __future__ import print_function
+
 import numpy as np
 import scipy.io.wavfile
 from   ioTools import readwrite as py_rw
@@ -47,8 +50,8 @@ def raw2wav(rawFile, wavFile, quanLevel = 255.0, bit=16, samplingRate = 16000):
     elif bit == 32:
         recoData  = np.asarray(recoData, dtype=np.int32)
     else:
-        print "Only be able to save wav in int16 and int32 type"
-        print "Save to int16"
+        print("Only be able to save wav in int16 and int32 type")
+        print("Save to int16")
         recoData  = np.asarray(recoData, dtype=np.int16)
     scipy.io.wavfile.write(wavFile, samplingRate, recoData)
 
@@ -62,7 +65,7 @@ def waveReadToFloat(wavFileIn):
     elif wavdata.dtype is np.dtype(np.int32):
         wavdata = np.array(wavdata, dtype=np.float32) / np.power(2.0, 32-1)
     else:
-        print "Only be able to save wav in int16 and int32 type"
+        print("Only be able to save wav in int16 and int32 type")
     return sr, wavdata
 
 def waveSaveFromFloat(waveData, wavFile, bit=16, sr=16000):
@@ -76,8 +79,8 @@ def waveSaveFromFloat(waveData, wavFile, bit=16, sr=16000):
     elif bit == 32:
         recoData  = np.asarray(recoData, dtype=np.int32)
     else:
-        print "Only be able to save wav in int16 and int32 type"
-        print "Save to int16"
+        print("Only be able to save wav in int16 and int32 type")
+        print("Save to int16")
         recoData  = np.asarray(recoData, dtype=np.int16)
     scipy.io.wavfile.write(wavFile, sr, recoData)
     

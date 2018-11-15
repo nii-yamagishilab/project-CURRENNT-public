@@ -1,5 +1,6 @@
 #!/usr/bin/python
-
+from __future__ import absolute_import
+from __future__ import print_function
 import os, sys
 import numpy as np
 
@@ -21,7 +22,7 @@ def editD(a,b, change_f = lambda x,y: x!=y, del_c =1, add_c=1, fgetJump=0):
     #    a,b = b,a
     #    n,m = m,n
         
-    current = range(n+1)
+    current = list(range(n+1))
     jumpMap = np.zeros([m+1,n+1])
 
     for i in range(1,m+1):
@@ -96,7 +97,7 @@ def getAlignment(alignPath):
             temp.append(pos)
             pos += 1
         else:
-            print "*** unknow jump %s" % (str(alignPath))
+            print("*** unknow jump %s" % (str(alignPath)))
             return []
     return temp
 
@@ -138,8 +139,8 @@ def printAlignment(alignPath, seq_a, seq_b):
             #str2 = control % (str2, ' ')
             ctr1 += 1
         else:
-            print "Unknown align type "
-    print str1
+            print("Unknown align type ")
+    print(str1)
     #print str2
 
 if __name__ == "__main__":
@@ -151,13 +152,13 @@ if __name__ == "__main__":
     a = ['a', 'b', 'c', 'sd', 'msdq']
     b = ['tmp', 'a', 'c', 'sd', 'msd']
     dis, jump = editD(a,b,change_f = lambda x,y: 2.0*editD(x,y)/(len(x)+len(y)), fgetJump=1)
-    print a
-    print jump
-    print getAlignment(jump)
+    print(a)
+    print(jump)
+    print(getAlignment(jump))
     printAlignment(jump, a, b)
-    print b
+    print(b)
     a= ['endsil', 'Wanted', 'sil', 'Chief', 'Justice', 'of', 'the', 'Massachusetts', 'Supreme', 'Court', 'sil', 'In', 'April', 'the', "S.J.C.'s", 'current', 'leader', 'sil', 'Edward', 'Hennessy', 'sil', 'sil', 'reaches', 'the', 'mandatory', 'retirement', 'age', 'of', 'seventy', 'sil', 'and', 'a', 'successor', 'is', 'expected', 'to', 'be', 'named', 'In', 'March', 'sil', 'sil', 'It', 'may', 'be', 'the', 'most', 'important', 'appointment', 'sil', 'Governor', 'Michael', 'Dukakis', 'makes', 'sil', 'during', 'the', 'remainder', 'of', 'his', 'administration', 'sil', 'and', 'one', 'of', 'the', 'toughest', 'sil', 'sil', 'as', "WBUR's", 'Margo', 'Melnicove', 'reports', 'sil', 'Hennessy', 'will', 'be', 'a', 'sil', 'hard', 'sil', 'act', 'to', 'sil', 'follow', 'endsil']
     b = ['Wanted', ':', 'Chief', 'Justice', 'of', 'the', 'Massachusetts', 'Supreme', 'Court.', 'In', 'April', ',', 'the', 'S.J.C.', "'s", 'current', 'leader', 'Edward', 'Hennessy', 'brth', 'reaches', 'the', 'mandatory', 'retirement', 'age', 'of', 'seventy', ',', 'and', 'a', 'successor', 'is', 'expected', 'to', 'be', 'named', 'in', 'March.', 'brth', 'It', 'may', 'be', 'the', 'most', 'important', 'appointment', 'Governor', 'Michael', 'Dukakis', 'makes', 'brth', 'during', 'the', 'remainder', 'of', 'his', 'administration', 'and', 'one', 'of', 'the', 'toughest.', 'brth', 'As', 'WBUR', "'s", 'Margo', 'Melnicove', 'reports', ',', 'Hennessy', 'will', 'be', 'a', 'hard', 'act', 'to', 'follow', '.']
     dis, jump = editD(a, b, change_f = lambda x,y: 2.0*editD(x,y)/(len(x)+len(y)), fgetJump=1)
-    print jump
+    print(jump)
     printAlignment(jump, a, b)

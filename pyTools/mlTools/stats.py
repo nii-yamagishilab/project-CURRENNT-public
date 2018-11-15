@@ -1,4 +1,6 @@
 #!/usr/bin/python
+from __future__ import absolute_import
+from __future__ import print_function
 import scipy
 import os, sys
 from scipy import io
@@ -14,7 +16,7 @@ except ImportError:
         try: 
             from ioTools import readwrite as py_rw
         except ImportError:
-            print "Please add pyTools to PYTHONPATH"
+            print("Please add pyTools to PYTHONPATH")
             raise Exception("Can't not import binaryTools/readwriteC2 or ioTools/readwrite")
 
 
@@ -86,7 +88,7 @@ def getMeanStd_merge(fileScps, fileDims, meanStdOutPath, f0Dim=-1):
 
     dimCount = 0
     for fileScp, fileDim in zip(fileScps, fileDims):
-        print "Mean std on %s" % (fileScp)
+        print("Mean std on %s" % (fileScp))
         if f0Dim == dimCount:
             # this is the feature dimension for F0, don't count unvoiced region
             tmpM, tmpV = getMeanStd(fileScp, fileDim, f0Feature=1)

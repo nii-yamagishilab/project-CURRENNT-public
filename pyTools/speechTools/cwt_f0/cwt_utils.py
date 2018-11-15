@@ -1,5 +1,8 @@
+from __future__ import absolute_import
+from __future__ import print_function
+
 import numpy as np
-import cwt
+from . import cwt
 
 def _unpad(matrix, num):
     unpadded = matrix[:,num:len(matrix[0])-num]

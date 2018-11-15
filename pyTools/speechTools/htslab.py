@@ -1,3 +1,7 @@
+from __future__ import print_function
+from __future__ import absolute_import
+
+
 import sys, os
 import numpy as np
 
@@ -7,7 +11,7 @@ def read_full_lab(labfile, res=50000, state=5):
     with open(labfile, 'r') as filePtr:
         for line in filePtr:
             nline += 1
-    print "%d state for %s" % (nline, labfile)
+    print("%d state for %s" % (nline, labfile))
     sTime = np.zeros([nline])
     eTime = np.zeros([nline])
     labEntry = []
