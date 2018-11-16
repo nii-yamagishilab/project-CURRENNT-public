@@ -488,27 +488,31 @@ namespace layers{
 	    m_freqDataS = config.f0dataStd_signalgen();
 
 	printf("\n\tSource module info:\n");
-	printf("\n\tTake the %d-th dimension of previous layer's output as F0:\n", m_freqDim);
-	if (m_freqOpt == NN_OPE_FREGEN_F0_LF0)
-	    printf("\n\tInput F0 is log-F0. ");
-	else if (m_freqOpt == NN_OPE_FREGEN_F0_QF0)
-	    printf("\n\tInput F0 is quantized F0. ");
-	else if (m_freqOpt == NN_OPE_FREGEN_F0_PF0)
-	    printf("\n\tInput F0 is linear F0. ");
-	else
-	    throw std::runtime_error("Unknown F0 input type (frequencyOpt)");
-	printf("Denormalize F0 using mean/std: %f %f.", m_freqDataM, m_freqDataS);
-	printf("\n\tSine wave magnitude %f", m_freqSignalMag);
-	printf("\n\tSine wave harmonics %d", m_freqHmn);
-	if (m_freqBins)
-	    printf("\n\tSine wave used phase match in training");
-	if (m_noNoiseInSine)
-	    printf("\n\tSine wave will have no additive noise");
+	if (m_freqDim >=0){
+	    printf("\n\tTake the %d-th dimension of previous layer's output as F0:\n", m_freqDim);
+	    if (m_freqOpt == NN_OPE_FREGEN_F0_LF0)
+		printf("\n\tInput F0 is log-F0. ");
+	    else if (m_freqOpt == NN_OPE_FREGEN_F0_QF0)
+		printf("\n\tInput F0 is quantized F0. ");
+	    else if (m_freqOpt == NN_OPE_FREGEN_F0_PF0)
+		printf("\n\tInput F0 is linear F0. ");
+	    else
+		throw std::runtime_error("Unknown F0 input type (frequencyOpt)");
+	    printf("Denormalize F0 using mean/std: %f %f.", m_freqDataM, m_freqDataS);
+	    printf("\n\tSine wave magnitude %f", m_freqSignalMag);
+	    printf("\n\tSine wave harmonics %d", m_freqHmn);
+	    if (m_freqBins)
+		printf("\n\tSine wave used phase match in training");
+	    if (m_noNoiseInSine)
+		printf("\n\tSine wave will have no additive noise");
 
-	// otherwise, m_equalNoiseSinePower will lead to nan in sinWaveGenerator_accum
-	if (m_noiseMag < NN_SIGGEN_NOISE_FLOOR && m_equalNoiseSinePower){
-	    m_noiseMag = NN_SIGGEN_NOISE_FLOOR;
-	    printf("\n\tNoise magnitude is floored to %f in voiced region", m_noiseMag);
+	    // otherwise, m_equalNoiseSinePower will lead to nan in sinWaveGenerator_accum
+	    if (m_noiseMag < NN_SIGGEN_NOISE_FLOOR && m_equalNoiseSinePower){
+		m_noiseMag = NN_SIGGEN_NOISE_FLOOR;
+		printf("\n\tNoise magnitude is floored to %f in voiced region", m_noiseMag);
+	    }
+	}else{
+	    printf("\n\tNoise magnitude %f", m_noiseMag);
 	}
 	
     }
@@ -537,7 +541,7 @@ namespace layers{
 	    }
 	}else{
 	    this->setLayerMode(NN_SIGGEN_LAYER_MODE_NOISE_ONLY);
-	    printf("\nSignalGen: generating noise");
+	    printf("\n\tSignalGen: generating noise");
 	}
 	
     }

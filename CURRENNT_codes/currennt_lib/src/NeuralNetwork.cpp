@@ -583,13 +583,14 @@ namespace {
     bool invalidMiddleMDN(const std::string layerType){
 	// check whether the next layer is skip layer
 	return (layerType !="skipini" && layerType!="skipadd" && layerType!="skipcat" &&
-		layerType !="operator");
+		layerType !="skipweightadd" && layerType !="operator");
     }
 
     bool skipLayerTypes(const std::string layerType){
 	return (layerType == "skipadd"           ||
 		layerType == "skipini"           ||
 		layerType == "skipcat"           ||
+		layerType == "skipweightadd"     ||
 		layerType == "skippara_logistic" ||
 		layerType == "skippara_relu"     || 
 		layerType == "skippara_tanh"     ||
@@ -603,6 +604,7 @@ namespace {
 	return (layerType == "skipadd"           ||
 		layerType == "skipini"           ||
 		layerType == "skipcat"           ||
+		layerType == "skipweightadd"     ||
 		layerType == "normflow"          ||
 		layerType == "structTrans"       ||
 		layerType == "distilling");

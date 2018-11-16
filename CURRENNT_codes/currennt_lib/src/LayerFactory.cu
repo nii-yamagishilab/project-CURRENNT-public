@@ -62,6 +62,7 @@
 #include "layers/DistillingLayer.hpp"
 #include "layers/embedding.hpp"
 #include "layers/DFTErrorPostoutputLayer.hpp"
+#include "layers/SkipWeightAddLayer.hpp"
 #include <stdexcept>
 
 
@@ -241,6 +242,9 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createSkipNonParaLayer(
     }else if (layerType == "skipcat"){
 	return new SkipCatLayer<TDevice>(layerChild, weightsSection,
 					 precedingLayers, maxSeqLength, layerID);
+    }else if (layerType == "skipweightadd"){
+	return new SkipWeightAddLayer<TDevice>(layerChild, weightsSection,
+					       precedingLayers, maxSeqLength, layerID);
     }else if (layerType == "normflow"){
 	return new NormFlowLayer<TDevice>(layerChild, weightsSection,
 					  precedingLayers, maxSeqLength, layerID);

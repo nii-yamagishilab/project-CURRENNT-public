@@ -519,7 +519,7 @@ namespace layers{
 		if (m_iniWavCPtr == NULL)
 		    throw std::runtime_error("Fail to link wavnetc");
 		
-		printf("\nWaveNet: %s copies condition from %s",
+		printf("\n\tWaveNet core: %s copies condition from %s",
 		       this->name().c_str(),
 		       m_iniWavCPtr->name().c_str());
 		this->setLayerMode(NN_WAVENETCORE_MODE_COND_FOL);
@@ -536,7 +536,7 @@ namespace layers{
 		    throw std::runtime_error("Fail to link external layer for wavenetc");
 		if (m_contextDim != m_exInputLayer->size())
 		    throw std::runtime_error("External input layer size != contextDim");
-		printf("\nWaveNet: %s uses condition from %s", this->name().c_str(),
+		printf("\n\tWaveNet core: %s uses condition from %s", this->name().c_str(),
 		       m_exInputLayer->name().c_str());
 
 		this->__allocateLocalMem();
