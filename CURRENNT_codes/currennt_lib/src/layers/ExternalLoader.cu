@@ -121,14 +121,41 @@ namespace layers{
 	if (precedingLayer.type() != "input")
 	    throw std::runtime_error("Externalloader is only implemented after the input layer");
 
-	//
-	if (Configuration::instance().dataSourcePath().size()){
-	    m_externalDataMVStr = Configuration::instance().dataSourcePath();
+	m_externalDataMV.clear();
+	
+	// Preparaing the mean and std of input data
+	//  1. layerChild ['externalDataMVVec']
+	//  2. --source_data_ms
+	//  3. layerChild ['externalDataMV']
+	if (layerChild->HasMember("externalDataMVVec")){
+	    // Mean/std data vector has been provided
+	    const rapidjson::Value &dataVec = (*layerChild)["externalDataMVVec"];
+	    if (dataVec.Size() != this->size() * 2)
+		throw std::runtime_error("externalDataMVVec dimension unmatched with layer size");
+	    m_externalDataMV.reserve(this->size()*2);
+	    for (rapidjson::Value::ConstValueIterator it = dataVec.Begin(); it!=dataVec.End(); ++it)
+		m_externalDataMV.push_back(static_cast<real_t>(it->GetDouble()));              
+	    printf("\n\tRead MV from network");
+	    m_externalDataMVStr = "";
 	}else{
-	    m_externalDataMVStr = ((layerChild->HasMember("externalDataMV")) ?
-				   ((*layerChild)["externalDataMV"].GetString()) : "");
+	    // Path of mean/std data vector has been provided
+	    if (Configuration::instance().dataSourcePath().size()){
+		m_externalDataMVStr = Configuration::instance().dataSourcePath();	    
+	    }else{
+		m_externalDataMVStr = ((layerChild->HasMember("externalDataMV")) ?
+				       ((*layerChild)["externalDataMV"].GetString()) : "");
+	    }
+	    cpu_real_vector tmp;
+	    if (m_externalDataMVStr.size()){
+		if (misFuncs::ReadRealData(m_externalDataMVStr, tmp) != this->size() * 2)
+		    throw std::runtime_error("externalDataMV dimension unmatched with layer size");
+		m_externalDataMV = tmp;
+		printf("\n\tRead MV from %s", m_externalDataMVStr.c_str());
+	    }else{
+		printf("\n\tSkip reading MV");
+	    }
 	}
-
+	
 	
 	// m_indexLoadMethod:
 	//   default:  index [1, ... N], index n -> n-th data frame
@@ -138,19 +165,7 @@ namespace layers{
 	// 
 	m_indexLoadMethod   = ((layerChild->HasMember("indexLoadMethod")) ?
 			       ((*layerChild)["indexLoadMethod"].GetInt()) : 0);
-	
-	cpu_real_vector tmp;
-	m_externalDataMV.clear();
-	if (m_externalDataMVStr.size()){
-	    if (misFuncs::ReadRealData(m_externalDataMVStr, tmp) != this->size() * 2)
-		throw std::runtime_error("externalDataMV dimension unmatched with layer size");
-	    m_externalDataMV = tmp;
-	    printf("\n\tRead MV from %s", m_externalDataMVStr.c_str());
-	}else{
-	    printf("\n\tSkip reading MV");
-	}
-	
-	
+
     }
 
     template <typename TDevice>
@@ -163,10 +178,24 @@ namespace layers{
 					      const helpers::JsonAllocator &allocator) const
     {
         TrainableLayer<TDevice>::exportLayer(layersArray, allocator);
-	if (m_externalDataMVStr.size())
+
+	// save data mean/std directly into layerChild (since it is not trainable parameter)
+	if (m_externalDataMV.size() == (this->size() * 2)){
+	    rapidjson::Value dataMVArray(rapidjson::kArrayType);
+	    dataMVArray.Reserve(this->size() * 2, allocator);
+	    for (int i = 0; i < (this->size() * 2); ++i)
+		dataMVArray.PushBack(m_externalDataMV[i], allocator);
+	    (*layersArray)[layersArray->Size() - 1].AddMember("externalDataMVVec",
+							      dataMVArray,
+							      allocator);
+	}else if (m_externalDataMVStr.size()){
 	    (*layersArray)[layersArray->Size() - 1].AddMember("externalDataMV",
 							      m_externalDataMVStr.c_str(),
 							      allocator);
+	}else{
+	    
+	}
+	
 	if (m_indexLoadMethod > 0)
 	    (*layersArray)[layersArray->Size() - 1].AddMember("indexLoadMethod",
 							      m_indexLoadMethod,

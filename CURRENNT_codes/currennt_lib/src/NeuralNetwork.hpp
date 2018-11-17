@@ -128,6 +128,7 @@ private:
     int m_trainingState;
 
     int m_waveNetMemSaveFlag;
+    int m_totalNumLayers;
     
     network_helpers::networkDepMng m_networkMng;
     
@@ -323,6 +324,10 @@ public:
     int  outputPatternSize(const real_t mdnoutput);
 
     void printLayerDependecy();
+
+    // Whether this layer can be optimized for MA WaveNet models
+    bool flagLayerCanbeOptimizedMA(const int layerID);
+    
 };
 
 

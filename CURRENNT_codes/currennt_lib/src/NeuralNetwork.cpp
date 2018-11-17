@@ -573,8 +573,6 @@ namespace network_helpers{
 	    m_layerDeps[depend_layerID].add_towhich(layerId);
 	}
     }
-
-
 }
 
 
@@ -632,6 +630,22 @@ namespace {
 	else
 	    return orignal_maxSeqLength;
     }
+
+    bool flagLayerCanBeOptimizedMA(const int layerID,
+				   const int sourceExcitationLayerID,
+				   const int totalNumLayers,
+				   const int layerResolution)
+    {
+	// A layer's memory should be NOT released in MA WaveNet when
+	//  1. this layer resolution is not at the waveform level
+	//  2. this layer is in the condition module
+	//  3. this layer will be the actual output layer
+	if (layerResolution > 1 || layerID < sourceExcitationLayerID ||
+	    layerID >= totalNumLayers - 2)
+	    return false;
+	else
+	    return true;
+    }
     
 }
 }
@@ -687,6 +701,13 @@ NeuralNetwork<TDevice>::NeuralNetwork(
 	int tmp_wavNetCore      = -1;     // Idx of the first waveNet core module (for waveNet)
 	int outputLayerIdx      = -1;     // Idx of the output layer (before postoutput)           
 	
+	// get a total number of layers
+	m_totalNumLayers = 0;
+	for (rapidjson::Value::ValueIterator layerChild = layersSection.Begin(); 
+	     layerChild != layersSection.End(); ++layerChild)
+	{
+	    m_totalNumLayers++;
+	}
 	
 	/* ----- processing loop ----- */	
 	// preloop to determine type o fnetwork
@@ -921,7 +942,10 @@ NeuralNetwork<TDevice>::NeuralNetwork(
 			}
 		    }else if (m_waveNetMemSaveFlag == NETWORK_WAVENET_SAVE_MA){
 			// Save the memory for MA WaveNet
-			if (counter >= m_signalGenLayerId[0] && layer->getResolution() == 1){
+			if (internal::flagLayerCanBeOptimizedMA(
+				counter, m_signalGenLayerId[0], m_totalNumLayers,
+				layer->getResolution()))
+			{
 			    layer->clearAllBuffers();
 			}
 			
@@ -941,18 +965,21 @@ NeuralNetwork<TDevice>::NeuralNetwork(
         } // Processing loop done
 	
 	// Let each layer know the following layer
-	for (size_t i = 0; i < m_layers.size()-1; ++i) 
+	for (size_t i = 0; i < m_totalNumLayers-1; ++i) 
 	    m_layers[i]->linkFollowingLayer(*(m_layers[i+1].get()));
 	
 	
 	/* ----- post-processing check ----- */
-        if (m_layers.size() < 3)
+	if (m_totalNumLayers != m_layers.size())
+	    throw std::runtime_error("Error in network creation: failed \n");
+	
+        if (m_totalNumLayers < 3)
             throw std::runtime_error("Error in network.jsn: there must be a hidden layer\n");
 	
         // check Input
         if (!dynamic_cast<layers::InputLayer<TDevice>*>(m_layers.front().get()))
             throw std::runtime_error("The first layer is not an input layer");
-        for (size_t i = 1; i < m_layers.size(); ++i) {
+        for (size_t i = 1; i < m_totalNumLayers; ++i) {
             if (dynamic_cast<layers::InputLayer<TDevice>*>(m_layers[i].get()))
                 throw std::runtime_error("Multiple input layers defined");
         }
@@ -967,7 +994,7 @@ NeuralNetwork<TDevice>::NeuralNetwork(
 	    lastPOLayer = dynamic_cast<layers::PostOutputLayer<TDevice>*>(m_layers.back().get());
 	    
 	    layers::PostOutputLayer<TDevice>* midPOLayer;
-	    for (size_t i = 0; i < m_layers.size()-1; ++i) {
+	    for (size_t i = 0; i < m_totalNumLayers-1; ++i) {
 		midPOLayer = dynamic_cast<layers::PostOutputLayer<TDevice>*>(m_layers[i].get());
 
 		
@@ -1009,8 +1036,8 @@ NeuralNetwork<TDevice>::NeuralNetwork(
 	}
 	
         // check if two layers have the same name
-        for (size_t i = 0; i < m_layers.size(); ++i) {
-            for (size_t j = 0; j < m_layers.size(); ++j) {
+        for (size_t i = 0; i < m_totalNumLayers; ++i) {
+            for (size_t j = 0; j < m_totalNumLayers; ++j) {
                 if (i != j && m_layers[i]->name() == m_layers[j]->name())
                     throw std::runtime_error(
 			std::string("Error in network.jsn: different layers have the name '") + 
@@ -1036,7 +1063,7 @@ NeuralNetwork<TDevice>::NeuralNetwork(
 		// although no feedback layer in decoder, there may be skip-connection
 		//  which depends on feedback layer
 		if (m_vaeNetworkType == VAENETWORKTYPE_2 &&
-		    this->flagARdependencyEntry(m_layers.size() - 1)){
+		    this->flagARdependencyEntry(m_totalNumLayers - 1)){
 		    m_vaeNetworkType == VAENETWORKTYPE_1;
 		}   
 	    }else{
@@ -1077,12 +1104,12 @@ NeuralNetwork<TDevice>::NeuralNetwork(
 		m_layers[feedBacklayerId[i]]->linkTargetLayer(*(m_layers.back().get()));
 	    }
 	    // check the bi-directional RNN after the feedback layer
-	    for (size_t i = m_firstFeedBackLayer; i < m_layers.size()-1; i++){
+	    for (size_t i = m_firstFeedBackLayer; i < m_totalNumLayers-1; i++){
 		if (m_layers[i]->type()==std::string("brnn") ||
 		    m_layers[i]->type()==std::string("blstm")){
 
 		    // check for none-VAE network
-		    if (this->flagARdependencyWithLayerEntry(m_layers.size()-1, i)){
+		    if (this->flagARdependencyWithLayerEntry(m_totalNumLayers-1, i)){
 			printf("Layer %s cannot be a bi-directional RNN\n",
 			       m_layers[i]->name().c_str());
 			throw std::runtime_error("Error in network.jsn");
@@ -1109,13 +1136,13 @@ NeuralNetwork<TDevice>::NeuralNetwork(
 
 	    // Step1: set the flag in initial WaveNet-core and link following WaveNet-core
 	    //     to initial WaveNet-core
-	    for (size_t i = 0; i < m_layers.size(); ++i) {
+	    for (size_t i = 0; i < m_totalNumLayers; ++i) {
 		if (m_layers[i]->type() == std::string("wavnetc")){
 		    m_layers[i]->linkTargetLayer(*(m_layers[tmp_wavNetCore].get()));
 		}
 	    }
 	    // Step2: link the linguistic context to the initial Wavenet core
-	    for (size_t i = 0; i < m_layers.size(); ++i) {
+	    for (size_t i = 0; i < m_totalNumLayers; ++i) {
 		if (m_layers[i]->getLayerFlag() == std::string("wavenetConditionInputLayer")){
 		    if (m_layers[i]->type() == std::string("wavenetc"))
 			throw std::runtime_error("External input cannot be from wavenetc");
@@ -1126,7 +1153,7 @@ NeuralNetwork<TDevice>::NeuralNetwork(
 	    }*/
 
 	// Check the time resolution
-	for (size_t i = 1; i < m_layers.size(); ++i){
+	for (size_t i = 1; i < m_totalNumLayers; ++i){
 	    if (m_layers[i]->getResolution() != m_layers[i-1]->getResolution()){
 		// Only allow Operator, externalLoader,
 		//   feedback (without reading previous output)
@@ -1198,7 +1225,7 @@ NeuralNetwork<TDevice>::NeuralNetwork(
 
 	// Final steps:
 	// collect the dependency between layers
-	this->m_networkMng.build(m_layers.size());
+	this->m_networkMng.build(m_totalNumLayers);
 	BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
 	    this->m_networkMng.add_layerDep(layer->getLayerID(), layer->dependLayerIDs());
 	}
@@ -1277,7 +1304,7 @@ layers::InputLayer<TDevice>& NeuralNetwork<TDevice>::inputLayer()
 /*template <typename TDevice>
   layers::TrainableLayer<TDevice>& NeuralNetwork<TDevice>::outputLayer()
   {
-    return static_cast<layers::TrainableLayer<TDevice>&>(*m_layers[m_layers.size()-2]);
+    return static_cast<layers::TrainableLayer<TDevice>&>(*m_layers[m_totalNumLayers-2]);
   }
 */
 
@@ -1287,10 +1314,10 @@ layers::Layer<TDevice>& NeuralNetwork<TDevice>::outputLayer(const int layerID)
     // default case, the output layer
     int tmpLayerID = layerID;
     if (tmpLayerID < 0)
-	tmpLayerID = m_layers.size()-2;
+	tmpLayerID = m_totalNumLayers-2;
     
     // check
-    if (tmpLayerID > (m_layers.size()-1))
+    if (tmpLayerID > (m_totalNumLayers-1))
 	throw std::runtime_error(std::string("Invalid output_tap ID (out of range)"));
     
     return (*m_layers[tmpLayerID]);
@@ -1303,7 +1330,7 @@ layers::SkipLayer<TDevice>* NeuralNetwork<TDevice>::outGateLayer(const int layer
     int tmpLayerID = layerID;
     
     // check
-    if (tmpLayerID > (m_layers.size()-2) || tmpLayerID < 0)
+    if (tmpLayerID > (m_totalNumLayers-2) || tmpLayerID < 0)
 	throw std::runtime_error(std::string("Invalid gate_output_tap ID (out of range)"));
     
     return dynamic_cast<layers::SkipLayer<TDevice>*>(m_layers[tmpLayerID].get());
@@ -1313,7 +1340,7 @@ template <typename TDevice>
 layers::MDNLayer<TDevice>* NeuralNetwork<TDevice>::outMDNLayer(const int layerID)
 {
     if (layerID < 0){
-	return dynamic_cast<layers::MDNLayer<TDevice>*>(m_layers[m_layers.size()-1].get());
+	return dynamic_cast<layers::MDNLayer<TDevice>*>(m_layers[m_totalNumLayers-1].get());
     }else{
 	return dynamic_cast<layers::MDNLayer<TDevice>*>(m_layers[layerID].get());
     }
@@ -1322,7 +1349,7 @@ layers::MDNLayer<TDevice>* NeuralNetwork<TDevice>::outMDNLayer(const int layerID
 template <typename TDevice>
 layers::vqLayer<TDevice>* NeuralNetwork<TDevice>::outvqLayer(const int layerID)
 {
-    if (layerID > m_layers.size()-1 || layerID < 0)
+    if (layerID > m_totalNumLayers-1 || layerID < 0)
 	throw std::runtime_error(std::string("Invalid vqLayer ID (out of range)"));
     return dynamic_cast<layers::vqLayer<TDevice>*>(m_layers[layerID].get());
 }
@@ -1354,7 +1381,7 @@ bool NeuralNetwork<TDevice>::flagARdependency(const int layerID)
     else
 	m_tmpLayerIdx.push_back(layerID);
     
-    if (layerID < 0 || layerID >= m_layers.size()){
+    if (layerID < 0 || layerID >= m_totalNumLayers){
 	printf("Invalid input layerID %d", layerID);
 	return false;
     }else if (layerID == 0){
@@ -1419,7 +1446,7 @@ bool NeuralNetwork<TDevice>::flagARdependencyWithLayer(const int layerID, const 
 
 
     
-    if (layerID < 0 || layerID >= m_layers.size()){
+    if (layerID < 0 || layerID >= m_totalNumLayers){
 	printf("Invalid input layerID %d", layerID);
 	return false;
     }else if (layerID == 0){
@@ -1460,6 +1487,18 @@ bool NeuralNetwork<TDevice>::flagARdependencyWithLayer(const int layerID, const 
     }
 }
 
+template <typename TDevice>
+bool NeuralNetwork<TDevice>::flagLayerCanbeOptimizedMA(const int layerID)
+{
+    //  m_signalGenLayerID[0] is the layer ID of the first source excitation layer,
+    //   which is assumed to be the last layer of condition module
+    //  m_totalNumLayers - 2 is the layer ID of the actual output layer
+    if (layerID < 0 || layerID >= m_totalNumLayers || layerID >= m_layers.size())
+	throw std::runtime_error("Error: flagLayerCanbeOptimizedMA input layerID invalid");
+    
+    return internal::flagLayerCanBeOptimizedMA(layerID, m_signalGenLayerId[0], m_totalNumLayers,
+					       m_layers[layerID]->getResolution());
+}
 
 
 template <typename TDevice>
@@ -1503,7 +1542,7 @@ void NeuralNetwork<TDevice>::restoreTarget(const data_sets::DataSetFraction &fra
     if (config.scheduleSampOpt() == NN_FEEDBACK_SC_SOFT ||
 	config.scheduleSampOpt() == NN_FEEDBACK_SC_MAXONEHOT ||
 	config.scheduleSampOpt() == NN_FEEDBACK_SC_RADONEHOT){
-        m_layers[m_layers.size()-1]->loadSequences(fraction, m_trainingState);
+        m_layers[m_totalNumLayers-1]->loadSequences(fraction, m_trainingState);
     }
 }
 
@@ -1536,7 +1575,7 @@ void NeuralNetwork<TDevice>::computeForwardPass(const int curMaxSeqLength,
 	if (m_trainingState == NN_STATE_GAN_GEN_FEATMAT && flagNetworkForGAN() && 
 	    m_featMatchLayer > 0){
 	    m_trainingState = NN_STATE_GAN_GEN; // return to the normal state
-	    for (int i = m_middlePostOutputLayer; i < m_layers.size(); i++)
+	    for (int i = m_middlePostOutputLayer; i < m_totalNumLayers; i++)
 		m_layers[i]->computeForwardPass(m_trainingState);
 	}
 
@@ -1799,7 +1838,7 @@ void NeuralNetwork<TDevice>::__computeForwardPassGen(const int curMaxSeqLength,
 	// golden target features as input if we just want to extract latent
 	// variables from the network. In this case, config.vaeEncoderOutputlayer() is
 	// used to specify the layer to generate the latent variables
-	if (config.vaeEncoderOutputLayer() >= m_layers.size())
+	if (config.vaeEncoderOutputLayer() >= m_totalNumLayers)
 	    throw std::runtime_error("vaeEncoderOutputLayer is larger than network depth");
 	if (m_vaeLayer < 0)
 	    throw std::runtime_error("vaeEncoderOutputLayer() is used while network is not VAE");
@@ -1843,7 +1882,7 @@ void NeuralNetwork<TDevice>::__computeForwardPassGen(const int curMaxSeqLength,
 	    cnt++;
 	}
 	
-	//if (config.vaeEncoderOutputLayer() == m_layers.size() - 1){
+	//if (config.vaeEncoderOutputLayer() == m_totalNumLayers - 1){
 	//  olm = outMDNLayer();
 	//  if (olm != NULL) olm->getOutput(generationOpt);
 	//}
@@ -2155,20 +2194,28 @@ void NeuralNetwork<TDevice>::computeForwardPassGen(const data_sets::DataSetFract
 	this->__computeForwardPassGen(curMaxSeqLength, generationOpt);
 	
     }else{
+
+	// Make a copy of the network layer dependency
 	network_helpers::networkDepMng tmp_networkMng = this->m_networkMng;
 	
 	// mem save generation mode for MA WaveNet
 	int layerID = 0;
 	BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
 
+	    // print out the index every 10 layers
 	    if (layerID % 10 == 0) std::cout << layerID << " " << std::flush;
+
 	    
-	    if (layer->getResolution() > 1 || layerID < m_signalGenLayerId[0]){
-		// conditional layers
+	    if (!(this->flagLayerCanbeOptimizedMA(layerID))){
+		
+		// This layer can not be optimized in memory, do normal propagation
 		layer->loadSequences(fraction, m_trainingState);
 		layer->computeForwardPass(m_trainingState);
 		
 	    }else{
+
+		// If this layer can be optimized, do the memory-save operation
+		
 		// check each layer in fromwhich layers
 		BOOST_FOREACH (int fromwhich,
 			       tmp_networkMng.get_layerDep(layerID).get_fromwhich()){
@@ -2177,24 +2224,28 @@ void NeuralNetwork<TDevice>::computeForwardPassGen(const data_sets::DataSetFract
 		}
 
 		if (tmp_networkMng.get_layerDep(layerID).empty_towhich()){
-		    // skip
+		    // no other layer needs the output of this layer, skip propagation
 		}else{
 		    layer->resizeAllBuffers(curMaxSeqLength);
 		    layer->loadSequences(fraction, m_trainingState);
 		    layer->computeForwardPass(m_trainingState);
 		}
 		
-		// release the dependended layers
+		// release the memory of layers that send input data to this layer
 		BOOST_FOREACH (int fromwhich,
 			       tmp_networkMng.get_layerDep(layerID).get_fromwhich()){
-		    // normally, the output layer before postoutput is the actual output layer
-		    if (fromwhich > 0 && fromwhich < m_layers.size() - 2){
+		    
+		    if (this->flagLayerCanbeOptimizedMA(fromwhich)){
+			// If the 'input' layer can be optimized
+			// Delete dependency temporarily
 			tmp_networkMng.get_layerDep(fromwhich).del_towhich(layerID);
-			// if the dependended layers is no longer needed, release the mem
+			// If the 'input' layer is no longer needed by any layer, release the mem
 			if (tmp_networkMng.get_layerDep(fromwhich).empty_towhich())
 			    this->m_layers[fromwhich]->clearAllBuffers();
 		    }
 		}
+
+		// Delete the dependency fromwhich
 		tmp_networkMng.get_layerDep(layerID).nul_fromwhich();
 	    
 	    }
@@ -2209,7 +2260,7 @@ template <typename TDevice>
 void NeuralNetwork<TDevice>::computeBackwardPass()
 {
 
-    size_t layerCnt = m_layers.size();
+    size_t layerCnt = m_totalNumLayers;
     
     BOOST_REVERSE_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers) {
 
@@ -2236,7 +2287,7 @@ void NeuralNetwork<TDevice>::computeBackwardPass()
 		  !m_distillingLayers.empty()){
 	    
 	    // for distilling network, skip backpropagation in the teacher network
-	    if (layerCnt < m_layers.size() - 2 && layerCnt > m_distillingLayers.back())
+	    if (layerCnt < m_totalNumLayers - 2 && layerCnt > m_distillingLayers.back())
 		continue;
 
 	    // for distilling network, skip backpropgation in the common conditioning network
@@ -2249,7 +2300,7 @@ void NeuralNetwork<TDevice>::computeBackwardPass()
 		  !m_distillingLayers.empty()){
 
 	    // not using the Gradients calculated by maximum likelihood in postoutput layer
-	    if (layerCnt ==  m_layers.size() - 1)
+	    if (layerCnt ==  m_totalNumLayers - 1)
 		continue;
 	    // propagate through all the layers
 	}
@@ -2374,7 +2425,7 @@ void NeuralNetwork<TDevice>::exportLayers(const helpers::JsonDocument& jsonDoc) 
     rapidjson::Value layersArray(rapidjson::kArrayType);
 
     // create the layer objects
-    for (size_t i = 0; i < m_layers.size(); ++i)
+    for (size_t i = 0; i < m_totalNumLayers; ++i)
         m_layers[i]->exportLayer(&layersArray, &jsonDoc->GetAllocator());
 
     // if the section already exists, we delete it first
@@ -2465,7 +2516,7 @@ std::vector<std::vector<std::vector<real_t> > > NeuralNetwork<TDevice>::getOutpu
 	if (olm == NULL)
 	    throw std::runtime_error("No MDN layer in the current network");
 	//olm->getOutput(mdnoutput); // Move to computeForward(curMaxSeqLength, generationOpt)
-	tempLayerId = m_layers.size()-1;
+	tempLayerId = m_totalNumLayers-1;
 	genMethod = (mdnoutput < 0.0) ? ((mdnoutput < -1.5) ? MDNEMGEN:MDNPARAMETER):MDNSAMPLING;
 	
     }else{
@@ -2487,9 +2538,9 @@ std::vector<std::vector<std::vector<real_t> > > NeuralNetwork<TDevice>::getOutpu
 	
 	olm = outMDNLayer(-1);
 	if (olm == NULL)
-	    tempLayerID = this->m_layers.size()-2; // layer be postouput
+	    tempLayerID = this->m_totalNumLayers-2; // layer be postouput
 	else
-	    tempLayerID = this->m_layers.size()-1; // MDN postoutput layer
+	    tempLayerID = this->m_totalNumLayers-1; // MDN postoutput layer
 	
     }else{
 	// If layerID is specified, generate from that layer
@@ -2865,11 +2916,11 @@ void NeuralNetwork<TDevice>::importWeights(const helpers::JsonDocument &jsonDoc,
     try{
 	// Step1. read in the control vector, a sequence of 1 0
 	Cpu::int_vector tempctrStr;
-	tempctrStr.resize(m_layers.size(), 1);
+	tempctrStr.resize(m_totalNumLayers, 1);
 
 	if (ctrStr.size() > 0){
 	    // if --trainedModelCtr is given
-	    if (ctrStr.size()!= m_layers.size()){
+	    if (ctrStr.size()!= m_totalNumLayers){
 		printf("\n\tLength of trainedModelCtr is unequal to the number of layers in ");
 		printf("the network to be trained\n");
 		throw std::runtime_error("Please check trainedModelCtr");
@@ -3059,7 +3110,7 @@ int NeuralNetwork<TDevice>::layerSize(const int layerID)
 {
     if (layerID < 0)
 	return m_layers.back()->size();
-    else if (layerID > (m_layers.size()-1))
+    else if (layerID > (m_totalNumLayers-1))
 	throw std::runtime_error(std::string("Invalid layer ID. In NN.layerSize"));
     else
 	return m_layers[layerID]->size();
@@ -3070,7 +3121,7 @@ bool NeuralNetwork<TDevice>::isMDNLayer(const int layerID)
 {
     if (layerID < 0)
 	return ((dynamic_cast<layers::MDNLayer<TDevice>*>(m_layers.back().get())) != NULL);
-    else if (layerID > (m_layers.size()-1))
+    else if (layerID > (m_totalNumLayers-1))
 	throw std::runtime_error(std::string("Invalid layer ID. In NN.isMDNLayer"));
     else
 	return ((dynamic_cast<layers::MDNLayer<TDevice>*>(m_layers[layerID].get())) != NULL);
@@ -3127,9 +3178,9 @@ int NeuralNetwork<TDevice>::outputPatternSize(const real_t mdnoutput)
 	
 	olm = outMDNLayer(-1);
 	if (olm == NULL)
-	    tempLayerID = this->m_layers.size()-2; // postouput MDN
+	    tempLayerID = this->m_totalNumLayers-2; // postouput MDN
 	else
-	    tempLayerID = this->m_layers.size()-1; // output
+	    tempLayerID = this->m_totalNumLayers-1; // output
 	
     }else{
 	// If layerID is specified, generate from that layer

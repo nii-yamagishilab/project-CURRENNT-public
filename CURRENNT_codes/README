@@ -45,7 +45,7 @@ Building on Linux requires the following:
        The version Xin Wang uses is 4.3.3.1.
        
        For compatiblity,
-       please configure netCDF by "./configure --disable-netcdf-4 ...". 
+       please configure netCDF by "./configure --disable-netcdf-4" (you can add other options) 
 
        After compiling, nc-config can be used to print the configuration of netCDF.
 
