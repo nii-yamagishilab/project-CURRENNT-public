@@ -2,5 +2,6 @@
 
 INPUT=$1
 OUTPUT=$2
-SOX=$3
-${SOX} ${INPUT} -r 16000 -b 16 ${OUTPUT}
+SAMP=$3
+SOX=$4
+${SOX} ${INPUT} -r ${SAMP} -b 16 ${OUTPUT}

@@ -64,8 +64,10 @@ def waveReadToFloat(wavFileIn):
         wavdata = np.array(wavdata, dtype=np.float32) / np.power(2.0, 16-1)
     elif wavdata.dtype is np.dtype(np.int32):
         wavdata = np.array(wavdata, dtype=np.float32) / np.power(2.0, 32-1)
+    elif wavdata.dtype is np.dtype(np.float32):
+        print("wavForm has been float32 format")
     else:
-        print("Only be able to save wav in int16 and int32 type")
+        raise Exception("Error: unknown waveform format")
     return sr, wavdata
 
 def waveSaveFromFloat(waveData, wavFile, bit=16, sr=16000):
