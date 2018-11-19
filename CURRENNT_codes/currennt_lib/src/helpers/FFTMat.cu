@@ -402,7 +402,7 @@ namespace {
 		framePos = t.get<1>() - frameIdx * frameShift;
 		// Hann window by default
 		if (windowType == FFTMAT_WINDOW_SQUARE)
-		    t.get<0>() += (gradData[frameIdx * fftLength + framePos];
+		    t.get<0>() += (gradData[frameIdx * fftLength + framePos]);
 		else
 		    t.get<0>() += (gradData[frameIdx * fftLength + framePos]
 				   * 0.5 * (1 - cos(2.0 * FFT_PI_DEFINITION * framePos /
