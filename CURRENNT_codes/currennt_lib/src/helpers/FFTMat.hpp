@@ -34,6 +34,9 @@
 #define FFTMAT_SPECTYPE_MSE 0
 #define FFTMAT_SPECTYPE_KLD 1
 
+#define FFTMAT_WINDOW_HANN 0
+#define FFTMAT_WINDOW_SQUARE 1
+
 namespace helpers {
 
     template <typename TDevice>

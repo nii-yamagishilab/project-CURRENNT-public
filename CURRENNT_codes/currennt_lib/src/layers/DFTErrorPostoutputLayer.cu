@@ -134,7 +134,10 @@ namespace layers{
 	, m_fftBinsNum     (0)
 	, m_frameLength    (0)
 	, m_frameShift     (0)
-	, m_frameNum       (0)	
+	, m_frameNum       (0)
+	, m_windowType     (FFTMAT_WINDOW_HANN)
+	, m_windowType2    (FFTMAT_WINDOW_HANN)
+	, m_windowType3    (FFTMAT_WINDOW_HANN)
     {
 	if (this->parallelSequences() > 1)
 	    throw std::runtime_error("\nDFTError is not implemented for parallel mode");
@@ -191,7 +194,11 @@ namespace layers{
 	    // how many frames at maximum
 	    m_frameNum    = helpers::fftTools::fftFrameNum(maxSeqLength, m_frameLength,
 							   m_frameShift);
-	    
+
+	    m_windowType  = (layerChild->HasMember("windowType") ? 
+			     static_cast<real_t>((*layerChild)["windowType"].GetInt()) :
+			     FFTMAT_WINDOW_HANN);
+
 	    complex_t tmp;
 	    tmp.x = 0;
 	    tmp.y = 0;
@@ -219,6 +226,9 @@ namespace layers{
 			      static_cast<int>((*layerChild)["frameLength2"].GetInt()) : 80);
 	    m_frameShift2  = (layerChild->HasMember("frameShift2") ? 
 			      static_cast<int>((*layerChild)["frameShift2"].GetInt()) : 40);
+	    m_windowType2  = (layerChild->HasMember("windowType2") ? 
+			      static_cast<real_t>((*layerChild)["windowType2"].GetInt()) :
+			      FFTMAT_WINDOW_HANN);
 	    m_fftBinsNum2  = helpers::fftTools::fftBinsNum(m_fftLength2);
 	    m_frameNum2    = helpers::fftTools::fftFrameNum(maxSeqLength, m_frameLength2,
 							   m_frameShift2);
@@ -240,6 +250,9 @@ namespace layers{
 			      static_cast<int>((*layerChild)["frameLength3"].GetInt()) : 80);
 	    m_frameShift3  = (layerChild->HasMember("frameShift3") ? 
 			      static_cast<int>((*layerChild)["frameShift3"].GetInt()) : 40);
+	    m_windowType3  = (layerChild->HasMember("windowType3") ? 
+			      static_cast<real_t>((*layerChild)["windowType3"].GetInt()) :
+			      FFTMAT_WINDOW_HANN);
 	    m_fftBinsNum3  = helpers::fftTools::fftBinsNum(m_fftLength3);
 	    m_frameNum3    = helpers::fftTools::fftFrameNum(maxSeqLength, m_frameLength3,
 							   m_frameShift3);
@@ -335,21 +348,21 @@ namespace layers{
 	    helpers::FFTMat<TDevice> sourceSig(
 			&this->_actualOutputs(), &this->m_fftSourceFramed,
 			&this->m_fftSourceSigFFT,
-			m_frameLength, m_frameShift, 0, m_fftLength, m_fftBinsNum,
+			m_frameLength, m_frameShift, m_windowType, m_fftLength, m_fftBinsNum,
 			m_frameNum, this->maxSeqLength(), timeLength,
 			m_specDisType);
 
 	    helpers::FFTMat<TDevice> targetSig(
 			&this->_targets(), &this->m_fftTargetFramed,
 			&this->m_fftTargetSigFFT,
-			m_frameLength, m_frameShift, 0, m_fftLength, m_fftBinsNum,
+			m_frameLength, m_frameShift, m_windowType, m_fftLength, m_fftBinsNum,
 			m_frameNum, this->maxSeqLength(), timeLength,
 			m_specDisType);
 
 	    helpers::FFTMat<TDevice> fftDiffSig(
 			&this->m_fftDiffData, &this->m_fftDiffFramed,
 			&this->m_fftDiffSigFFT,
-			m_frameLength, m_frameShift, 0, m_fftLength, m_fftBinsNum,
+			m_frameLength, m_frameShift, m_windowType, m_fftLength, m_fftBinsNum,
 			m_frameNum, this->maxSeqLength(), timeLength,
 			m_specDisType);
 		
@@ -393,21 +406,21 @@ namespace layers{
 		helpers::FFTMat<TDevice> sourceSig2(
 			&this->_actualOutputs(), &this->m_fftSourceFramed2,
 			&this->m_fftSourceSigFFT2,
-			m_frameLength2, m_frameShift2, 0, m_fftLength2, m_fftBinsNum2,
+			m_frameLength2, m_frameShift2, m_windowType2, m_fftLength2, m_fftBinsNum2,
 			m_frameNum2, this->maxSeqLength(), timeLength,
 			m_specDisType);
 
 		helpers::FFTMat<TDevice> targetSig2(
 			&this->_targets(), &this->m_fftTargetFramed2,
 			&this->m_fftTargetSigFFT2,
-			m_frameLength2, m_frameShift2, 0, m_fftLength2, m_fftBinsNum2,
+			m_frameLength2, m_frameShift2, m_windowType2, m_fftLength2, m_fftBinsNum2,
 			m_frameNum2, this->maxSeqLength(), timeLength,
 			m_specDisType);
 		    
 		helpers::FFTMat<TDevice> fftDiffSig2(
 			&this->m_fftDiffData2, &this->m_fftDiffFramed2,
 			&this->m_fftDiffSigFFT2,
-			m_frameLength2, m_frameShift2, 0, m_fftLength2, m_fftBinsNum2,
+			m_frameLength2, m_frameShift2, m_windowType2, m_fftLength2, m_fftBinsNum2,
 			m_frameNum2, this->maxSeqLength(), timeLength,
 			m_specDisType);
 		
@@ -442,21 +455,21 @@ namespace layers{
 		helpers::FFTMat<TDevice> sourceSig3(
 			&this->_actualOutputs(), &this->m_fftSourceFramed3,
 			&this->m_fftSourceSigFFT3,
-			m_frameLength3, m_frameShift3, 0, m_fftLength3, m_fftBinsNum3,
+			m_frameLength3, m_frameShift3, m_windowType3, m_fftLength3, m_fftBinsNum3,
 			m_frameNum3, this->maxSeqLength(), timeLength,
 			m_specDisType);
 
 		helpers::FFTMat<TDevice> targetSig3(
 			&this->_targets(), &this->m_fftTargetFramed3,
 			&this->m_fftTargetSigFFT3,
-			m_frameLength3, m_frameShift3, 0, m_fftLength3, m_fftBinsNum3,
+			m_frameLength3, m_frameShift3, m_windowType3, m_fftLength3, m_fftBinsNum3,
 			m_frameNum3, this->maxSeqLength(), timeLength,
 			m_specDisType);
 		    
 		helpers::FFTMat<TDevice> fftDiffSig3(
 			&this->m_fftDiffData3, &this->m_fftDiffFramed3,
 			&this->m_fftDiffSigFFT3,
-			m_frameLength3, m_frameShift3, 0, m_fftLength3, m_fftBinsNum3,
+			m_frameLength3, m_frameShift3, m_windowType3, m_fftLength3, m_fftBinsNum3,
 			m_frameNum3, this->maxSeqLength(), timeLength,
 			m_specDisType);
 		    
@@ -622,6 +635,10 @@ namespace layers{
 	    (*layersArray)[layersArray->Size() - 1].AddMember("frameShift", m_frameShift,
 							      allocator);
 
+	    (*layersArray)[layersArray->Size() - 1].AddMember("windowType", m_windowType,
+							      allocator);
+
+	    
 	    if (m_fftLength2){
 		(*layersArray)[layersArray->Size() - 1].AddMember("fftLength2", m_fftLength2,
 								  allocator);
@@ -629,6 +646,8 @@ namespace layers{
 								  allocator);
 		(*layersArray)[layersArray->Size() - 1].AddMember("frameShift2", m_frameShift2,
 								  allocator);
+		(*layersArray)[layersArray->Size() - 1].AddMember("windowType2", m_windowType2,
+								  allocator);			    
 	    }
 	    
 	    if (m_fftLength3){
@@ -637,6 +656,8 @@ namespace layers{
 		(*layersArray)[layersArray->Size() - 1].AddMember("frameLength3", m_frameLength3,
 								  allocator);
 		(*layersArray)[layersArray->Size() - 1].AddMember("frameShift3", m_frameShift3,
+								  allocator);
+		(*layersArray)[layersArray->Size() - 1].AddMember("windowType3", m_windowType3,
 								  allocator);
 	    }    	    
 	}   

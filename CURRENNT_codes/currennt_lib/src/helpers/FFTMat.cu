@@ -195,9 +195,13 @@ namespace {
 
 	    if (framePos < frameLength){
 		// real data in each frame
-		t.get<0>() = rawData[frameIdx * frameShift + framePos] *
-		    0.5 * (1 - cos(2.0 * FFT_PI_DEFINITION * framePos / (frameLength - 1)));
-		
+
+		// Hann window by default
+		if (windowType == FFTMAT_WINDOW_SQUARE)
+		    t.get<0>() = rawData[frameIdx * frameShift + framePos];
+		else
+		    t.get<0>() = rawData[frameIdx * frameShift + framePos] *
+			0.5 * (1 - cos(2.0 * FFT_PI_DEFINITION * framePos / (frameLength - 1)));
 	    }else{
 		// Since FFT length should be >= signal length (frame length)
 		//  we need zero paddings after the frame length
@@ -392,12 +396,17 @@ namespace {
 	    end_frame_idx = ((end_frame_idx < frameNum)?end_frame_idx:frameNum);
 
 	    int framePos = 0;
+	    
 	    t.get<0>() = 0.0;
 	    for (int frameIdx = start_frame_idx; frameIdx < end_frame_idx; frameIdx++){
 		framePos = t.get<1>() - frameIdx * frameShift;
-		t.get<0>() += (gradData[frameIdx * fftLength + framePos]
-			       * 0.5 * (1 - cos(2.0 * FFT_PI_DEFINITION * framePos /
-						(frameLength - 1))));
+		// Hann window by default
+		if (windowType == FFTMAT_WINDOW_SQUARE)
+		    t.get<0>() += (gradData[frameIdx * fftLength + framePos];
+		else
+		    t.get<0>() += (gradData[frameIdx * fftLength + framePos]
+				   * 0.5 * (1 - cos(2.0 * FFT_PI_DEFINITION * framePos /
+						    (frameLength - 1))));
 	    }
 	    t.get<0>() = t.get<0>() * gradScale;
 	}
