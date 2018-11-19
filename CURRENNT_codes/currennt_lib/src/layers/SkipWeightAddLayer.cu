@@ -45,6 +45,9 @@
 #include <boost/algorithm/string.hpp>
 #include <vector>
 
+#define SKIPWEIGHTADDLAYER_SIGMOID_ADD 0 // sig(z * scale + shift) x + (1 - sig) * y
+#define SKIPWEIGHTADDLAYER_HARD_ADD 1    // ((z * scale + shift) > 0) x + ((z * scale + shift)<0) * y
+
 
 namespace internal{
 namespace{
@@ -54,6 +57,7 @@ namespace{
     {
 	real_t z_shift;
 	real_t z_scale;
+	int    mode;
 	__host__ __device__ void  operator() (
 	    const thrust::tuple<const real_t&, const real_t&, const real_t&, real_t&> &t) const
 	{
@@ -62,6 +66,11 @@ namespace{
 	    // t.get<2>() z
 	    // t.get<3>() out
 	    real_t sigz = activation_functions::Logistic::fn(t.get<2>() * z_scale + z_shift);
+
+	    // binarize the sigz if necessary
+	    if (mode == SKIPWEIGHTADDLAYER_HARD_ADD)
+		sigz = ((sigz > 0.5)?(1.0):(0.0));
+	    
 	    t.get<3>() = sigz * t.get<0>() + (1.0 - sigz) * t.get<1>();
 	}
     };
@@ -79,6 +88,7 @@ namespace{
 	real_t *grad_x;
 	real_t *grad_y;
 	real_t *grad_z;
+	int    mode;
 	
 	__host__ __device__ void  operator() (
 	      const thrust::tuple<const real_t&, const real_t&, const real_t&,
@@ -98,6 +108,11 @@ namespace{
 		grad_z[t.get<4>()] = 0.0;
 	    }else{
 		real_t sigz = activation_functions::Logistic::fn(t.get<2>() * z_scale + z_shift);
+
+		// binarize the sigz if necessary
+		if (mode == SKIPWEIGHTADDLAYER_HARD_ADD)
+		    sigz = ((sigz > 0.5)?(1.0):(0.0));
+
 		grad_x[t.get<4>()] = t.get<3>() * sigz;
 		grad_y[t.get<4>()] = t.get<3>() * (1.0 - sigz);
 		grad_z[t.get<4>()] = t.get<3>() * (t.get<0>() - t.get<1>()) * sigz * (1.0 - sigz)
@@ -134,6 +149,12 @@ namespace layers{
 	m_weightLayerStr  = (layerChild->HasMember("preWeightLayer") ? 
 			     ((*layerChild)["preWeightLayer"].GetString()) : "");
 
+
+	// Mode of weighted sum
+	
+	m_mode  = (layerChild->HasMember("sumMode") ? 
+		   ((*layerChild)["sumMode"].GetInt()) : SKIPWEIGHTADDLAYER_SIGMOID_ADD);
+	
 	
 	m_z_scale = (layerChild->HasMember("weightScale") ? 
 		     ((*layerChild)["weightScale"].GetDouble()) : 1.0);
@@ -191,9 +212,12 @@ namespace layers{
 	    throw std::runtime_error("Error: please check \"preWeightLayer\" and \"preSkipLayer\"");
 	}
 
-	
-	printf("\n\tThis layer conducts sig(z*%f+%f)*x + (1-sig(z%f+%f))*y, where",
-	       m_z_scale, m_z_shift, m_z_scale, m_z_shift);
+	if (m_mode == SKIPWEIGHTADDLAYER_HARD_ADD)
+	    printf("\n\tBinary choise: ((z*%f+%f) > 0)*x + ((z%f+%f) < 0)*y,",
+		   m_z_scale, m_z_shift, m_z_scale, m_z_shift);
+	else
+	    printf("\n\tWeighted sum: sig(z*%f+%f)*x + (1-sig(z%f+%f))*y,",
+		   m_z_scale, m_z_shift, m_z_scale, m_z_shift);
 	printf("\n\tx is given by %s", this->PreLayers()[0]->name().c_str());
 	printf("\n\ty is given by %s", this->PreLayers()[1]->name().c_str());
 	printf("\n\tz is given by %s", this->PreLayers()[2]->name().c_str());
@@ -237,6 +261,7 @@ namespace layers{
 	    internal::ComputeLayerOutputFn fn;
 	    fn.z_shift = m_z_shift;
 	    fn.z_scale = m_z_scale;
+	    fn.mode = m_mode;
 	    thrust::for_each(
 	       thrust::make_zip_iterator(
 		  thrust::make_tuple(this->PreLayers()[0]->outputs().begin(),   
@@ -268,6 +293,7 @@ namespace layers{
 	    internal::ComputeLayerOutputFn fn;
 	    fn.z_shift = m_z_shift;
 	    fn.z_scale = m_z_scale;
+	    fn.mode = m_mode;
 	    int n = this->curMaxSeqLength() * this->parallelSequences() * this->size();
 	    thrust::for_each(
 	       thrust::make_zip_iterator(
@@ -311,7 +337,8 @@ namespace layers{
 	    fn.patTypes  = helpers::getRawPointer(this->patTypes());
 	    fn.z_shift = m_z_shift;
 	    fn.z_scale = m_z_scale;
-	    
+	    fn.mode = m_mode;
+		    
 	    tempLayer = dynamic_cast<SkipLayer<TDevice>*>(this->PreLayers()[0]);
 	    if (tempLayer)
 		fn.grad_x = helpers::getRawPointer(tempLayer->outputErrorsFromSkipLayer());
@@ -373,6 +400,9 @@ namespace layers{
 
 	(*layersArray)[layersArray->Size() - 1].AddMember("weightScale", m_z_scale, allocator);
 	(*layersArray)[layersArray->Size() - 1].AddMember("weightShift", m_z_shift, allocator);	
+
+	if (m_mode != SKIPWEIGHTADDLAYER_SIGMOID_ADD)
+	    (*layersArray)[layersArray->Size() - 1].AddMember("sumMode", m_mode, allocator);
 	
 	if (m_previousSkipStr.size())
 	    (*layersArray)[layersArray->Size() - 1].AddMember("preSkipLayer",

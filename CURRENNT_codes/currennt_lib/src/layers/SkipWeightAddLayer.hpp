@@ -49,6 +49,8 @@ namespace layers {
 
 	real_t                  m_z_scale;
 	real_t                  m_z_shift;
+
+	int                     m_mode;
 	
     public:
 		
