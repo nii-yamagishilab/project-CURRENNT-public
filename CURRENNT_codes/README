@@ -93,7 +93,10 @@ Building on Linux requires the following:
 
 
 To build CURRENNT execute:
-1. Please configure CMakeLists.tx
+1. In the root of CURRENNT_codes
+   $: cp CMakeLists.txt_template CMakeLists.txt
+
+   Please configure CMakeLists.txt
    Change /home/smg/wang/TOOL/bin/boost_220 and /home/smg/wang/TOOL/bin/netcdf_220/lib
    to the path of boost and netcdf lib on your machine
 
