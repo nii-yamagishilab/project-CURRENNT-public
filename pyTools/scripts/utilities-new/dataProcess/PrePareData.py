@@ -68,8 +68,8 @@ def PrepareScp(InScpFile, OutScpFile, inDim, outDim, allScp, datadir, txtScp, tx
             fileline = line.strip()
             
             # only check for relative path
-            if not os.path.isfile(fileline):
-                fileline = datadir + os.path.sep + fileline                
+            #if not os.path.isfile(fileline):
+            #    fileline = datadir + os.path.sep + fileline                
             assert os.path.isfile(fileline), "Can't find file"+fileline
 
             if scpIndex==0:                         # loading lab file
@@ -132,8 +132,8 @@ def PrepareScp(InScpFile, OutScpFile, inDim, outDim, allScp, datadir, txtScp, tx
                     break
                 
                 # only check for relative path
-                if not os.path.isfile(fileline):
-                    fileline = datadir + os.path.sep + fileline
+                #if not os.path.isfile(fileline):
+                #    fileline = datadir + os.path.sep + fileline
                 assert os.path.isfile(fileline), "Can't find file"+fileline
 
                 #print line                

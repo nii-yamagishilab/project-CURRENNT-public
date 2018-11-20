@@ -36,7 +36,7 @@ def tempWarpper(fileName, labDir, labDim, featExt, outDir, resolution):
         #print fileName
         generateLabIndex(inFile, outFile, labDim, resolution)
     else:
-        print("Skip:" + fileName)
+        print("Warning: Cannot find file: " + inFile)
 
 
 if __name__ == "__main__":
