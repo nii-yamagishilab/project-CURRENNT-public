@@ -62,6 +62,7 @@ namespace layers {
 	int                m_frameShift;
 	int                m_frameNum;
 	int                m_windowType;
+	int                m_windowTypePhase;
 	
 	real_vector        m_fftSourceFramed;
 	fft_vector         m_fftSourceSigFFT;
@@ -84,6 +85,7 @@ namespace layers {
 	int                m_frameShift2;
 	int                m_frameNum2;
 	int                m_windowType2;
+	int                m_windowTypePhase2;
 	
 	real_vector        m_fftSourceFramed2;
 	fft_vector         m_fftSourceSigFFT2;
@@ -106,6 +108,7 @@ namespace layers {
 	int                m_frameShift3;
 	int                m_frameNum3;
 	int                m_windowType3;
+	int                m_windowTypePhase3;
 	
 	real_vector        m_fftSourceFramed3;
 	fft_vector         m_fftSourceSigFFT3;

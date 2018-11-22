@@ -88,6 +88,7 @@ namespace helpers {
 	void specPhaseGrad(FFTMat<TDevice> &source, FFTMat<TDevice> &target);
 	real_t specPhaseDistance(FFTMat<TDevice> &target, FFTMat<TDevice> &diff);
 
+	void changeWindowType(const int windowType);
     };
 
 

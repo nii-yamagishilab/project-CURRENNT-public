@@ -138,6 +138,9 @@ namespace layers{
 	, m_windowType     (FFTMAT_WINDOW_HANN)
 	, m_windowType2    (FFTMAT_WINDOW_HANN)
 	, m_windowType3    (FFTMAT_WINDOW_HANN)
+	, m_windowTypePhase  (FFTMAT_WINDOW_HANN)
+	, m_windowTypePhase2 (FFTMAT_WINDOW_HANN)
+	, m_windowTypePhase3 (FFTMAT_WINDOW_HANN)
     {
 	if (this->parallelSequences() > 1)
 	    throw std::runtime_error("\nDFTError is not implemented for parallel mode");
@@ -199,6 +202,10 @@ namespace layers{
 			     static_cast<real_t>((*layerChild)["windowType"].GetInt()) :
 			     FFTMAT_WINDOW_HANN);
 
+	    m_windowTypePhase  = (layerChild->HasMember("windowTypePhase") ? 
+				  static_cast<real_t>((*layerChild)["windowTypePhase"].GetInt()) :
+				  FFTMAT_WINDOW_HANN);
+
 	    complex_t tmp;
 	    tmp.x = 0;
 	    tmp.y = 0;
@@ -229,6 +236,9 @@ namespace layers{
 	    m_windowType2  = (layerChild->HasMember("windowType2") ? 
 			      static_cast<real_t>((*layerChild)["windowType2"].GetInt()) :
 			      FFTMAT_WINDOW_HANN);
+	    m_windowTypePhase2  = (layerChild->HasMember("windowTypePhase2") ? 
+				  static_cast<real_t>((*layerChild)["windowTypePhase2"].GetInt()) :
+				  FFTMAT_WINDOW_HANN);
 	    m_fftBinsNum2  = helpers::fftTools::fftBinsNum(m_fftLength2);
 	    m_frameNum2    = helpers::fftTools::fftFrameNum(maxSeqLength, m_frameLength2,
 							   m_frameShift2);
@@ -253,6 +263,10 @@ namespace layers{
 	    m_windowType3  = (layerChild->HasMember("windowType3") ? 
 			      static_cast<real_t>((*layerChild)["windowType3"].GetInt()) :
 			      FFTMAT_WINDOW_HANN);
+	    m_windowTypePhase3  = (layerChild->HasMember("windowTypePhase3") ? 
+				  static_cast<real_t>((*layerChild)["windowTypePhase3"].GetInt()) :
+				  FFTMAT_WINDOW_HANN);
+
 	    m_fftBinsNum3  = helpers::fftTools::fftBinsNum(m_fftLength3);
 	    m_frameNum3    = helpers::fftTools::fftFrameNum(maxSeqLength, m_frameLength3,
 							   m_frameShift3);
@@ -374,6 +388,7 @@ namespace layers{
 	    sourceSig.FFT();
 	    targetSig.FFT();
 
+	    /* When phase and amplitude use the same FFTMats
 	    // -- phase part
 	    if (m_zeta > 0.0){
 		// calculate phase distortion
@@ -389,6 +404,7 @@ namespace layers{
 	    }else{
 		m_phaseError = 0;
 	    }
+	    */
 		
 	    // -- amplitude part
 	    m_specError = sourceSig.specAmpDistance(targetSig, fftDiffSig);
@@ -399,6 +415,54 @@ namespace layers{
 	    // de-framing/windowing
 	    fftDiffSig.collectGrad(m_gamma);
 	    // Gradients should be in m_fftDiffData		    
+
+	    
+	    // -- phase part
+	    if (m_zeta > 0.0){
+		// FFT 1
+		// step0. build the data structure
+		helpers::FFTMat<TDevice> sourceSigPhase(
+			&this->_actualOutputs(), &this->m_fftSourceFramed,
+			&this->m_fftSourceSigFFT,
+			m_frameLength, m_frameShift, m_windowTypePhase, m_fftLength, m_fftBinsNum,
+			m_frameNum, this->maxSeqLength(), timeLength,
+			m_specDisType);
+
+		helpers::FFTMat<TDevice> targetSigPhase(
+			&this->_targets(), &this->m_fftTargetFramed,
+			&this->m_fftTargetSigFFT,
+			m_frameLength, m_frameShift, m_windowTypePhase, m_fftLength, m_fftBinsNum,
+			m_frameNum, this->maxSeqLength(), timeLength,
+			m_specDisType);
+
+		helpers::FFTMat<TDevice> fftDiffSigPhase(
+			&this->m_fftDiffDataPhase, &this->m_fftDiffFramed,
+			&this->m_fftDiffSigFFT,
+			m_frameLength, m_frameShift, m_windowTypePhase, m_fftLength, m_fftBinsNum,
+			m_frameNum, this->maxSeqLength(), timeLength,
+			m_specDisType);
+		
+		// step1. framing and windowing
+		sourceSigPhase.frameSignal();
+		targetSigPhase.frameSignal();
+		
+		// step2. fft
+		sourceSigPhase.FFT();
+		targetSigPhase.FFT();
+
+		// calculate phase distortion
+		m_phaseError = sourceSigPhase.specPhaseDistance(targetSigPhase, fftDiffSigPhase);
+		// compute complex-valued grad vector
+		fftDiffSigPhase.specPhaseGrad(sourceSigPhase, targetSigPhase);
+		// inverse DFT
+		fftDiffSigPhase.iFFT();
+		// de-framing/windowing, grad will be in m_fftDiffDataPhase
+		fftDiffSigPhase.collectGrad(m_zeta);
+	    }else{
+		m_phaseError = 0;
+	    }
+	
+
 	    
 		
 	    // FFT 2
@@ -428,7 +492,8 @@ namespace layers{
 		targetSig2.frameSignal();
 		sourceSig2.FFT();
 		targetSig2.FFT();
-		    
+
+		/*
 		// -- phase part
 		if (m_zeta > 0.0){
 		    m_phaseError2 = sourceSig2.specPhaseDistance(targetSig2, fftDiffSig2);
@@ -438,12 +503,51 @@ namespace layers{
 		    m_fftDiffDataPhase2 = m_fftDiffData2;
 		}else{
 		    m_phaseError2 = 0;
-		}
+		}*/
 		    
 		m_specError2 = sourceSig2.specAmpDistance(targetSig2, fftDiffSig2);
 		fftDiffSig2.specAmpGrad(sourceSig2, targetSig2);
 		fftDiffSig2.iFFT();
 		fftDiffSig2.collectGrad(m_gamma);
+
+		if (m_zeta > 0.0){
+		    helpers::FFTMat<TDevice> sourceSigPhase2(
+			&this->_actualOutputs(), &this->m_fftSourceFramed2,
+			&this->m_fftSourceSigFFT2,
+			m_frameLength2, m_frameShift2, m_windowTypePhase2,
+			m_fftLength2, m_fftBinsNum2,
+			m_frameNum2, this->maxSeqLength(), timeLength,
+			m_specDisType);
+
+		    helpers::FFTMat<TDevice> targetSigPhase2(
+			&this->_targets(), &this->m_fftTargetFramed2,
+			&this->m_fftTargetSigFFT2,
+			m_frameLength2, m_frameShift2, m_windowTypePhase2,
+			m_fftLength2, m_fftBinsNum2,
+			m_frameNum2, this->maxSeqLength(), timeLength,
+			m_specDisType);
+		    
+		    helpers::FFTMat<TDevice> fftDiffSigPhase2(
+			&this->m_fftDiffDataPhase2, &this->m_fftDiffFramed2,
+			&this->m_fftDiffSigFFT2,
+			m_frameLength2, m_frameShift2, m_windowTypePhase2,
+			m_fftLength2, m_fftBinsNum2,
+			m_frameNum2, this->maxSeqLength(), timeLength,
+			m_specDisType);
+		
+		    sourceSigPhase2.frameSignal();
+		    targetSigPhase2.frameSignal();
+		    sourceSigPhase2.FFT();
+		    targetSigPhase2.FFT();
+
+		    m_phaseError2 = sourceSigPhase2.specPhaseDistance(targetSigPhase2,
+								      fftDiffSigPhase2);
+		    fftDiffSigPhase2.specPhaseGrad(sourceSigPhase2, targetSigPhase2);
+		    fftDiffSigPhase2.iFFT();
+		    fftDiffSigPhase2.collectGrad(m_zeta);
+		}else{
+		    m_phaseError2 = 0;
+		}
 	    }else{
 		m_specError2 = 0.0;
 		m_phaseError2 = 0.0;
@@ -478,6 +582,7 @@ namespace layers{
 		sourceSig3.FFT();
 		targetSig3.FFT();
 
+		/*
 		// -- phase part
 		if (m_zeta > 0.0){
 		    m_phaseError3 = sourceSig3.specPhaseDistance(targetSig3, fftDiffSig3);
@@ -487,12 +592,53 @@ namespace layers{
 		    m_fftDiffDataPhase3 = m_fftDiffData3;
 		}else{
 		    m_phaseError3 = 0;
-		}
+		    }*/
 		    
 		m_specError3 = sourceSig3.specAmpDistance(targetSig3, fftDiffSig3);
 		fftDiffSig3.specAmpGrad(sourceSig3, targetSig3);
 		fftDiffSig3.iFFT();
-		fftDiffSig3.collectGrad(m_gamma);		    
+		fftDiffSig3.collectGrad(m_gamma);
+
+		
+		if (m_zeta > 0.0){
+		    helpers::FFTMat<TDevice> sourceSigPhase3(
+			&this->_actualOutputs(), &this->m_fftSourceFramed3,
+			&this->m_fftSourceSigFFT3,
+			m_frameLength3, m_frameShift3, m_windowTypePhase3,
+			m_fftLength3, m_fftBinsNum3,
+			m_frameNum3, this->maxSeqLength(), timeLength,
+			m_specDisType);
+
+		    helpers::FFTMat<TDevice> targetSigPhase3(
+			&this->_targets(), &this->m_fftTargetFramed3,
+			&this->m_fftTargetSigFFT3,
+			m_frameLength3, m_frameShift3, m_windowTypePhase3,
+			m_fftLength3, m_fftBinsNum3,
+			m_frameNum3, this->maxSeqLength(), timeLength,
+			m_specDisType);
+		    
+		    helpers::FFTMat<TDevice> fftDiffSigPhase3(
+			&this->m_fftDiffDataPhase3, &this->m_fftDiffFramed3,
+			&this->m_fftDiffSigFFT3,
+			m_frameLength3, m_frameShift3, m_windowTypePhase3,
+			m_fftLength3, m_fftBinsNum3,
+			m_frameNum3, this->maxSeqLength(), timeLength,
+			m_specDisType);
+		    
+		    sourceSigPhase3.frameSignal();
+		    targetSigPhase3.frameSignal();
+		    sourceSigPhase3.FFT();
+		    targetSigPhase3.FFT();
+
+		    m_phaseError3 = sourceSigPhase3.specPhaseDistance(targetSigPhase3,
+								      fftDiffSigPhase3);
+		    fftDiffSigPhase3.specPhaseGrad(sourceSigPhase3, targetSigPhase3);
+		    fftDiffSigPhase3.iFFT();
+		    fftDiffSigPhase3.collectGrad(m_zeta);
+
+		}else{
+		    m_phaseError3 = 0;
+		}
 	    }else{
 		m_specError3 = 0.0;
 		m_phaseError3 = 0.0;
@@ -637,6 +783,10 @@ namespace layers{
 
 	    (*layersArray)[layersArray->Size() - 1].AddMember("windowType", m_windowType,
 							      allocator);
+	    
+	    (*layersArray)[layersArray->Size() - 1].AddMember("windowTypePhase",
+							      m_windowTypePhase,
+							      allocator);
 
 	    
 	    if (m_fftLength2){
@@ -647,7 +797,11 @@ namespace layers{
 		(*layersArray)[layersArray->Size() - 1].AddMember("frameShift2", m_frameShift2,
 								  allocator);
 		(*layersArray)[layersArray->Size() - 1].AddMember("windowType2", m_windowType2,
-								  allocator);			    
+								  allocator);
+		(*layersArray)[layersArray->Size() - 1].AddMember("windowTypePhase2",
+								  m_windowTypePhase2,
+								  allocator);
+
 	    }
 	    
 	    if (m_fftLength3){
@@ -659,6 +813,10 @@ namespace layers{
 								  allocator);
 		(*layersArray)[layersArray->Size() - 1].AddMember("windowType3", m_windowType3,
 								  allocator);
+		(*layersArray)[layersArray->Size() - 1].AddMember("windowTypePhase3",
+								  m_windowTypePhase3,
+								  allocator);
+
 	    }    	    
 	}   
     }

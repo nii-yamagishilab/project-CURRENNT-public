@@ -289,6 +289,7 @@ namespace {
 
 	    if (t.get<2>().y < FFT_AMP_MIN_NUM){
 		t.get<2>().x = 0.0;
+		t.get<2>().y = FFT_AMP_MIN_NUM; // floor the amplitutde
 	    }else{
 		// phaseDistance = 1 - Re_s / Amp_s * Re_t / Amp_t - Im_s / Amp_s * Im_t / Amp_t
 		t.get<2>().x = 1.0 -
@@ -514,6 +515,13 @@ namespace helpers {
     void FFTMat<Cpu>::iFFT()
     {
 	throw std::runtime_error("iFFT using Cpu is not implemented");
+    }
+    
+    template <typename TDevice>
+    void FFTMat<TDevice>::changeWindowType(const int windowType)
+    {
+	// change window type
+	this->m_windowType = windowType;
     }
 
     template <typename TDevice>
