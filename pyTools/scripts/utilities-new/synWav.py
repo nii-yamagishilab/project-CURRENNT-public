@@ -10,11 +10,11 @@ import sys
 
 def tempWarpper(scriptDir, fileLst, batch, mlpgFlag, mainDataDir, nndataDir, batchNum, postFilter, vocoder):
     if vocoder == 'WORLD':
-        command = "perl %s/utilities/wavGen_WORLD/Synthesis.pl %s/utilities/wavGen_WORLD/Config.pm" % (scriptDir, scriptDir)
-        command = command + " %s/utilities/wavGen_WORLD/Utils.pm DNN_GNWAV %d" % (scriptDir, batch)
+        command = "perl %s/wavGen_WORLD/Synthesis.pl %s/wavGen_WORLD/Config.pm" % (scriptDir, scriptDir)
+        command = command + " %s/wavGen_WORLD/Utils.pm DNN_GNWAV %d" % (scriptDir, batch)
     elif vocoder == 'STRAIGHT':
-        command = "perl %s/utilities/wavGen_STRAIGHT/Synthesis.pl %s/utilities/wavGen_STRAIGHT/Config.pm" % (scriptDir, scriptDir)
-        command = command + " %s/utilities/wavGen_STRAIGHT/Utils.pm DNN_GNWAV %d" % (scriptDir, batch)
+        command = "perl %s/wavGen_STRAIGHT/Synthesis.pl %s/wavGen_STRAIGHT/Config.pm" % (scriptDir, scriptDir)
+        command = command + " %s/wavGen_STRAIGHT/Utils.pm DNN_GNWAV %d" % (scriptDir, batch)
     else:
         print("Unknown vocoder type %s" % (vocoder))
         
@@ -26,7 +26,7 @@ def tempWarpper(scriptDir, fileLst, batch, mlpgFlag, mainDataDir, nndataDir, bat
     
 if __name__ == "__main__":
     
-    scriptDir   = "./"
+    
     mainDataDir = sys.argv[1]
     postFilter  = float(sys.argv[2])
 
@@ -39,6 +39,11 @@ if __name__ == "__main__":
     vocoder     = sys.argv[10]
     nndataDir   = sys.argv[11]
     
+    try:
+        scriptDir =sys.argv[12]
+    except IndexError:
+        scriptDir   = "./utilities"
+        
     batchNum    = 10
 
     

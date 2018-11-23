@@ -85,7 +85,7 @@ Building on Linux requires the following:
         ./bootstrap.sh --with-libraries=program_options,filesystem,system,random,thread)
 
    3 CUDA > 6.5
-       The modified CURRENNT can be compiled with CUDA7.0, 8.0 and 9.0.
+       The modified CURRENNT can be compiled with CUDA7.0, 8.0, 9.0, and 10.0.
        This version of CURRENNT has coverd the issues mentioned in
        http://sourceforge.net/p/currennt/discussion/general/thread/df6eeece/
        http://sourceforge.net/p/currennt/discussion/general/thread/e10ef414/

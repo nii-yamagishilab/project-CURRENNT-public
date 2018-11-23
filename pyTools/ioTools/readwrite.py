@@ -333,6 +333,24 @@ def read_raw_lf0(filename, col, format='f4',end='l', opt=1):
         data[data<0] = 0
     return data
 
+
+def write_txt_list(list_data, file_path):
+    """ write_txt_list(list_data, file_path)
+        write list_data into file_path as a txt file
+    """
+    assert type(list_data) is list, "Input is not list"
+    filePtr = open(file_path, 'w')           
+    for fileName in list_data:               
+        filePtr.write('%s\n' % (str(fileName)))   
+    filePtr.close()
+
+def list_file_name_in_dir(fileDir):
+    """ list_file_name_in_dir(fileDir):
+        return the list of file names without extension
+    """                                                   
+    return [x.split('.')[0] for x in os.listdir(fileDir) if not x.startswith('.')] 
+    
+    
 def qdump(variable, file_name):
     with open(file_name, 'w') as file_ptr:
         pickle.dump(variable, file_ptr)

@@ -298,16 +298,6 @@ $PERL = '/usr/bin/perl';
 # wc
 $WC = '/usr/bin/wc';
 
-# HTS commands
-$HCOMPV    = '/home/smg/wang/TOOL/bin/HTS-2.3alpha-NN/bin/HCompV';
-$HLIST     = '/home/smg/wang/TOOL/bin/HTS-2.3alpha-NN/bin/HList';
-$HINIT     = '/home/smg/wang/TOOL/bin/HTS-2.3alpha-NN/bin/HInit';
-$HREST     = '/home/smg/wang/TOOL/bin/HTS-2.3alpha-NN/bin/HRest';
-$HEREST    = '/home/smg/wang/TOOL/bin/HTS-2.3alpha-NN/bin/HERest';
-$HHED      = '/home/smg/wang/TOOL/bin/HTS-2.3alpha-NN/bin/HHEd';
-$HSMMALIGN = '/home/smg/wang/TOOL/bin/HTS-2.3alpha-NN/bin/HSMMAlign';
-$HMGENS    = '/home/smg/wang/TOOL/bin/HTS-2.3alpha-NN/bin/HMGenS';
-$ENGINE    = '/home/smg/takaki/SRC/hts_engine_API-1.09/bin/hts_engine';
 
 # Neural Network Data commands
 $LF0IP = '/work/smg/wang/TOOL/NeuralNetworkData/bin/F0Interpolation';
@@ -343,8 +333,6 @@ $SYNTHESIS_FFT  = '/work/smg/wang/TOOL/bin/straight/bin/synthesis_fft';
 $WORLD          = '/work/smg/wang/TOOL/world-0.1.4_3/bin';
 $BNDAP2AP       = '/work/smg/wang/TOOL/BandAperiodicity/bin/bndap2ap';
 
-# flite_hts_text_processing
-$FLITE_HTS_TEXT_PROCESSING = '/home/smg/takaki/SRC/flite+hts_engine-1.01-VCTK/bin/flite_hts_text_processing';
 
 # Switch for DATA ============================
 $DAT_MKEMV = 1; # preparing data environments

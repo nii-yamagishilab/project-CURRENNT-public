@@ -1,4 +1,5 @@
 CURRENNT_codes/build
+CURRENNT_codes/build_debug
 CURRENNT_codes/CMakeLists.txt
 pyTools/binaryTools/readwrite.*
 .DS_Store
