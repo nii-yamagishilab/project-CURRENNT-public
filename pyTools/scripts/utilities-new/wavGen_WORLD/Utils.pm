@@ -304,7 +304,7 @@ sub preprocessing_text_analysis($$) {
 
 # Synthesis ==============================
 sub gen_wave($$$$$$) {
-   my ( $gendir, $spgendir, $f0gendir, $apgendir, $scp, $ext, $useSigPF2, $useMLPG, $synWav) = @_;
+   my ( $gendir, $spgendir, $f0gendir, $apgendir, $scp, $ext, $useSigPF2, $useMLPG, $synWav, $vuThres) = @_;
    my ( $tspgendir, $tf0gendir, $tapgendir);
    my ( $line, @FILE, $file, $base, $T, $dim );
 
@@ -394,14 +394,18 @@ sub gen_wave($$$$$$) {
 	     # lf0_delta must be one dimensional. Please make sure "lf0_delta" is used in data_config.py of testset
 	      shell("mv $gendir/$base.lf0_delta $gendir/$base.lf0_ip");
          }
-         shell("$F0VUV $gendir/$base.lf0_ip $f0gendir/$base.vuv > $gendir/$base.lf0");
+	  #shell("$F0VUV $gendir/$base.lf0_ip $f0gendir/$base.vuv > $gendir/$base.lf0");
+	  shell("python -c 'from speechTools import f0convert; f0convert.f0ip2f0(
+\"$gendir/$base.lf0_ip\", \"$f0gendir/$base.vuv\", \"$gendir/$base.lf0\", $vuThres)'");
 
          $f0gendir = "$gendir";
       }
 
       if ($synWav && -s "$gendir/$base.lf0" ) {
 	  if (-s "$gendir/$base.vuv"){
-	      shell("$F0VUV $gendir/$base.lf0 $gendir/$base.vuv > $gendir/$base.lf0_tmp");
+	      #shell("$F0VUV $gendir/$base.lf0 $gendir/$base.vuv > $gendir/$base.lf0_tmp");
+	      shell("python -c 'from speechTools import f0convert; f0convert.f0ip2f0(\"$gendir/$base.lf0\", \"$f0gendir/$base.vuv\", \"$gendir/$base.lf0_tmp\", $vuThres)'");
+
 	      shell("mv $gendir/$base.lf0_tmp $gendir/$base.lf0");
 	  }
 	  lf02f0( "$gendir/$base.lf0", "$gendir/$base.f0" );
@@ -526,8 +530,8 @@ sub gen_wave_only($$$$$$) {
 
       }
 
-      #shell("rm -f $gendir/$base.sp");
-      shell("rm -f $gendir/$base.p_mgc $gendir/$base.mgc_delta $gendir/$base.mgc_delta.var $gendir/$base.mgc_pdf");
+      shell("rm -f $gendir/$base.sp");
+      shell("rm -f $gendir/$base.mgc_delta $gendir/$base.mgc_delta.var $gendir/$base.mgc_pdf");
       shell("rm -f $gendir/$base.f0");
       shell("rm -f $gendir/$base.lf0_ip $gendir/$base.lf0_delta $gendir/$base.lf0_delta.var $gendir/$base.lf0_pdf");
       shell("rm -f $gendir/$base.ap");

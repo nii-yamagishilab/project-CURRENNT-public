@@ -8,7 +8,7 @@ import os
 import sys
 
 
-def tempWarpper(scriptDir, fileLst, batch, mlpgFlag, mainDataDir, nndataDir, batchNum, postFilter, vocoder):
+def tempWarpper(scriptDir, fileLst, batch, mlpgFlag, mainDataDir, nndataDir, batchNum, postFilter, vocoder, vu_threshold):
     if vocoder == 'WORLD':
         command = "perl %s/wavGen_WORLD/Synthesis.pl %s/wavGen_WORLD/Config.pm" % (scriptDir, scriptDir)
         command = command + " %s/wavGen_WORLD/Utils.pm DNN_GNWAV %d" % (scriptDir, batch)
@@ -20,7 +20,8 @@ def tempWarpper(scriptDir, fileLst, batch, mlpgFlag, mainDataDir, nndataDir, bat
         
     command = command + " %d 0 %s %s"  % (mlpgFlag, fileLst, mainDataDir)
     command = command + " %s %d 1 0"   % (nndataDir, batchNum)
-    command = command + " %s %s %s %f" % (mainDataDir, mainDataDir, mainDataDir, postFilter)
+    command = command + " %s %s %s %f %s" % (mainDataDir, mainDataDir, mainDataDir, postFilter,
+                                             vu_threshold)
     print(command)
     os.system(command)
     
@@ -43,6 +44,11 @@ if __name__ == "__main__":
         scriptDir =sys.argv[12]
     except IndexError:
         scriptDir   = "./utilities"
+
+    try:
+        vuThres = float(sys.argv[13])
+    except IndexError:
+        vuThres = 0.5
         
     batchNum    = 10
 
@@ -102,7 +108,7 @@ if __name__ == "__main__":
     
         #tempWarpper(command)
         pool.apply_async(tempWarpper,args=(scriptDir, fileLst, batch, mlpgFlag, mainDataDir,
-                                           nndataDir, batchNum, postFilter, vocoder))
+                                           nndataDir, batchNum, postFilter, vocoder, vuThres))
         batch = batch + 1
 
     

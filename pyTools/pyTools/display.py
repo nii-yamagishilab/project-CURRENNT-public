@@ -1,7 +1,7 @@
 #!/usr/bin/python
 from __future__ import print_function
 import datetime
-
+import sys
 class pyToolsDcolors:
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
@@ -42,5 +42,5 @@ def self_print_with_date(message, level='h'):
         self_print('---' + str(message) + ' ' + str(datetime.datetime.now().time()) + '---')
     else:
         self_print(str(message) + ' ' + str(datetime.datetime.now().time()))
-        
+    sys.stdout.flush()
     

@@ -23,6 +23,13 @@ def f02lf0_file(data_file, out_file, thres=10.0, unvoiced_value=-1.0e+10):
     py_rw.write_raw_mat(data, out_file)
 
 
+def f0ip2f0(f0_ip_file, vuv_file, output_file, vu_threshold=0.5, unvoiced_value=-1.0e+10):
+    f0_ip_data = py_rw.read_raw_lf0(f0_ip_file, 1)
+    vuv_data = py_rw.read_raw_mat(vuv_file, 1)
+    assert f0_ip_data.shape[0]==vuv_data.shape[0], "Error: unequal length %s %s" % (f0_ip_file, vuv_file)
+    f0_ip_data[vuv_data<vu_threshold] = unvoiced_value
+    py_rw.write_raw_mat(f0_ip_data, output_file)
+    
 if __name__ == "__main__":
    
     data_path = sys.argv[1]

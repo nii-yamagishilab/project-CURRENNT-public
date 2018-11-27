@@ -50,6 +50,7 @@ $spgdir  = "$ARGV[12]";
 $lf0dir  = "$ARGV[13]";
 $bapdir  = "$ARGV[14]";
 $pgflag  = "$ARGV[15]";
+$vuthre  = "$ARGV[16]";
 
 # set switch
 $DNN_MKEMV = 0;    # preparing environments for neural network
@@ -79,7 +80,7 @@ if ($DNN_GNWAV) {
    if ($onlywav){
        gen_wave_only( $dir, $spgdir, $lf0dir, $bapdir, "$scp{'gen'}.$p", ".htk", $pgflag, $useMLPG, 1);
    }else{
-       gen_wave( $dir, $spgdir, $lf0dir, $bapdir, "$scp{'gen'}.$p", ".htk", $pgflag, $useMLPG, $synwav);
+       gen_wave( $dir, $spgdir, $lf0dir, $bapdir, "$scp{'gen'}.$p", ".htk", $pgflag, $useMLPG, $synwav, $vuthre);
    }
 
 }

@@ -300,8 +300,9 @@ $WC = '/usr/bin/wc';
 
 
 # Neural Network Data commands
-$LF0IP = '/work/smg/wang/TOOL/NeuralNetworkData/bin/F0Interpolation';
-$F0VUV = '/work/smg/wang/TOOL/NeuralNetworkData/bin/F0VUVComposition';
+#$LF0IP = '/work/smg/wang/TOOL/NeuralNetworkData/bin/F0Interpolation';
+#$F0VUV = '/work/smg/wang/TOOL/NeuralNetworkData/bin/F0VUVComposition';
+#$F0VUV = 'python ';
 
 # SPTK commands
 $X2X      = '/work/smg/wang/TOOL/bin/sptk/bin/x2x';

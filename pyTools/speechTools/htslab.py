@@ -5,8 +5,8 @@ from __future__ import absolute_import
 import sys, os
 import numpy as np
 
-def read_full_lab(labfile, res=50000, state=5):
-    #f = open(labfile, 'r')                                           
+def read_full_lab(labfile, res=50000, state=1):
+
     nline = 0
     with open(labfile, 'r') as filePtr:
         for line in filePtr:
@@ -24,8 +24,17 @@ def read_full_lab(labfile, res=50000, state=5):
             sTime[nline] = int(temp[0])/res
             eTime[nline] = int(temp[1])/res
             nline += 1
+
+    if state > 1:
+        assert nline % state == 0, "Error: incompatible state numbers"
+        sTime = sTime[::state]
+        eTime = eTime[state-1::state]
+        labEntry = [x for idx,x in enumerate(labEntry) if idx % state == 0]
+        assert sTime.shape[0] == eTime.shape[0], "Error: fail to extract state"
+        assert sTime.shape[0] == len(labEntry), "Error: fail to extract state"
+        
     return sTime, eTime, labEntry
-    #f.close()                                                        
+                         
 
 
 

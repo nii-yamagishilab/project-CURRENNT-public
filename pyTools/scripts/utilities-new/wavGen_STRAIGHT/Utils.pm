@@ -292,7 +292,7 @@ sub preprocessing_text_analysis($$) {
 
 # Synthesis ==============================
 sub gen_wave($$$$$$) {
-   my ( $gendir, $spgendir, $f0gendir, $apgendir, $scp, $ext, $useSigPF2, $useMLPG, $synWav) = @_;
+   my ( $gendir, $spgendir, $f0gendir, $apgendir, $scp, $ext, $useSigPF2, $useMLPG, $synWav, $vuThres) = @_;
    my ( $tspgendir, $tf0gendir, $tapgendir);
    my ( $line, @FILE, $file, $base, $T, $dim );
 
@@ -382,11 +382,19 @@ sub gen_wave($$$$$$) {
 	     }
          }
 	 if (-s "$gendir/$base.lf0_ip"){
-	     shell("$F0VUV $gendir/$base.lf0_ip $f0gendir/$base.vuv > $gendir/$base.lf0");
+	     shell("python -c 'from speechTools import f0convert; f0convert.f0ip2f0(
+\"$gendir/$base.lf0_ip\", \"$f0gendir/$base.vuv\", \"$gendir/$base.lf0\", $vuThres)'");
+	     #shell("$F0VUV $gendir/$base.lf0_ip $f0gendir/$base.vuv > $gendir/$base.lf0");
 	 }
          $f0gendir = "$gendir";
       }
-      if ($synWav && -s "$f0gendir/$base.lf0" ) {
+      if ($synWav && -s "$gendir/$base.lf0" ) {
+	  if (-s "$gendir/$base.vuv"){
+	      #shell("$F0VUV $gendir/$base.lf0 $gendir/$base.vuv > $gendir/$base.lf0_tmp");
+	      shell("python -c 'from speechTools import f0convert; f0convert.f0ip2f0(\"$gendir/$base.lf0\", \"$f0gendir/$base.vuv\", \"$gendir/$base.lf0_tmp\", $vuThres)'");
+
+	      shell("mv $gendir/$base.lf0_tmp $gendir/$base.lf0");
+	  }
          lf02f0( "$f0gendir/$base.lf0", "$gendir/$base.f0" );
       }
       
@@ -417,15 +425,16 @@ sub gen_wave($$$$$$) {
       
       if ($synWav && -s "$gendir/$base.sp" && -s "$gendir/$base.f0" && -s "$gendir/$base.ap" ) {
          shell("$X2X +fa $gendir/$base.f0 > $gendir/$base.f0.a");
-         $line = "$SYNTHESIS_FFT -f $sr -spec -fftl $fp -shift " . ( ( $fs * 1000 ) / $sr ) . " -sigp 4 -cornf 4000 -float ";
+         $line = "$SYNTHESIS_FFT -f $sr -spec -fftl $fp -shift " . ( ( $fs * 1000 ) / $sr ) . " -sigp 4 -cornf 24000 -float ";
          $line .= "-apfile $gendir/$base.ap $gendir/${base}.f0.a $gendir/$base.sp $gendir/$base.wav";
 	 
          shell($line);
          shell("rm -f $gendir/$base.f0.a");
       }
 
-      #shell("rm -f $gendir/$base.sp");
-      #shell("rm -f $gendir/$base.p_mgc $gendir/$base.mgc_delta.var $gendir/$base.mgc_pdf");
+      shell("rm -f $gendir/$base.sp");
+      #shell("rm -f $gendir/$base.p_mgc");
+      shell("rm -f $gendir/$base.mgc_delta.var $gendir/$base.mgc_pdf");
       shell("rm -f $gendir/$base.f0");
       shell("rm -f $gendir/$base.lf0_ip $gendir/$base.lf0_delta.var $gendir/$base.lf0_pdf");
       shell("rm -f $gendir/$base.ap");
