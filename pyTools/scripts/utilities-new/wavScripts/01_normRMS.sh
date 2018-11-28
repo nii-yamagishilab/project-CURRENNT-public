@@ -8,9 +8,9 @@ OUTPUT=$2
 SOX=$3
 SV56=$4
 
-RAWORIG=${INPUT}.raw
-RAWNORM=${INPUT}.raw.norm
-BITS16=${INPUT}.16bit.wav
+RAWORIG=${OUTPUT}.raw
+RAWNORM=${OUTPUT}.raw.norm
+BITS16=${OUTPUT}.16bit.wav
 
 SAMP=`${SOX} --i -r ${INPUT}`
 BITS=`${SOX} --i -b ${INPUT}`
