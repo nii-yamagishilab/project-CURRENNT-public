@@ -2,5 +2,7 @@ CURRENNT_codes/build
 CURRENNT_codes/build_debug
 CURRENNT_codes/CMakeLists.txt
 pyTools/binaryTools/readwrite.*
+pyTools/scripts/utilities-new/wavGen_STRAIGHT/Config.pm
+pyTools/scripts/utilities-new/wavGen_WORLD/Config.pm
 .DS_Store
 ._.DS_Store
