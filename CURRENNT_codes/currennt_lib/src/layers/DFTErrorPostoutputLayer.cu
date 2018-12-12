@@ -46,7 +46,14 @@
 #include <boost/shared_ptr.hpp>
 #include <boost/algorithm/string.hpp>
 #include <vector>
- 
+
+#define DFTERRORPOST_HNM_MODEL_1 1
+
+// to be integrated with signalgen F0 U/V
+#define DFTERRORUV 10
+#define DFTERRORUVSEARCH 2
+#define DFTERROR_PI 3.141215
+
 namespace internal{
 namespace{
 
@@ -107,6 +114,77 @@ namespace{
 	    }
         }
     };
+
+    struct TimeDomainRemoveWaveformVoiced
+    {
+	real_t  f0TimeResolution;
+	real_t *f0DataBuffer;
+
+	real_t  f0DataM;
+	real_t  f0DataS;
+	
+	int     f0InputLayerDim;
+	int     waveformLength;
+	int     featDim;
+	
+	const char *patTypes;
+	
+	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &values) const
+	{
+	    
+            int timeIdx = values.get<1>() / featDim;
+	    int f0TimeIdx = timeIdx / f0TimeResolution;
+	    
+            if (patTypes[timeIdx] == PATTYPE_NONE){
+		values.get<0>() = 0.0;
+	    }else{
+		
+		// remove voiced waveforms
+		int distance = -1;
+		real_t weight = 0.0;
+		
+		if ((f0DataBuffer[f0TimeIdx * f0InputLayerDim + f0InputLayerDim - 1] *
+		     f0DataS + f0DataM) > DFTERRORUV){
+
+		    // first look ahead
+		    for (int lookhead = 1;
+			 (f0TimeIdx - lookhead) >=0 && lookhead <= DFTERRORUVSEARCH;
+			 lookhead++){
+			if ((f0DataBuffer[(f0TimeIdx - lookhead) * f0InputLayerDim +
+					  f0InputLayerDim - 1] * f0DataS + f0DataM)
+			    < DFTERRORUV){
+			    distance = timeIdx - ((f0TimeIdx - lookhead + 1) * f0TimeResolution -1);
+			    break;
+			}
+		    }
+
+		    if (distance < 0){
+			// first look ahead
+			for (int lookback=1;
+			     (f0TimeIdx + lookback) < waveformLength && lookback <= DFTERRORUVSEARCH;
+			     lookback++){
+			    if ((f0DataBuffer[(f0TimeIdx + lookback) * f0InputLayerDim +
+					      f0InputLayerDim - 1] * f0DataS + f0DataM)
+				< DFTERRORUV){
+				distance = (f0TimeIdx + lookback) * f0TimeResolution - timeIdx;
+				break;
+			    }
+			}	
+		    }
+
+		    if (distance < 0){
+			// this time step is very inside a voiced frame, set it to zero directly
+			values.get<0>() = 0.0;
+		    }else{
+			// weight by Hann window
+			weight = 0.5 * (1.0 + cos(2.0 * DFTERROR_PI * distance /
+						  (2.0 * f0TimeResolution * DFTERRORUVSEARCH - 1)));
+			values.get<0>() = weight * values.get<0>();
+		    }
+		}
+	    }
+	}
+    };
 }
 }
 
@@ -141,13 +219,19 @@ namespace layers{
 	, m_windowTypePhase  (FFTMAT_WINDOW_HANN)
 	, m_windowTypePhase2 (FFTMAT_WINDOW_HANN)
 	, m_windowTypePhase3 (FFTMAT_WINDOW_HANN)
+	, m_noiseOutputLayer (NULL)
+	, m_f0InputLayer     (NULL)
+	, m_noiseTrain_epoch (-1)
     {
 	if (this->parallelSequences() > 1)
-	    throw std::runtime_error("\nDFTError is not implemented for parallel mode");
+	    throw std::runtime_error("\nDF TError is not implemented for parallel mode");
 
 	if (this->size() > 1)
-	    throw std::runtime_error("\nDFTError only allows output data dimension = 1");
+	    throw std::runtime_error("\nDFT Error only allows output data dimension = 1");
 
+	if (precedingLayer.size() != this->size())
+	    throw std::runtime_error("\nDFT Error previous layer size != DFT layer size");
+	
 	this->__loadOpts(layerChild);	
     }	
 
@@ -308,6 +392,34 @@ namespace layers{
 	    m_fftDiffData3.clear();
 	    m_fftDiffDataPhase3.clear();   
 	}
+
+	m_hnm_flag   = (layerChild->HasMember("hnmMode") ? 
+			static_cast<int>((*layerChild)["hnmMode"].GetInt()) : 0);
+
+	if (m_hnm_flag > 0){
+	    m_noiseTrain_epoch = (layerChild->HasMember("noisePartTrainEpochNum") ? 
+		static_cast<int>((*layerChild)["noisePartTrainEpochNum"].GetInt()) : 15);
+	    
+	    m_noiseOutputLayerName = (layerChild->HasMember("noiseOutputLayerName") ? 
+				      ((*layerChild)["noiseOutputLayerName"].GetString()) : "");
+	    
+	    m_f0InputLayerName = (layerChild->HasMember("f0InputLayerName") ? 
+				  ((*layerChild)["f0InputLayerName"].GetString()) : "");
+	    printf("\n\tDTF turns on HNM model mode [%d]", m_hnm_flag);
+
+	    m_f0DataM = (layerChild->HasMember("f0DataMean")?
+			 static_cast<real_t>((*layerChild)["f0DataMean"].GetDouble()):0);
+	    m_f0DataS = (layerChild->HasMember("f0DataStd")?
+			 static_cast<real_t>((*layerChild)["f0DataStd"].GetDouble()):1);
+
+	    const Configuration &config = Configuration::instance();
+	    if (config.f0dataMean_signalgen() > 0)
+		m_f0DataM = config.f0dataMean_signalgen();
+	    if (config.f0dataStd_signalgen() > 0)
+		m_f0DataS = config.f0dataStd_signalgen();
+	}
+
+	
     }
 
     
@@ -321,7 +433,6 @@ namespace layers{
     template <typename TDevice>
     void DFTPostoutputLayer<TDevice>::computeForwardPass(const int nnState)
     {
-	
 	if (this->getSaveMemoryFlag())
 	    throw std::runtime_error("Memory save mode should be turned off");
 	
@@ -329,6 +440,44 @@ namespace layers{
 	int timeLength = (this->precedingLayer().curMaxSeqLength() *
 			  this->precedingLayer().parallelSequences());
 
+	
+	// for HNM special training mode
+	if (m_hnm_flag == DFTERRORPOST_HNM_MODEL_1){
+	    // if this layer is valid for HNM special mode
+	    if (m_noiseOutputLayer && m_f0InputLayer &&
+		this->getCurrTrainingEpoch() < m_noiseTrain_epoch &&
+		nnState == NN_STATE_GAN_NOGAN_TRAIN) {
+		
+		// change the target waveform based on U/V infor
+		{
+		    internal::TimeDomainRemoveWaveformVoiced fn1;
+		    fn1.f0TimeResolution = m_f0InputLayer->getResolution();
+		    fn1.f0InputLayerDim  = m_f0InputLayer->size();
+		    fn1.f0DataBuffer     = helpers::getRawPointer(m_f0InputLayer->outputs());
+		    fn1.waveformLength   = timeLength;
+		    fn1.f0DataM          = m_f0DataM;
+		    fn1.f0DataS          = m_f0DataS;
+		    fn1.featDim          = this->size();
+		    fn1.patTypes         = helpers::getRawPointer(this->patTypes());
+		    thrust::for_each(
+		      thrust::make_zip_iterator(
+		       thrust::make_tuple(
+			 this->outputs().begin(),
+			 thrust::counting_iterator<int>(0))),
+		      thrust::make_zip_iterator(
+		       thrust::make_tuple(
+			 this->outputs().begin()   + timeLength * this->size(),
+			 thrust::counting_iterator<int>(0)  + timeLength * this->size())),
+		      fn1);
+		}
+		
+		// copy the noise output as the generated waveforms
+		//  (to calculate the error on the noise waveform only)
+		thrust::copy(m_noiseOutputLayer->outputs().begin(),
+			     m_noiseOutputLayer->outputs().end(),
+			     this->precedingLayer().outputs().begin());
+	    }
+	}
 	
 	// Compute waveform MSE
 	if (m_beta > 0.0){
@@ -748,6 +897,30 @@ namespace layers{
 				  thrust::plus<real_t>());
 	    }
 	}
+	
+	// for HNM special training mode
+	if (m_hnm_flag == DFTERRORPOST_HNM_MODEL_1){
+	    // if this layer is valid for HNM special mode
+	    if (m_noiseOutputLayer && m_f0InputLayer &&
+		this->getCurrTrainingEpoch() < m_noiseTrain_epoch &&
+		nnState == NN_STATE_GAN_NOGAN_TRAIN) {
+		
+		// copy the gradients w.r.t noise component to the noise output layer
+		thrust::copy(this->precedingLayer().outputErrors().begin(),
+			     this->precedingLayer().outputErrors().end(),
+			     m_noiseOutputLayer->outputErrors().begin());
+		
+		// set the gradients w.r.t harmonic to zero (by setting this->precedingLayer())
+		//  because m_noiseOutputLayer will be a skip-layer,
+		//  this->precedingLayer send 0 to m_noiseOutputLayer.outputErrorFromSkipLayers,
+		//  the gradients from DFT will be kept in m_noiseOutputLayer.outputErrors()
+		thrust::fill(this->precedingLayer().outputErrors().begin(),
+			     this->precedingLayer().outputErrors().end(),
+			     0.0);
+	    }
+	    
+	}
+	
     }
 	
     
@@ -817,16 +990,32 @@ namespace layers{
 								  m_windowTypePhase3,
 								  allocator);
 
-	    }    	    
+	    }
+
+	    if (m_hnm_flag > 0 ){
+		(*layersArray)[layersArray->Size() - 1].AddMember("hnmMode", m_hnm_flag, allocator);
+		(*layersArray)[layersArray->Size() - 1].AddMember("noisePartTrainEpochNum",
+								  m_noiseTrain_epoch, allocator);
+		(*layersArray)[layersArray->Size() - 1].AddMember("noiseOutputLayerName",
+								  m_noiseOutputLayerName.c_str(),
+								  allocator);
+		(*layersArray)[layersArray->Size() - 1].AddMember("f0InputLayerName",
+								  m_f0InputLayerName.c_str(),
+								  allocator);
+		(*layersArray)[layersArray->Size() - 1].AddMember("f0DataMean",
+								  m_f0DataM, allocator);
+		(*layersArray)[layersArray->Size() - 1].AddMember("f0DataStd",
+								  m_f0DataS, allocator);
+		
+	    }
 	}   
     }
-    
-	    
-    
+        
     template <typename TDevice>
     real_t DFTPostoutputLayer<TDevice>::calculateError()
     {
-	
+	// calculation has been down in forward pass
+	// just print and return the results
 	if (Configuration::instance().verboseLevel() == OP_VERBOSE_LEVEL_1){
 	    std::cerr << m_specError << ", " << m_specError2 << ", " << m_specError3;
 	    std::cerr << ", " << m_mseError << ", 0" << ", ";
@@ -839,6 +1028,35 @@ namespace layers{
 		m_phaseError + m_phaseError2 + m_phaseError3);
 	    
     }
+
+    template <typename TDevice>
+    void DFTPostoutputLayer<TDevice>::linkTargetLayer(Layer<TDevice> &targetLayer)
+    {
+	// for HNM model, link the noise outputlayer and F0 input layer
+	if (m_hnm_flag > 0){
+	    // for noise output layer
+	    if (targetLayer.name() == m_noiseOutputLayerName){
+		// to be done: assert that it is a skip-layer
+		if (targetLayer.type() != "skipini" && targetLayer.type() != "skipadd")
+		    throw std::runtime_error("noiseOutputLayer is not a skipini/skipadd layer");
+		// assert layer size
+		if (targetLayer.size() != this->size())
+		    throw std::runtime_error("noiseOutputLayer layer size != DFT layer size");
+		
+		m_noiseOutputLayer = &targetLayer;
+		printf("\n\tDFT layer get noise output from %s", m_noiseOutputLayer->name().c_str());
+	    }
+	    
+	    // for F0 input layer
+	    if (targetLayer.name() == m_f0InputLayerName){
+		m_f0InputLayer = &targetLayer;
+		printf("\n\tDFT layer get F0 infor from %s", m_f0InputLayer->name().c_str());
+		printf(", assume last dimension of its output as F0");
+	    }
+	}
+	return;
+    }
+    
     
     template class DFTPostoutputLayer<Cpu>;
     template class DFTPostoutputLayer<Gpu>;

@@ -700,6 +700,8 @@ NeuralNetwork<TDevice>::NeuralNetwork(
 
 	int tmp_wavNetCore      = -1;     // Idx of the first waveNet core module (for waveNet)
 	int outputLayerIdx      = -1;     // Idx of the output layer (before postoutput)           
+
+	int dftLayerCnt         = -1;     // DFTError Layer index
 	
 	// get a total number of layers
 	m_totalNumLayers = 0;
@@ -762,6 +764,7 @@ NeuralNetwork<TDevice>::NeuralNetwork(
 		if (!config.trainingMode() && config.waveNetMemSaveFlag() && tmp_wavNetCore)
 		    m_waveNetMemSaveFlag = NETWORK_WAVENET_SAVE_MA;
 	    }else if (layerType == "dft"){
+		dftLayerCnt = counter;
 		if (!config.trainingMode() && config.waveNetMemSaveFlag() && tmp_wavNetCore)
 		    m_waveNetMemSaveFlag = NETWORK_WAVENET_SAVE_MA;
 	    }else{
@@ -1177,6 +1180,12 @@ NeuralNetwork<TDevice>::NeuralNetwork(
 		m_layers[m_distillingLayers[i]]->linkTargetLayer(*(m_layers.back().get()));
 	}
 
+	// Link the target layer for dft postoutput layer
+	if (dftLayerCnt > 0){
+	    for (size_t i = 0; i < m_totalNumLayers; i++)
+		m_layers[dftLayerCnt]->linkTargetLayer(*(m_layers[i].get()));
+	}
+	
 	// Check for normalization flow
 	if (!m_normflowLayers.empty()){
 	    if ((!m_feedBackLayers.empty()) || (m_vaeNetworkType != VAENETWORKTYPE_0) ||

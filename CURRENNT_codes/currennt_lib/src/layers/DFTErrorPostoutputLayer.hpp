@@ -120,7 +120,18 @@ namespace layers {
 	real_vector        m_fftDiffFramed3;
 	fft_vector         m_fftDiffSigFFT3;
 
-	real_vector         m_fftDiffDataPhase3;
+	real_vector        m_fftDiffDataPhase3;
+
+
+	// support for harmonic + noise model
+	int                m_hnm_flag;
+	int                m_noiseTrain_epoch;
+	Layer<TDevice>*    m_noiseOutputLayer;
+	Layer<TDevice>*    m_f0InputLayer;
+	std::string        m_noiseOutputLayerName;
+	std::string        m_f0InputLayerName;
+	real_t             m_f0DataM;
+	real_t             m_f0DataS;
 	
 	void __loadOpts(const helpers::JsonValue &layerChild);
 	
@@ -169,6 +180,10 @@ namespace layers {
 
 	virtual void exportLayer(const helpers::JsonValue &layersArray, 
 				 const helpers::JsonAllocator &allocator) const;
+
+
+	// load the target data from the target layer
+	virtual void linkTargetLayer(Layer<TDevice> &targetLayer);
 
     };
 
