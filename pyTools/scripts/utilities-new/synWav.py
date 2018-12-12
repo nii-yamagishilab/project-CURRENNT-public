@@ -53,10 +53,10 @@ if __name__ == "__main__":
     batchNum    = 10
 
     
-    try:
-        os.system("rm %s/*.wav" % (mainDataDir))
-    except OSError:
-        pass
+    #try:
+    #    os.system("rm %s/*.wav" % (mainDataDir))
+    #except OSError:
+    #    pass
     
     with open(fileLst, 'r') as filePtr:
         for idx, fileName in enumerate(filePtr):
