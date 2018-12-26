@@ -36,6 +36,7 @@
 #include "../Configuration.hpp"
 #include "../MacroDefine.hpp"
 
+#include <thrust/functional.h>
 #include <thrust/transform.h>
 #include <thrust/transform_reduce.h>
 #include <thrust/for_each.h>
@@ -48,6 +49,7 @@
 #include <vector>
 
 #define DFTERRORPOST_HNM_MODEL_1 1
+#define DFTERRORPOST_HNM_MODEL_2 2
 
 // to be integrated with signalgen F0 U/V
 #define DFTERRORUV 10
@@ -139,17 +141,21 @@ namespace{
 		values.get<0>() = 0.0;
 	    }else{
 		
-		// remove voiced waveforms
+		// remove voiced waveforms through time domain approach
 		int distance = -1;
 		real_t weight = 0.0;
-		
+
+		// if this point is in voiced frame
 		if ((f0DataBuffer[f0TimeIdx * f0InputLayerDim + f0InputLayerDim - 1] *
 		     f0DataS + f0DataM) > DFTERRORUV){
 
-		    // first look ahead
+		    // first, look ahead, find the preceding unvoiced frame
 		    for (int lookhead = 1;
 			 (f0TimeIdx - lookhead) >=0 && lookhead <= DFTERRORUVSEARCH;
 			 lookhead++){
+			
+			// if the frameframe is unvoiced
+			//  make the boundary of unvoiced/voiced
 			if ((f0DataBuffer[(f0TimeIdx - lookhead) * f0InputLayerDim +
 					  f0InputLayerDim - 1] * f0DataS + f0DataM)
 			    < DFTERRORUV){
@@ -158,6 +164,7 @@ namespace{
 			}
 		    }
 
+		    // second, look back, find the following unvoiced voices 
 		    if (distance < 0){
 			// first look ahead
 			for (int lookback=1;
@@ -176,7 +183,8 @@ namespace{
 			// this time step is very inside a voiced frame, set it to zero directly
 			values.get<0>() = 0.0;
 		    }else{
-			// weight by Hann window
+			// if this time step is near the boundary of U/V change,
+			//  set the voiced region based on Hann window
 			weight = 0.5 * (1.0 + cos(2.0 * DFTERROR_PI * distance /
 						  (2.0 * f0TimeResolution * DFTERRORUVSEARCH - 1)));
 			values.get<0>() = weight * values.get<0>();
@@ -405,7 +413,7 @@ namespace layers{
 	    
 	    m_f0InputLayerName = (layerChild->HasMember("f0InputLayerName") ? 
 				  ((*layerChild)["f0InputLayerName"].GetString()) : "");
-	    printf("\n\tDTF turns on HNM model mode [%d]", m_hnm_flag);
+	    printf("\n\tDFT error layers turns on HNM model mode [%d]", m_hnm_flag);
 
 	    m_f0DataM = (layerChild->HasMember("f0DataMean")?
 			 static_cast<real_t>((*layerChild)["f0DataMean"].GetDouble()):0);
@@ -417,6 +425,7 @@ namespace layers{
 		m_f0DataM = config.f0dataMean_signalgen();
 	    if (config.f0dataStd_signalgen() > 0)
 		m_f0DataS = config.f0dataStd_signalgen();
+	    printf("\n\tDFT errir layers receives F0 mean-%f std-%f", m_f0DataM, m_f0DataS);
 	}
 
 	
@@ -442,13 +451,13 @@ namespace layers{
 
 	
 	// for HNM special training mode
-	if (m_hnm_flag == DFTERRORPOST_HNM_MODEL_1){
+	if (m_hnm_flag == DFTERRORPOST_HNM_MODEL_1 || m_hnm_flag == DFTERRORPOST_HNM_MODEL_2){
 	    // if this layer is valid for HNM special mode
 	    if (m_noiseOutputLayer && m_f0InputLayer &&
 		this->getCurrTrainingEpoch() < m_noiseTrain_epoch &&
 		nnState == NN_STATE_GAN_NOGAN_TRAIN) {
 		
-		// change the target waveform based on U/V infor
+		// remove the voiced part in target waveforms based on U/V infor
 		{
 		    internal::TimeDomainRemoveWaveformVoiced fn1;
 		    fn1.f0TimeResolution = m_f0InputLayer->getResolution();
@@ -472,14 +481,14 @@ namespace layers{
 		}
 		
 		// copy the noise output as the generated waveforms
-		//  (to calculate the error on the noise waveform only)
+		//  (in order to calculate the error on the unvoiced regions only)
 		thrust::copy(m_noiseOutputLayer->outputs().begin(),
 			     m_noiseOutputLayer->outputs().end(),
 			     this->precedingLayer().outputs().begin());
 	    }
 	}
 	
-	// Compute waveform MSE
+	// Compute waveform MSE if necessary 
 	if (m_beta > 0.0){
 	    
 	    internal::ComputeMseWaveform fn;
@@ -503,7 +512,8 @@ namespace layers{
 	    m_mseError = 0.0;
 	}
 
-	// Compute DFT amplitute and phase distance
+	
+	// Compute DFT amplitute and phase distance if necessary
 	if (m_gamma > 0.0 || m_zeta > 0.0){
    
 	    // FFT 1
@@ -610,9 +620,7 @@ namespace layers{
 	    }else{
 		m_phaseError = 0;
 	    }
-	
-
-	    
+		    
 		
 	    // FFT 2
 	    if (m_fftLength2){
@@ -800,6 +808,7 @@ namespace layers{
 	    m_specError3 = 0.0;
 	    m_phaseError3 = 0.0;
 	}
+	// Done
 	
     }
 
@@ -817,9 +826,11 @@ namespace layers{
 	if (this->getSaveMemoryFlag())
 	    throw std::runtime_error("Memory save mode should be turned off");
 
+	// length of the training utterance
 	int timeLength = (this->precedingLayer().curMaxSeqLength() *
 			  this->precedingLayer().parallelSequences());
 
+	// initialize the gradients buffer
 	thrust::fill(this->precedingLayer().outputErrors().begin(),
 		     this->precedingLayer().outputErrors().end(), 0.0);
 	    
@@ -852,6 +863,8 @@ namespace layers{
 	}
 
 	// Gradients from spectral amplitude and phase
+	//  gradients have been calculated in computeForwardPass()
+	//  here, gradients are simply accumulated into the gradient buffer
 	if (m_gamma > 0.0){
 	    
 	    // FFT1
@@ -898,9 +911,9 @@ namespace layers{
 	    }
 	}
 	
-	// for HNM special training mode
-	if (m_hnm_flag == DFTERRORPOST_HNM_MODEL_1){
-	    // if this layer is valid for HNM special mode
+	// For HNM special training mode
+	if (m_hnm_flag == DFTERRORPOST_HNM_MODEL_1 || m_hnm_flag == DFTERRORPOST_HNM_MODEL_2){
+	    
 	    if (m_noiseOutputLayer && m_f0InputLayer &&
 		this->getCurrTrainingEpoch() < m_noiseTrain_epoch &&
 		nnState == NN_STATE_GAN_NOGAN_TRAIN) {
@@ -909,8 +922,8 @@ namespace layers{
 		thrust::copy(this->precedingLayer().outputErrors().begin(),
 			     this->precedingLayer().outputErrors().end(),
 			     m_noiseOutputLayer->outputErrors().begin());
-		
-		// set the gradients w.r.t harmonic to zero (by setting this->precedingLayer())
+
+		// Set the gradients w.r.t harmonic to zero (by setting this->precedingLayer())
 		//  because m_noiseOutputLayer will be a skip-layer,
 		//  this->precedingLayer send 0 to m_noiseOutputLayer.outputErrorFromSkipLayers,
 		//  the gradients from DFT will be kept in m_noiseOutputLayer.outputErrors()
@@ -918,7 +931,28 @@ namespace layers{
 			     this->precedingLayer().outputErrors().end(),
 			     0.0);
 	    }
-	    
+
+	    // for special mode 2
+	    //  Harmonic and noise part are trained separatedly
+	    //  When training on harmonic part, the gradients w.r.t noise component will be zero
+	    if (m_noiseOutputLayer && m_f0InputLayer &&
+		this->getCurrTrainingEpoch() >= m_noiseTrain_epoch &&
+		nnState == NN_STATE_GAN_NOGAN_TRAIN && m_hnm_flag == DFTERRORPOST_HNM_MODEL_2){
+		// copy the gradients w.r.t noise component to the noise output layer
+		thrust::copy(this->precedingLayer().outputErrors().begin(),
+			     this->precedingLayer().outputErrors().end(),
+			     m_noiseOutputLayer->outputErrors().begin());
+
+		// set the gradients w.r.t noise component to zero
+		//  this is done by the simple trick below
+		//  this trick cancles the gradients when outputSkipErrors + outputErrors for
+		//  noise component
+		thrust::negate<real_t> op;
+		thrust::transform(m_noiseOutputLayer->outputErrors().begin(),
+				  m_noiseOutputLayer->outputErrors().end(),
+				  m_noiseOutputLayer->outputErrors().begin(),
+				  op);
+	    }
 	}
 	
     }
