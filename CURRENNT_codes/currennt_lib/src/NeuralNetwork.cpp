@@ -765,7 +765,7 @@ NeuralNetwork<TDevice>::NeuralNetwork(
 		    m_waveNetMemSaveFlag = NETWORK_WAVENET_SAVE_MA;
 	    }else if (layerType == "dft"){
 		dftLayerCnt = counter;
-		if (!config.trainingMode() && config.waveNetMemSaveFlag() && tmp_wavNetCore)
+		if (!config.trainingMode() && config.waveNetMemSaveFlag())
 		    m_waveNetMemSaveFlag = NETWORK_WAVENET_SAVE_MA;
 	    }else{
 		// do nothing
@@ -912,8 +912,8 @@ NeuralNetwork<TDevice>::NeuralNetwork(
 		}
 			
 		
-		// post processing for waveNet
-		if (tmp_wavNetCore > 0){
+		// post processing for waveNet / NSF or other waveform models
+		if (tmp_wavNetCore > 0 || dftLayerCnt > 0){
 		    
 		    // for wavenet, link the wavenet block and allocate memory
 		    if (counter == tmp_wavNetCore){
@@ -934,7 +934,7 @@ NeuralNetwork<TDevice>::NeuralNetwork(
 			// nothing
 		    }
 		   
-		    // for wavenet, reduce the memory in generation
+		    // for wavenet / NSF, reduce the memory in generation
 		    if (m_waveNetMemSaveFlag == NETWORK_WAVENET_SAVE_AR){
 			// Save the memory for AR WaveNet
 			// only save the memory for layers between the feedback and output layer

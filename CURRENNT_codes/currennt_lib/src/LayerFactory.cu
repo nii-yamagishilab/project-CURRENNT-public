@@ -63,6 +63,8 @@
 #include "layers/embedding.hpp"
 #include "layers/DFTErrorPostoutputLayer.hpp"
 #include "layers/SkipWeightAddLayer.hpp"
+#include "layers/FilteringLayer.hpp"
+
 #include <stdexcept>
 
 
@@ -155,6 +157,10 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
     
     else if (layerType == "signalgen")
     	return new SignalGenLayer<TDevice>(layerChild, weightsSection,
+					   *precedingLayer, maxSeqLength, layerID);
+    
+    else if (layerType == "filtering")
+    	return new FilteringLayer<TDevice>(layerChild, weightsSection,
 					   *precedingLayer, maxSeqLength, layerID);
     
     /*
