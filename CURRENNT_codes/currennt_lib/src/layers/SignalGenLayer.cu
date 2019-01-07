@@ -422,7 +422,7 @@ namespace layers{
 	, m_freqDataS  (0)
 	, m_targetLayer(NULL)
 	, m_equalNoiseSinePower (0)
-	, m_noiseType  (NN_SIGGEN_LAYER_NOISE_UNIFORM)
+	, m_noiseType  (NN_SIGGEN_LAYER_NOISE_GAUSSIAN)
     {
 	// load options
 	this->__loadOpts(layerChild);
@@ -475,7 +475,7 @@ namespace layers{
 			   static_cast<real_t>((*layerChild)["equalNoiseSinePower"].GetInt()):1.0);
 	m_noiseType = (layerChild->HasMember("noiseType") ? 
 			   static_cast<real_t>((*layerChild)["noiseType"].GetInt()):
-		       NN_SIGGEN_LAYER_NOISE_UNIFORM);
+		       NN_SIGGEN_LAYER_NOISE_GAUSSIAN);
 
 	m_noNoiseInSine = (layerChild->HasMember("noNoiseInSine") ? 
 			   static_cast<real_t>((*layerChild)["noNoiseInSine"].GetInt()):0);
