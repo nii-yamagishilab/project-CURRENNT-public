@@ -595,7 +595,8 @@ namespace {
 		layerType == "skippara_identity" ||
 		layerType == "normflow"          ||
 		layerType == "structTrans"       ||
-		layerType == "distilling");
+		layerType == "distilling"        ||
+		layerType == "feattrans");
     }
 
     bool skipNonParaLayerTypes(const std::string layerType){
@@ -605,7 +606,8 @@ namespace {
 		layerType == "skipweightadd"     ||
 		layerType == "normflow"          ||
 		layerType == "structTrans"       ||
-		layerType == "distilling");
+		layerType == "distilling"        ||
+		layerType == "feattrans");
     }
 
     bool skipParaLayerTypes(const std::string layerType){
@@ -687,6 +689,7 @@ NeuralNetwork<TDevice>::NeuralNetwork(
 	m_feedBackLayers.clear();
 	m_vaeLayers.clear();
 	m_distillingLayers.clear();
+	m_featTransNetRange.clear();
 	
 	m_firstFeedBackLayer    = -1;     // Idx of the first feedback layer
 	m_middlePostOutputLayer = -1;     // Idx of the PostOutputLayer inside the network
@@ -767,6 +770,9 @@ NeuralNetwork<TDevice>::NeuralNetwork(
 		dftLayerCnt = counter;
 		if (!config.trainingMode() && config.waveNetMemSaveFlag())
 		    m_waveNetMemSaveFlag = NETWORK_WAVENET_SAVE_MA;
+	    }else if (layerType == "feattrans" || layerType == "featsse"){
+		// spot the start of feature extraction network
+		m_featTransNetRange.push_back(counter);
 	    }else{
 		// do nothing
 	    }
@@ -1232,6 +1238,14 @@ NeuralNetwork<TDevice>::NeuralNetwork(
 		throw std::runtime_error("Impossible error");
 	}
 
+	// check if feature extraction network exists
+	if (!m_featTransNetRange.empty()){
+	    if (m_featTransNetRange.size() != 2)
+		throw std::runtime_error("Error in network.jsn: one feattrans needs one featsse");
+	    printf("\nFeat extraction subnet from layer (%d) to (%d)\n",
+		   m_featTransNetRange[0], m_featTransNetRange[1]);
+	}
+
 	// Final steps:
 	// collect the dependency between layers
 	this->m_networkMng.build(m_totalNumLayers);
@@ -1573,21 +1587,54 @@ void NeuralNetwork<TDevice>::computeForwardPass(const int curMaxSeqLength,
     const Configuration &config = Configuration::instance();
 
     if (m_firstFeedBackLayer <= 0){
-	// No feedback, normal forward computation.
-	// Note that, normalizing layers are ordered so that it can be treated as a
-	//  normal network during training.
-	
-	BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers)
-	    layer->computeForwardPass(m_trainingState);
 
-	// For GAN with feature matching, do additional propagation
-	if (m_trainingState == NN_STATE_GAN_GEN_FEATMAT && flagNetworkForGAN() && 
-	    m_featMatchLayer > 0){
-	    m_trainingState = NN_STATE_GAN_GEN; // return to the normal state
-	    for (int i = m_middlePostOutputLayer; i < m_totalNumLayers; i++)
-		m_layers[i]->computeForwardPass(m_trainingState);
+	if (m_featTransNetRange.size()){
+	    
+	    // if feat extraction network exists
+	    int counter = 0;
+	    BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
+		layer->computeForwardPass(m_trainingState);
+		if (counter == m_featTransNetRange[0])
+		    break;
+		counter++;
+	    }
+
+	    // copy natural data
+	    m_layers[m_featTransNetRange[0]]->copyOutputs(
+				m_layers[m_featTransNetRange[1]]->outputs());
+
+	    counter = 0;
+	    // propagte the natural data
+	    BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
+		if (counter > m_featTransNetRange[0])
+		    layer->computeForwardPass(m_trainingState);
+		counter++;
+	    }
+
+	    counter = 0;
+	    // propagte the synthetic data
+	    BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
+		if (counter >= m_featTransNetRange[0])
+		    layer->computeForwardPass(m_trainingState);
+		counter++;
+	    }	    
+	    
+	}else{
+	    // No feedback, normal forward computation.
+	    // Note that, normalizing layers are ordered so that it can be treated as a
+	    //  normal network during training.
+	    BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers)	    
+		layer->computeForwardPass(m_trainingState);
+
+	    // For GAN with feature matching, do additional propagation
+	    if (m_trainingState == NN_STATE_GAN_GEN_FEATMAT && flagNetworkForGAN() && 
+		m_featMatchLayer > 0){
+		m_trainingState = NN_STATE_GAN_GEN; // return to the normal state
+		for (int i = m_middlePostOutputLayer; i < m_totalNumLayers; i++)
+		    m_layers[i]->computeForwardPass(m_trainingState);
+	    }
 	}
-
+	
     }else {
 	
 	// Other cases, Feedback exists

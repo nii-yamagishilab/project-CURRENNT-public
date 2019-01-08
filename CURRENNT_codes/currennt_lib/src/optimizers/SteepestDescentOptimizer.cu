@@ -336,9 +336,11 @@ namespace optimizers {
 			
 		    }else if (this->_optOption() == OPTIMIZATION_ADAM){
 			// Adam
-			// Update the beta1 and beta2
-			m_adamBeta1Accum = m_adamBeta1Accum * OP_ADAMBETA1;
-			m_adamBeta2Accum = m_adamBeta2Accum * OP_ADAMBETA2;
+			if (i == 1){
+			    // Update the beta1 and beta2 every time
+			    m_adamBeta1Accum = m_adamBeta1Accum * OP_ADAMBETA1;
+			    m_adamBeta2Accum = m_adamBeta2Accum * OP_ADAMBETA2;
+			}
 			
 			internal::AdamAccumulateUpdate adaUpdateFn;
 			adaUpdateFn.fracLength = (real_t)fracLength;

@@ -74,6 +74,7 @@ namespace layers{
 	int             m_noiseType;
 
 	int             m_noNoiseInSine;
+	int             m_noiseShareAcrDim;
 	
 	void __loadOpts(const helpers::JsonValue &layerChild);
 	void __setLayerMode();

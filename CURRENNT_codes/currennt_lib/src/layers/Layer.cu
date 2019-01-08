@@ -499,7 +499,14 @@ namespace layers {
     {
 	this->resizeOutputBuffer(timeLength * this->parallelSequences() * this->size());
     }
-    
+
+    template <typename TDevice>
+    void Layer<TDevice>::copyOutputs(real_vector& dataBuffer)
+    {
+	if (dataBuffer.size() == this->outputs().size())
+	    thrust::copy(dataBuffer.begin(), dataBuffer.end(), this->outputs().begin());
+    }
+
     
     
     // explicit template instantiations

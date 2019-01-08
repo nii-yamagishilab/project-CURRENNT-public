@@ -64,6 +64,9 @@
 #include "layers/DFTErrorPostoutputLayer.hpp"
 #include "layers/SkipWeightAddLayer.hpp"
 #include "layers/FilteringLayer.hpp"
+#include "layers/SkipForFeatTransform.hpp"
+#include "layers/SsePostOutputLayerForFeatTransform.hpp"
+
 
 #include <stdexcept>
 
@@ -176,7 +179,8 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
 	     layerType == "rmse"                      || layerType == "ce"  || 
 	     layerType == "wf"                        || layerType == "binary_classification" ||
 	     layerType == "multiclass_classification" || layerType == "mdn" || 
-	     layerType == "kld"                       || layerType == "dft" ) {
+	     layerType == "kld"                       || layerType == "dft" ||
+	     layerType == "featsse") {
         //layers::TrainableLayer<TDevice>* precedingTrainableLayer = 
 	// dynamic_cast<layers::TrainableLayer<TDevice>*>(precedingLayer);
         //if (!precedingTrainableLayer)
@@ -217,6 +221,10 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
 	else if (layerType == "dft")
 	    return new DFTPostoutputLayer<TDevice>(layerChild,
 						   *precedingLayer, maxSeqLength, layerID);
+	else if (layerType == "featsse")
+	    return new SsePostOutputLayerForFeatTrans<TDevice>(layerChild,
+							       *precedingLayer, maxSeqLength,
+							       layerID);
 	
         else // if (layerType == "multiclass_classification")
     	    return new MulticlassClassificationLayer<TDevice>(layerChild,
@@ -260,6 +268,9 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createSkipNonParaLayer(
     }else if (layerType == "distilling"){
 	return new DistillingLayer<TDevice>(layerChild, weightsSection,
 					    precedingLayers, maxSeqLength, layerID);
+    }else if (layerType == "feattrans"){
+	return new SkipForFeatTrans<TDevice>(layerChild, weightsSection,
+					     precedingLayers, maxSeqLength, layerID);
     }else{
 	printf("Impossible bug\n");
 	throw std::runtime_error(std::string("The layer is not skip-nonpara layer"));	

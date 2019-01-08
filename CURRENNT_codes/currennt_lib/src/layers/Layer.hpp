@@ -342,6 +342,8 @@ namespace layers {
 	
 	void setSaveMemoryFlag(const bool newFlag);
 	bool getSaveMemoryFlag() const;
+
+	void copyOutputs(real_vector& dataBuffer);
 	
     };
 

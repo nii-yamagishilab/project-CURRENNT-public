@@ -116,6 +116,7 @@ private:
     std::vector<int> m_tmpLayerIdx;
     std::vector<int> m_distillingLayers;
     std::vector<int> m_signalGenLayerId;
+    std::vector<int> m_featTransNetRange;
     
     int m_firstFeedBackLayer;                                  // ID of the first feedback Layer
     int m_middlePostOutputLayer;

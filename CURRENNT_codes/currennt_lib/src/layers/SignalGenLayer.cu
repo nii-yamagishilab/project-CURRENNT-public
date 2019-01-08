@@ -393,6 +393,21 @@ namespace{
 	}
     };
 	
+
+    struct ShareNoiseAcrossDim
+    {
+	int signalDim;
+	real_t *noiseBuffer;
+	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
+	{
+	    
+	    int timeIdx  = t.get<1>() / signalDim;
+	    int dimIdx   = t.get<1>() % signalDim;
+	    if (dimIdx > 0)
+		t.get<0>() = noiseBuffer[timeIdx * signalDim];
+	}
+    };
+
 }    
 }
 
@@ -480,6 +495,9 @@ namespace layers{
 	m_noNoiseInSine = (layerChild->HasMember("noNoiseInSine") ? 
 			   static_cast<real_t>((*layerChild)["noNoiseInSine"].GetInt()):0);
 
+	m_noiseShareAcrDim = (layerChild->HasMember("shareNoiseAcrossDim") ? 
+			      static_cast<real_t>((*layerChild)["shareNoiseAcrossDim"].GetInt()):0);
+
 	
 	const Configuration &config = Configuration::instance();
 	if (config.f0dataMean_signalgen() > 0)
@@ -514,6 +532,9 @@ namespace layers{
 	}else{
 	    printf("\n\tNoise magnitude %f", m_noiseMag);
 	}
+	
+	if (m_noiseShareAcrDim)
+	    printf("\n\tNoise shared across dim");
 	
     }
 
@@ -638,6 +659,12 @@ namespace layers{
 							      allocator);
 	    
 	}
+
+	if (m_noiseShareAcrDim)
+	    (*layersArray)[layersArray->Size() - 1].AddMember("shareNoiseAcrossDim",
+							      m_noiseShareAcrDim,
+							      allocator);
+	    
     }
 
     template <typename TDevice>
@@ -665,7 +692,7 @@ namespace layers{
 
 	thrust::fill(this->outputs().begin(), this->outputs().end(), 0.0);
 		
-	// generate noise
+	// generate additive noise
 	thrust::counting_iterator<unsigned int> index_sequence_begin(0);
 	if (m_noiseType == NN_SIGGEN_LAYER_NOISE_GAUSSIAN){
 	    thrust::transform(index_sequence_begin,
@@ -681,7 +708,27 @@ namespace layers{
 						 (int)(misFuncs::GetRandomNumber()*10000.0)));
 	}
 
+	// adjust noise
+	if (m_noiseShareAcrDim){
+	    // if the same noise sequence will be shared across the feature dims
+	    {{
+		internal::ShareNoiseAcrossDim fn1;
 
+		fn1.signalDim   = signalDimTotal;
+		fn1.noiseBuffer = helpers::getRawPointer(m_noiseInput);
+	    
+		thrust::for_each(
+                 thrust::make_zip_iterator(
+		   thrust::make_tuple(this->m_noiseInput.begin(),
+				      thrust::counting_iterator<int>(0))),
+		 thrust::make_zip_iterator(
+	           thrust::make_tuple(this->m_noiseInput.end(),
+				      thrust::counting_iterator<int>(0)+m_noiseInput.size())),
+		 fn1);
+	    }}
+	}
+
+	// generate phase noise (obsolete)
 	if (m_phaseNoiseMag > 0.0){
 	    thrust::transform(index_sequence_begin,
 			      index_sequence_begin + timeLength * signalDimTotal,
