@@ -66,12 +66,8 @@ namespace layers{
 	if (precedingLayers.size() < 1)
 	    throw std::runtime_error("Error no precedinglayers in skipadd/skipini");
 	
-	// default cause, use only the previous 1 skip and previous normal output layer
-	if (precedingLayers.size()<2)
-	    this->PreLayers().assign(precedingLayers.begin(), precedingLayers.end());
-	else
-	    this->PreLayers().assign(precedingLayers.end()-2, precedingLayers.end());
-
+	// for SkipForFeatTransform only layer
+	this->PreLayers().assign(precedingLayers.end()-1, precedingLayers.end());
 	
 	printf("\n\tReceive input from layer(s):");
 	BOOST_FOREACH (Layer<TDevice> *layer, this->PreLayers()) {
