@@ -66,7 +66,7 @@
 #include "layers/FilteringLayer.hpp"
 #include "layers/SkipForFeatTransform.hpp"
 #include "layers/SsePostOutputLayerForFeatTransform.hpp"
-
+#include "layers/FeatExtract.hpp"
 
 #include <stdexcept>
 
@@ -165,6 +165,10 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
     else if (layerType == "filtering")
     	return new FilteringLayer<TDevice>(layerChild, weightsSection,
 					   *precedingLayer, maxSeqLength, layerID);
+
+    else if (layerType == "featextract")
+    	return new FeatExtract<TDevice>(layerChild, weightsSection,
+					*precedingLayer, maxSeqLength, layerID);
     
     /*
     // not implemented yet
