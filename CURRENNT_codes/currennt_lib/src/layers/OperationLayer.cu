@@ -51,8 +51,12 @@
 
 #include "../Configuration.hpp"
 
+
+// Options for feature extraction functions
 // for sentence-level mode
+// (extract one feature vector from an input sequence)
 #define NN_OPE_LAST_SHOT_TURNOFF 0  // no last shot
+
 #define NN_OPE_LAST_SHOT_MODE1 1  // use the last shot of sentence end -> first frame 
 #define NN_OPE_LAST_SHOT_MODE2 2  // use the last shot of sentence end, repeat across frames
 #define NN_OPE_LAST_SHOT_MODE5 5  // use the first/last shot of sentence -> first frame
@@ -61,6 +65,7 @@
 #define NN_OPE_LAST_SHOT_MODE9 9  // take the average over utterance, and repeat across frames
 
 // for segments mode
+// (extract one feature per segment, which requires auxilliary segment boundaries as input)
 #define NN_OPE_LAST_SHOT_MODE3 3  // use the last shot of segments
 #define NN_OPE_LAST_SHOT_MODE4 4  // use the last shot of segments, repeat across frames
 #define NN_OPE_LAST_SHOT_MODE7 7  // use the first/last shot of segments
@@ -68,14 +73,19 @@
 
 #define NN_OPE_LAST_SHOT_MODE10 10 // use the first shot of segments (causal dependency)
 
-// for since wave generator
+// for sine wave generator
+// (note: this function has been moved to signalGenLayer)
 #define NN_OPE_FREGEN_F0_LF0  1   // input is mel-logF0 = 1127 * log (1 + F0 / 700)
 #define NN_OPE_FREGEN_F0_QF0  2   // input is qF0
 
 #define PI_DEFINITION 3.141592654f
 
+
+// CUDA functions
 namespace internal{
-namespace {    
+namespace {
+
+    // Generation uniform distribution noise
     struct genNoise
     {
 	float a, b;
@@ -94,7 +104,9 @@ namespace {
 	}
     };
 
-    
+    // Element-wise operation function, which does
+    // 1. scale the input datum
+    // 2. concatenate the output vector with noise data, if provided
     struct fillOutputVec
     {
 	int curLayerSize;
@@ -119,7 +131,10 @@ namespace {
 	    int dimIdx    = outputIdx % curLayerSize;
 	    int timeIdx   = outputIdx / curLayerSize;
 
+	    // Assume one vector of one frame is formulated as [data, noise]
 	    if (dimIdx < preLayerSize){
+
+		// for the data part
 		if ((patTypes != NULL && patTypes[timeIdx] == PATTYPE_NONE)){
 		    // none valid time splot
 		    t.get<0>() = 0.0;
@@ -141,6 +156,8 @@ namespace {
 			* weights[dimIdx];
 		}
 	    }else{
+		// for the noise part
+		
 		// repeat the noise across time
 		if (noiseRepeat == NN_OPERATOR_LAYER_NOISE_TIMEREPEAT) 
 		    t.get<0>() = noiseData[(dimIdx - preLayerSize)];
@@ -154,6 +171,10 @@ namespace {
 	}
     };
 
+    // Inverted Dropout function
+    // Note: this inverted dropout function is applied on the output of the previous layer
+    // For dropout before the non-linear activation function, it is only implemented for
+    // feedforward layers (FeedForwardLayer.cu)
     struct invertedDropout
     {
 	int     curLayerSize;
@@ -170,6 +191,7 @@ namespace {
 		// none valid time splot
 		t.get<0>() = 0.0;	    
 	    }else{
+		// drop out
 		if (noise[outputIdx] > threshold)
 		    t.get<0>() = t.get<1>() / (1-threshold);
 		else
@@ -178,7 +200,11 @@ namespace {
 	}
     };
 
-
+    // Change time resolution
+    // Note: the input sequence may not have the same length as output sequence due to the 
+    //  difference of time resolution
+    // For upsampling:   simply duplicate 
+    // For downsampling: simply extract one datum
     struct timeResolutionChange
     {
 	int         inputRes;   // time resolution of previous layer
@@ -219,6 +245,9 @@ namespace {
 	}
     };
 
+    // Change time resolution (for gradient propagation)
+    // For upsampling: accumulate the gradients over the duplicated time steps
+    // For downsampling: only propagation the gradient to one datum that has been being used
     struct timeResolutionChangeGrad
     {
 	int         inputRes;   // time resolution of previous layer
@@ -267,7 +296,9 @@ namespace {
     };
     
     // #1
-    
+
+    // Divide the sequence into a sequence of blocks (block length = resolution)
+    // Duplicate the last frame of each block to all the rest frames within that block
     struct outDuplicationOperation
     {
 	int featureDim;
@@ -307,7 +338,7 @@ namespace {
 	}
     };
 
-
+    // Gradient function for outDuplicationOperation
     struct outDuplicationGradOperation
     {
 	int featureDim;
@@ -346,7 +377,8 @@ namespace {
 	    }
 	}
     };
-    
+
+    // LastShot mode: extract feature vector(s) for the whole sequence
     // Used by 
     // NN_OPE_LAST_SHOT_MODE1 1  // use the last shot of sentence end -> first frame 
     // NN_OPE_LAST_SHOT_MODE2 2  // use the last shot of sentence end, repeat across frames
@@ -425,6 +457,9 @@ namespace {
 	
     };
 
+    // LastShot mode: extract feature vector(s) for the segment
+    // Note: the segBoundary data different for different SHOT_MODE
+    
     // Used by MODE3 MODE4 MODE
     // NN_OPE_LAST_SHOT_MODE3 3  // use the last shot of segments
     // NN_OPE_LAST_SHOT_MODE4 4  // use the last shot of segments, repeat across frames
@@ -471,6 +506,7 @@ namespace {
 	}
     };
 
+    // Grad for Mode3 and Mode7
     struct lastShotForwardSegBoundaryGradMode3
     {
 	int     featureDim;
@@ -510,7 +546,9 @@ namespace {
 	}
     };
 
-   struct lastShotForwardSegBoundaryGradMode4
+    // Grad for Mode4 and Mode8 Mode10
+    // becaue they need to to accumulate the gradients from the duplicated time steps
+    struct lastShotForwardSegBoundaryGradMode4
     {
 	int     featureDim;
 	int     paralSeqNm;
@@ -586,7 +624,7 @@ namespace {
 	}
     };
 
-
+    // Generate vectors for calculating average over one utterance (as matrix multiplication)
     struct changeOneVec{
 	real_t sentL;
 	int    parallelNum;
@@ -601,7 +639,7 @@ namespace {
 	}	
     };
 
-
+    // Duplicate the result to every frame of the utterance
     struct duplicateSentVec
     {
 	int     featureDim;
@@ -636,7 +674,7 @@ namespace {
 	
     };
 
-    
+    // Sine signal generation (moved to FeedForwardLayer.cu)
     struct sinWaveGenerator_accum
     {
 	int inputRes;
@@ -842,7 +880,7 @@ namespace layers{
 			   NN_OPE_LAST_SHOT_TURNOFF);
 	
 	// Configuration of the extraction of the last time steps (only used
-	// for m_lastShot = 3/4)
+	// for m_lastShot = 3, 4, 7, 8, 10)
 	m_segLevel      = (layerChild->HasMember("segLevel")?
 			   static_cast<int>((*layerChild)["segLevel"].GetInt()) : -1);
 	
@@ -934,7 +972,7 @@ namespace layers{
 
 	/* ------- Configuration of signal generator */
 	// signal generator is kept in OperationLayer for compatibility
-	// it should be moved to SignalGenLayer
+	// it has been moved to SignalGenLayer
 	
 	m_freqDim = (layerChild->HasMember("frequencyDim")?
 		     static_cast<real_t>((*layerChild)["frequencyDim"].GetDouble()) : -1);
