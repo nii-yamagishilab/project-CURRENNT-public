@@ -100,6 +100,7 @@ namespace layers {
         : PostOutputLayer<TDevice>(layerChild, precedingLayer, -1,
 				   maxSeqLength, layerID)
     {
+	// feature dimension = precedingLayer size
 	m_featSize = precedingLayer.size();
 
 	// allocate memory space for feature buffer
@@ -108,9 +109,10 @@ namespace layers {
 	thrust::fill(temp_data_buffer.begin(), temp_data_buffer.end(), 0.0);
 	m_natDataFeat = temp_data_buffer;
 	m_synDataFeat = temp_data_buffer;
-	
 	temp_data_buffer.clear();
 
+
+	// a flag to switch between the buffer to store features
 	m_loadNatFeat = false;
     }
 
@@ -179,7 +181,7 @@ namespace layers {
 	fn.layerSize = m_featSize;
 	fn.patTypes  = helpers::getRawPointer(this->patTypes());
 
-	int n = this->curMaxSeqLength() * this->parallelSequences() * this->size();
+	int n = this->curMaxSeqLength() * this->parallelSequences() * m_featSize;
 
 	thrust::transform(
                thrust::make_zip_iterator(thrust::make_tuple(m_synDataFeat.begin(),

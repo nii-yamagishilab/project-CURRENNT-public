@@ -87,10 +87,11 @@ namespace {
 	    real_t delta;
 	    real_t delta2;
 	    
-	    int boundary  = -1;
-	    boundary = segBoundary[timeIdx * 2];
+	    int boundary = segBoundary[timeIdx * 2];
 	    
 	    if (boundary > 0){
+		// If this is the first frame of one segment
+		//  calculate the mean/var
 		for (int step = 1 ; step <= boundary; step++){
 		    delta = sourceData[((paralBlk + step - 1) * paralSeqNm +
 					utteranceIdx) * featureDim + dimIdx] - t.get<0>();
@@ -132,23 +133,27 @@ namespace {
 	    
 	    t.get<0>() = 0.0;
 	    
-	    real_t shift = 0;
-	    real_t segLength = 1;
+	    real_t shift = 0;      // distance from 1st frame in the segment
+	    real_t segLength = 1;  // length of the segment
+
+	    
 	    if (segBoundary[timeIdx * 2] > 0){
+		// If this is the first frame of one segment
 		shift = 0;
 		segLength = segBoundary[timeIdx * 2];
 	    }else{
-		shift = segBoundary[timeIdx * 2];
+		// If this is not the first frame in the segment
+		shift = segBoundary[timeIdx * 2]; // shift will be a negative number (look backwards)
 		segLength = segBoundary[((paralBlk + (int)shift) * paralSeqNm + utteranceIdx) * 2];
 	    }
 		    
 	    if (dimIdx < featureDim){
 		// mean part
-		t.get<0>() = meanData[((paralBlk + (int)shift) * paralSeqNm + utteranceIdx) * featureDim +
+		t.get<0>() = meanData[((paralBlk+(int)shift)*paralSeqNm+utteranceIdx)*featureDim +
 				      dimIdx] / sqrt(segLength);
 	    }else{
 		// var part
-		t.get<0>() = varData[((paralBlk + (int)shift) * paralSeqNm + utteranceIdx) * featureDim +
+		t.get<0>() = varData[((paralBlk+(int)shift)*paralSeqNm+utteranceIdx)*featureDim +
 				      dimIdx - featureDim] / sqrt(segLength);
 	    }
 	}
@@ -222,9 +227,6 @@ namespace layers{
 	, m_segLevel    (-1)
     {
 	
-	/* ------ Configuration of last shot mode ------ */
-	//
-	
 	m_segLevel       = (layerChild->HasMember("segLevel")?
 			    static_cast<int>((*layerChild)["segLevel"].GetInt()) : -1);
 
@@ -233,7 +235,8 @@ namespace layers{
 	
 	m_featConfig     = ((layerChild->HasMember("featExtractConfig")) ? 
 			    ((*layerChild)["featExtractConfig"].GetString()) : (""));
-	/*
+	
+	/* Not implemented here
 	if (m_featConfig.size()){
 	    m_featConfigVecH.clear();
 	    misFuncs::ParseIntOpt(m_featConfig, m_featConfigVecH);
@@ -241,7 +244,9 @@ namespace layers{
 	}else{
 	    throw std::runtime_error("Error in network.jsn: featextract needs featExtractConfig");
 	    }*/
-
+	// Assume segment-level mean/var will be extracted
+	if (this->size() != this->precedingLayer().size() * 2)
+	    throw std::runtime_error("featextract layer size != precedingLayer().size * 2");
 	
 	if (m_segLevel){
 	    m_segBoundaryH.resize(this->maxSeqLength() * this->parallelSequences() * 2, 0);
@@ -253,8 +258,6 @@ namespace layers{
 	m_featMeanVec = this->precedingLayer().outputs();
 	m_featVarVec  = this->precedingLayer().outputs();
 
-	if (this->size() != this->precedingLayer().size() * 2)
-	    throw std::runtime_error("featextract layer size != precedingLayer().size * 2");
     }
 
     template <typename TDevice>
@@ -264,7 +267,7 @@ namespace layers{
 
     template <typename TDevice>
     void FeatExtract<TDevice>::exportLayer(const helpers::JsonValue     &layersArray, 
-					      const helpers::JsonAllocator &allocator) const
+					   const helpers::JsonAllocator &allocator) const
     {
         TrainableLayer<TDevice>::exportLayer(layersArray, allocator);
 
@@ -313,7 +316,8 @@ namespace layers{
 		// -------
 		// Forward direction
 		//     N N+1 N+2 ... N+K-1 | N+K      abosolute time (for each single sentence)
-		// ... K -   -       -   |            m_segBoundaryH boundary
+		// ... K -   -       -     |          m_segBoundaryH[2*pos]
+		// ... K-1 K-2 K-3   0     |          m_segBoundaryH[2*pos + 1]
 
 		m_segBoundaryH[2 * pos + 1] =  boundaryR;
 		
@@ -339,7 +343,7 @@ namespace layers{
 		// Forward direction
 		//     N N+1 N+2 ... N+K-1 | N+K      abosolute time (for each single sentence)
 		// ... K -1  -2      K-1   |          m_segBoundaryH boundary
-
+		// ... K-1 K-2 K-3   0     |          m_segBoundaryH[2*pos + 1]
 		segmentLength++;
 		if (m_segBoundaryH[2 * pos] >= 0){
 		    segmentLength = 0;
