@@ -67,7 +67,7 @@
 #include "layers/SkipForFeatTransform.hpp"
 #include "layers/SsePostOutputLayerForFeatTransform.hpp"
 #include "layers/FeatExtract.hpp"
-
+#include "layers/GatedActLayer.hpp"
 #include <stdexcept>
 
 
@@ -169,6 +169,9 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
     else if (layerType == "featextract")
     	return new FeatExtract<TDevice>(layerChild, weightsSection,
 					*precedingLayer, maxSeqLength, layerID);
+    else if (layerType == "gatedact")
+    	return new GatedActLayer<TDevice>(layerChild, weightsSection,
+					  *precedingLayer, maxSeqLength, layerID);
     
     /*
     // not implemented yet
