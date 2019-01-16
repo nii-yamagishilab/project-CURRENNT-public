@@ -3,6 +3,7 @@
 LEV=26
 
 DATA_DIR=$1
+TEMP=$2
 
 cd ${DATA_DIR}
 for file_name in `ls ./ | grep wav`
@@ -48,6 +49,10 @@ do
 	${SOX} -t raw -b 16 -e signed -c 1 -r ${SAMP} ${RAWORIG} ${OUTPUT}
 	rm ${RAWORIG}
     fi
-    
+
+    if [ "${TEMP}" = "delete_origin" ];
+    then
+	rm ${INPUT}
+    fi
 done
 

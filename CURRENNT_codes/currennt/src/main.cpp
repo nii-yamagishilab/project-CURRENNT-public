@@ -822,7 +822,7 @@ int trainerMain(const Configuration &config)
 	    if (config.outputFromGateLayer()) {printf(", gate output");}
 	    if (config.mdnPara()>0 && neuralNetwork.isMDNLayer(outputlayerID))
 		printf(", MDN with para=%f",config.mdnPara());
-	    
+	    /*
 	    if (htkoutput){
 		printf(", HTK format (float32, big-endian)");
 	    }else{
@@ -833,6 +833,7 @@ int trainerMain(const Configuration &config)
 		printf(", de-normalized\n");
 	    else
 		printf(", NOT de-normalized\n");
+	    */
 	    
             if (feedForwardSet != boost::shared_ptr<data_sets::DataSet>()) 
                 std::cout << "Removing cache file: "<<feedForwardSet->cacheFileName()<<std::endl;
