@@ -919,6 +919,8 @@ NeuralNetwork<TDevice>::NeuralNetwork(
 			
 		
 		// post processing for waveNet / NSF or other waveform models
+		// This part should be modified so that other networks using WaveNetCore and DFT layer
+		// will not be into memory-save mode
 		if (tmp_wavNetCore > 0 || dftLayerCnt > 0){
 		    
 		    // for wavenet, link the wavenet block and allocate memory

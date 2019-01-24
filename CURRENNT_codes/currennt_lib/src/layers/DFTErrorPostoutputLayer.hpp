@@ -132,8 +132,15 @@ namespace layers {
 	std::string        m_f0InputLayerName;
 	real_t             m_f0DataM;
 	real_t             m_f0DataS;
+
+	int                m_modeMultiDimSignal;
+	real_vector        m_modeChangeDataBuf;
 	
 	void __loadOpts(const helpers::JsonValue &layerChild);
+
+	int  __vSize();
+	int  __vMaxSeqLength();
+	int  __vCurMaxSeqLength();
 	
     public:
         /**

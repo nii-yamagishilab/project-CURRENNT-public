@@ -56,6 +56,9 @@
 #define DFTERRORUVSEARCH 2
 #define DFTERROR_PI 3.141215
 
+#define DFTMODEFORMULTIDIMSIGNAL_NONE    0
+#define DFTMODEFORMULTIDIMSIGNAL_CONCATE 1
+
 namespace internal{
 namespace{
 
@@ -193,6 +196,57 @@ namespace{
 	    }
 	}
     };
+
+    
+    struct multiDimSignaltoOneDim
+    {
+	
+	real_t *sourceData;
+	int     sourceDim;
+	int     maxLength;
+	
+        const char *patTypes;
+
+        __host__ __device__ void operator() (const thrust::tuple<real_t&, int> &values) const
+        {
+            // unpack the tuple
+            int dimIdx   = values.get<1>() / maxLength;
+	    int timeIdx  = values.get<1>() % maxLength;
+
+            if (patTypes[timeIdx] == PATTYPE_NONE){
+		// dummy data point
+		values.get<0>() = 0.0;
+	    }else{
+		values.get<0>() = sourceData[timeIdx * sourceDim + dimIdx];
+	    }
+        }
+    };
+
+    struct multiDimSignaltoOneDimGrad
+    {
+	
+	real_t *sourceData;
+	int     sourceDim;
+	int     maxLength;
+	
+        const char *patTypes;
+
+        __host__ __device__ void operator() (const thrust::tuple<real_t&, int> &values) const
+        {
+            // unpack the tuple
+            int timeIdx = values.get<1>() / sourceDim;
+	    int dimIdx  = values.get<1>() % sourceDim;
+
+            if (patTypes[timeIdx] == PATTYPE_NONE){
+		// dummy data point
+		values.get<0>() = 0.0;
+	    }else{
+		values.get<0>() = sourceData[dimIdx * maxLength + timeIdx];
+	    }
+        }
+    };
+
+    
 }
 }
 
@@ -206,7 +260,6 @@ namespace layers{
 				Layer<TDevice> &precedingLayer,
 				int maxSeqLength,
 				int layerID)
-	// use preLayers[0] as fake preceding layers
         : PostOutputLayer<TDevice>(layerChild, precedingLayer,
 				   precedingLayer.size(), maxSeqLength, layerID)
 	, m_mseError       (0.0)
@@ -230,25 +283,28 @@ namespace layers{
 	, m_noiseOutputLayer (NULL)
 	, m_f0InputLayer     (NULL)
 	, m_noiseTrain_epoch (-1)
+	, m_modeMultiDimSignal (DFTMODEFORMULTIDIMSIGNAL_NONE)
     {
-	if (this->parallelSequences() > 1)
-	    throw std::runtime_error("\nDF TError is not implemented for parallel mode");
-
-	if (this->size() > 1)
-	    throw std::runtime_error("\nDFT Error only allows output data dimension = 1");
-
+	
 	if (precedingLayer.size() != this->size())
 	    throw std::runtime_error("\nDFT Error previous layer size != DFT layer size");
-	
-	this->__loadOpts(layerChild);	
+		
+	this->__loadOpts(layerChild);
+
+	if (m_modeMultiDimSignal == DFTMODEFORMULTIDIMSIGNAL_NONE){
+	    if (this->size() > 1){
+		printf("\nError in dft layer: DFT layer size > 1, but multiDimSignalMode is off");
+		throw std::runtime_error("\nError in network");
+	    }
+	    if (this->parallelSequences() > 1)
+		throw std::runtime_error("\nDF TError is not implemented for parallel mode");
+	}
     }	
 
 
     template <typename TDevice>
     void DFTPostoutputLayer<TDevice>::__loadOpts(const helpers::JsonValue &layerChild)
     {
-	int maxSeqLength = this->maxSeqLength();
-	
 	// basic configuration
 	m_beta          = (layerChild->HasMember("beta") ? 
 			   static_cast<real_t>((*layerChild)["beta"].GetDouble()) : 0.0);
@@ -262,7 +318,14 @@ namespace layers{
 	m_specDisType   = (layerChild->HasMember("specDisType") ? 
 			   static_cast<real_t>((*layerChild)["specDisType"].GetInt()) :
 			   FFTMAT_SPECTYPE_MSE);
+	
+	m_modeMultiDimSignal = (layerChild->HasMember("multiDimSignalMode") ? 
+				static_cast<int>((*layerChild)["multiDimSignalMode"].GetInt()) :
+				DFTMODEFORMULTIDIMSIGNAL_NONE);
 
+	int maxSeqLength = this->__vMaxSeqLength();
+	
+	
 	// Configuration for DFT frameing/windowing
 	if (m_gamma > 0.0 || m_zeta > 0.0){
 
@@ -428,6 +491,11 @@ namespace layers{
 	    printf("\n\tDFT errir layers receives F0 mean-%f std-%f", m_f0DataM, m_f0DataS);
 	}
 
+	if (m_modeMultiDimSignal != DFTMODEFORMULTIDIMSIGNAL_NONE){
+	    m_modeChangeDataBuf = this->outputs();
+	}else{
+	    m_modeChangeDataBuf.clear();
+	}
 	
     }
 
@@ -446,9 +514,58 @@ namespace layers{
 	    throw std::runtime_error("Memory save mode should be turned off");
 	
 	
-	int timeLength = (this->precedingLayer().curMaxSeqLength() *
-			  this->precedingLayer().parallelSequences());
+	int timeLength = this->__vCurMaxSeqLength();
+	
 
+	if (m_modeMultiDimSignal == DFTMODEFORMULTIDIMSIGNAL_CONCATE){
+	    // If the output of previous layer is multi-dimensional signal,
+	    // convert the N * T input data matrix into a 1-dim signal of length NT.
+
+	    // convert target data
+		{
+		    internal::multiDimSignaltoOneDim fn1;
+		    fn1.sourceData  = helpers::getRawPointer(this->outputs());
+		    fn1.patTypes    = helpers::getRawPointer(this->patTypes());
+		    fn1.maxLength   = this->precedingLayer().curMaxSeqLength();
+		    fn1.sourceDim   = this->precedingLayer().parallelSequences() * this->size();
+		    
+		    thrust::for_each(
+		      thrust::make_zip_iterator(
+		       thrust::make_tuple(
+			 m_modeChangeDataBuf.begin(),
+			 thrust::counting_iterator<int>(0))),
+		      thrust::make_zip_iterator(
+		       thrust::make_tuple(
+			 m_modeChangeDataBuf.begin()        + timeLength,
+			 thrust::counting_iterator<int>(0)  + timeLength)),
+		      fn1);
+		}
+		
+		thrust::copy(m_modeChangeDataBuf.begin(), m_modeChangeDataBuf.end(),
+			     this->outputs().begin());
+
+		// convert target data
+		{
+		    internal::multiDimSignaltoOneDim fn1;
+		    fn1.sourceData  = helpers::getRawPointer(this->precedingLayer().outputs());
+		    fn1.patTypes    = helpers::getRawPointer(this->patTypes());
+		    fn1.maxLength   = this->precedingLayer().curMaxSeqLength();
+		    fn1.sourceDim   = this->precedingLayer().parallelSequences() * this->size();
+		    
+		    thrust::for_each(
+		      thrust::make_zip_iterator(
+		       thrust::make_tuple(
+			 m_modeChangeDataBuf.begin(),
+			 thrust::counting_iterator<int>(0))),
+		      thrust::make_zip_iterator(
+		       thrust::make_tuple(
+			 m_modeChangeDataBuf.begin()        + timeLength,
+			 thrust::counting_iterator<int>(0)  + timeLength)),
+		      fn1);
+		}
+		m_modeChangeDataBuf.swap(this->precedingLayer().outputs());
+	}
+	
 	
 	// for HNM special training mode
 	if (m_hnm_flag == DFTERRORPOST_HNM_MODEL_1 || m_hnm_flag == DFTERRORPOST_HNM_MODEL_2){
@@ -466,7 +583,7 @@ namespace layers{
 		    fn1.waveformLength   = timeLength;
 		    fn1.f0DataM          = m_f0DataM;
 		    fn1.f0DataS          = m_f0DataS;
-		    fn1.featDim          = this->size();
+		    fn1.featDim          = this->__vSize();
 		    fn1.patTypes         = helpers::getRawPointer(this->patTypes());
 		    thrust::for_each(
 		      thrust::make_zip_iterator(
@@ -475,8 +592,8 @@ namespace layers{
 			 thrust::counting_iterator<int>(0))),
 		      thrust::make_zip_iterator(
 		       thrust::make_tuple(
-			 this->outputs().begin()   + timeLength * this->size(),
-			 thrust::counting_iterator<int>(0)  + timeLength * this->size())),
+			 this->outputs().begin() + timeLength * this->__vSize(),
+			 thrust::counting_iterator<int>(0)+timeLength*this->__vSize())),
 		      fn1);
 		}
 		
@@ -492,22 +609,22 @@ namespace layers{
 	if (m_beta > 0.0){
 	    
 	    internal::ComputeMseWaveform fn;
-	    fn.layerSize = this->size();
+	    fn.layerSize = this->__vSize();
 	    fn.patTypes  = helpers::getRawPointer(this->patTypes());
 
 	    m_mseError =
 		(real_t)thrust::transform_reduce(
-		     thrust::make_zip_iterator(
-			thrust::make_tuple(
-			    this->outputs().begin(),
-			    this->precedingLayer().outputs().begin(),   
-			    thrust::counting_iterator<int>(0))),
-		     thrust::make_zip_iterator(
-			thrust::make_tuple(
-			    this->outputs().begin()   + timeLength * this->size(),
-			    this->precedingLayer().outputs().begin()  + timeLength * this->size(),
-			    thrust::counting_iterator<int>(0) + timeLength * this->size())),
-		     fn, (real_t)0, thrust::plus<real_t>()) / timeLength;	
+		   thrust::make_zip_iterator(
+		      thrust::make_tuple(
+			 this->outputs().begin(),
+			 this->precedingLayer().outputs().begin(),   
+			 thrust::counting_iterator<int>(0))),
+		   thrust::make_zip_iterator(
+		     thrust::make_tuple(
+			 this->outputs().begin() + timeLength * this->__vSize(),
+			 this->precedingLayer().outputs().begin() + timeLength*this->__vSize(),
+			 thrust::counting_iterator<int>(0) + timeLength * this->__vSize())),
+		   fn, (real_t)0, thrust::plus<real_t>()) / timeLength;	
 	}else{
 	    m_mseError = 0.0;
 	}
@@ -522,21 +639,21 @@ namespace layers{
 			&this->_actualOutputs(), &this->m_fftSourceFramed,
 			&this->m_fftSourceSigFFT,
 			m_frameLength, m_frameShift, m_windowType, m_fftLength, m_fftBinsNum,
-			m_frameNum, this->maxSeqLength(), timeLength,
+			m_frameNum, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 
 	    helpers::FFTMat<TDevice> targetSig(
 			&this->_targets(), &this->m_fftTargetFramed,
 			&this->m_fftTargetSigFFT,
 			m_frameLength, m_frameShift, m_windowType, m_fftLength, m_fftBinsNum,
-			m_frameNum, this->maxSeqLength(), timeLength,
+			m_frameNum, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 
 	    helpers::FFTMat<TDevice> fftDiffSig(
 			&this->m_fftDiffData, &this->m_fftDiffFramed,
 			&this->m_fftDiffSigFFT,
 			m_frameLength, m_frameShift, m_windowType, m_fftLength, m_fftBinsNum,
-			m_frameNum, this->maxSeqLength(), timeLength,
+			m_frameNum, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 		
 	    // step1. framing and windowing
@@ -584,21 +701,21 @@ namespace layers{
 			&this->_actualOutputs(), &this->m_fftSourceFramed,
 			&this->m_fftSourceSigFFT,
 			m_frameLength, m_frameShift, m_windowTypePhase, m_fftLength, m_fftBinsNum,
-			m_frameNum, this->maxSeqLength(), timeLength,
+			m_frameNum, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 
 		helpers::FFTMat<TDevice> targetSigPhase(
 			&this->_targets(), &this->m_fftTargetFramed,
 			&this->m_fftTargetSigFFT,
 			m_frameLength, m_frameShift, m_windowTypePhase, m_fftLength, m_fftBinsNum,
-			m_frameNum, this->maxSeqLength(), timeLength,
+			m_frameNum, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 
 		helpers::FFTMat<TDevice> fftDiffSigPhase(
 			&this->m_fftDiffDataPhase, &this->m_fftDiffFramed,
 			&this->m_fftDiffSigFFT,
 			m_frameLength, m_frameShift, m_windowTypePhase, m_fftLength, m_fftBinsNum,
-			m_frameNum, this->maxSeqLength(), timeLength,
+			m_frameNum, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 		
 		// step1. framing and windowing
@@ -628,21 +745,21 @@ namespace layers{
 			&this->_actualOutputs(), &this->m_fftSourceFramed2,
 			&this->m_fftSourceSigFFT2,
 			m_frameLength2, m_frameShift2, m_windowType2, m_fftLength2, m_fftBinsNum2,
-			m_frameNum2, this->maxSeqLength(), timeLength,
+			m_frameNum2, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 
 		helpers::FFTMat<TDevice> targetSig2(
 			&this->_targets(), &this->m_fftTargetFramed2,
 			&this->m_fftTargetSigFFT2,
 			m_frameLength2, m_frameShift2, m_windowType2, m_fftLength2, m_fftBinsNum2,
-			m_frameNum2, this->maxSeqLength(), timeLength,
+			m_frameNum2, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 		    
 		helpers::FFTMat<TDevice> fftDiffSig2(
 			&this->m_fftDiffData2, &this->m_fftDiffFramed2,
 			&this->m_fftDiffSigFFT2,
 			m_frameLength2, m_frameShift2, m_windowType2, m_fftLength2, m_fftBinsNum2,
-			m_frameNum2, this->maxSeqLength(), timeLength,
+			m_frameNum2, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 		
 		sourceSig2.frameSignal();
@@ -673,7 +790,7 @@ namespace layers{
 			&this->m_fftSourceSigFFT2,
 			m_frameLength2, m_frameShift2, m_windowTypePhase2,
 			m_fftLength2, m_fftBinsNum2,
-			m_frameNum2, this->maxSeqLength(), timeLength,
+			m_frameNum2, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 
 		    helpers::FFTMat<TDevice> targetSigPhase2(
@@ -681,7 +798,7 @@ namespace layers{
 			&this->m_fftTargetSigFFT2,
 			m_frameLength2, m_frameShift2, m_windowTypePhase2,
 			m_fftLength2, m_fftBinsNum2,
-			m_frameNum2, this->maxSeqLength(), timeLength,
+			m_frameNum2, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 		    
 		    helpers::FFTMat<TDevice> fftDiffSigPhase2(
@@ -689,7 +806,7 @@ namespace layers{
 			&this->m_fftDiffSigFFT2,
 			m_frameLength2, m_frameShift2, m_windowTypePhase2,
 			m_fftLength2, m_fftBinsNum2,
-			m_frameNum2, this->maxSeqLength(), timeLength,
+			m_frameNum2, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 		
 		    sourceSigPhase2.frameSignal();
@@ -717,21 +834,21 @@ namespace layers{
 			&this->_actualOutputs(), &this->m_fftSourceFramed3,
 			&this->m_fftSourceSigFFT3,
 			m_frameLength3, m_frameShift3, m_windowType3, m_fftLength3, m_fftBinsNum3,
-			m_frameNum3, this->maxSeqLength(), timeLength,
+			m_frameNum3, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 
 		helpers::FFTMat<TDevice> targetSig3(
 			&this->_targets(), &this->m_fftTargetFramed3,
 			&this->m_fftTargetSigFFT3,
 			m_frameLength3, m_frameShift3, m_windowType3, m_fftLength3, m_fftBinsNum3,
-			m_frameNum3, this->maxSeqLength(), timeLength,
+			m_frameNum3, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 		    
 		helpers::FFTMat<TDevice> fftDiffSig3(
 			&this->m_fftDiffData3, &this->m_fftDiffFramed3,
 			&this->m_fftDiffSigFFT3,
 			m_frameLength3, m_frameShift3, m_windowType3, m_fftLength3, m_fftBinsNum3,
-			m_frameNum3, this->maxSeqLength(), timeLength,
+			m_frameNum3, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 		    
 		sourceSig3.frameSignal();
@@ -763,7 +880,7 @@ namespace layers{
 			&this->m_fftSourceSigFFT3,
 			m_frameLength3, m_frameShift3, m_windowTypePhase3,
 			m_fftLength3, m_fftBinsNum3,
-			m_frameNum3, this->maxSeqLength(), timeLength,
+			m_frameNum3, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 
 		    helpers::FFTMat<TDevice> targetSigPhase3(
@@ -771,7 +888,7 @@ namespace layers{
 			&this->m_fftTargetSigFFT3,
 			m_frameLength3, m_frameShift3, m_windowTypePhase3,
 			m_fftLength3, m_fftBinsNum3,
-			m_frameNum3, this->maxSeqLength(), timeLength,
+			m_frameNum3, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 		    
 		    helpers::FFTMat<TDevice> fftDiffSigPhase3(
@@ -779,7 +896,7 @@ namespace layers{
 			&this->m_fftDiffSigFFT3,
 			m_frameLength3, m_frameShift3, m_windowTypePhase3,
 			m_fftLength3, m_fftBinsNum3,
-			m_frameNum3, this->maxSeqLength(), timeLength,
+			m_frameNum3, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 		    
 		    sourceSigPhase3.frameSignal();
@@ -816,7 +933,7 @@ namespace layers{
     void DFTPostoutputLayer<TDevice>::computeForwardPass(const int timeStep, const int nnState)
     {
 	// Not implemented yet
-	throw std::runtime_error("Not implemented DFTErrorPostoutput computeForwardPass(timeStep)");
+	// throw std::runtime_error("Not implemented DFTErrorPostoutput computeForwardPass(timeStep)");
     }
 
 
@@ -827,9 +944,8 @@ namespace layers{
 	    throw std::runtime_error("Memory save mode should be turned off");
 
 	// length of the training utterance
-	int timeLength = (this->precedingLayer().curMaxSeqLength() *
-			  this->precedingLayer().parallelSequences());
-
+	int timeLength = this->__vCurMaxSeqLength();
+	
 	// initialize the gradients buffer
 	thrust::fill(this->precedingLayer().outputErrors().begin(),
 		     this->precedingLayer().outputErrors().end(), 0.0);
@@ -840,8 +956,8 @@ namespace layers{
 		internal::ComputeMseWaveformGrad fn2;
 		fn2.preData  = helpers::getRawPointer(this->precedingLayer().outputs());
 		fn2.realTargetData = helpers::getRawPointer(this->_targets());
-		fn2.preDim   = this->precedingLayer().size();
-		fn2.featDim  = this->size();
+		fn2.preDim   = this->__vSize();
+		fn2.featDim  = this->__vSize();
 		fn2.beta     = m_beta;
 		fn2.patTypes = helpers::getRawPointer(this->patTypes());
 	    
@@ -856,8 +972,8 @@ namespace layers{
 		     thrust::counting_iterator<int>(0))),
 		  thrust::make_zip_iterator(
 		   thrust::make_tuple(
-		     this->outputs().begin()   + timeLength * this->size(),
-		     thrust::counting_iterator<int>(0)  + timeLength * this->size())),
+		     this->outputs().begin()   + timeLength * this->__vSize(),
+		     thrust::counting_iterator<int>(0)  + timeLength * this->__vSize())),
 		  fn2);
 	     }}	
 	}
@@ -869,13 +985,13 @@ namespace layers{
 	    
 	    // FFT1
 	    thrust::transform(m_fftDiffData.begin(),
-			      m_fftDiffData.begin() + timeLength * this->size(),
+			      m_fftDiffData.begin() + timeLength * this->__vSize(),
 			      this->precedingLayer().outputErrors().begin(),
 			      this->precedingLayer().outputErrors().begin(),
 			      thrust::plus<real_t>());
 	    if (m_zeta > 0.0)
 		thrust::transform(m_fftDiffDataPhase.begin(),
-				  m_fftDiffDataPhase.begin() + timeLength * this->size(),
+				  m_fftDiffDataPhase.begin() + timeLength * this->__vSize(),
 				  this->precedingLayer().outputErrors().begin(),
 				  this->precedingLayer().outputErrors().begin(),
 				  thrust::plus<real_t>());
@@ -883,13 +999,13 @@ namespace layers{
 	    // FFT2
 	    if (m_fftLength2){
 		thrust::transform(m_fftDiffData2.begin(),
-			      m_fftDiffData2.begin() + timeLength * this->size(),
+			      m_fftDiffData2.begin() + timeLength * this->__vSize(),
 			      this->precedingLayer().outputErrors().begin(),
 			      this->precedingLayer().outputErrors().begin(),
 			      thrust::plus<real_t>());
 		if (m_zeta > 0.0)
 		    thrust::transform(m_fftDiffDataPhase2.begin(),
-				  m_fftDiffDataPhase2.begin() + timeLength * this->size(),
+				  m_fftDiffDataPhase2.begin() + timeLength * this->__vSize(),
 				  this->precedingLayer().outputErrors().begin(),
 				  this->precedingLayer().outputErrors().begin(),
 				  thrust::plus<real_t>());
@@ -898,13 +1014,13 @@ namespace layers{
 	    // FFT3
 	    if (m_fftLength3){
 		thrust::transform(m_fftDiffData3.begin(),
-			      m_fftDiffData3.begin() + timeLength * this->size(),
+			      m_fftDiffData3.begin() + timeLength * this->__vSize(),
 			      this->precedingLayer().outputErrors().begin(),
 			      this->precedingLayer().outputErrors().begin(),
 			      thrust::plus<real_t>());
 		if (m_zeta > 0.0)
 		    thrust::transform(m_fftDiffDataPhase3.begin(),
-				  m_fftDiffDataPhase3.begin() + timeLength * this->size(),
+				  m_fftDiffDataPhase3.begin() + timeLength * this->__vSize(),
 				  this->precedingLayer().outputErrors().begin(),
 				  this->precedingLayer().outputErrors().begin(),
 				  thrust::plus<real_t>());
@@ -953,6 +1069,37 @@ namespace layers{
 				  m_noiseOutputLayer->outputErrors().begin(),
 				  op);
 	    }
+	}
+
+	// For multi-dim signal case
+	if (m_modeMultiDimSignal == DFTMODEFORMULTIDIMSIGNAL_CONCATE){
+	    // re-store the generated data
+	    m_modeChangeDataBuf.swap(this->precedingLayer().outputs());
+
+	    // gradient of multiDimSignaltoOneDim
+	    // convert target data
+		{
+		    internal::multiDimSignaltoOneDimGrad fn1;
+		    fn1.sourceData  = helpers::getRawPointer(this->precedingLayer().outputErrors());
+		    fn1.patTypes    = helpers::getRawPointer(this->patTypes());
+		    fn1.maxLength   = this->precedingLayer().curMaxSeqLength();
+		    fn1.sourceDim   = this->precedingLayer().parallelSequences() * this->size();
+		    
+		    thrust::for_each(
+		      thrust::make_zip_iterator(
+		       thrust::make_tuple(
+			 m_modeChangeDataBuf.begin(),
+			 thrust::counting_iterator<int>(0))),
+		      thrust::make_zip_iterator(
+		       thrust::make_tuple(
+			 m_modeChangeDataBuf.begin()        + timeLength,
+			 thrust::counting_iterator<int>(0)  + timeLength)),
+		      fn1);
+		}
+		
+		thrust::copy(m_modeChangeDataBuf.begin(), m_modeChangeDataBuf.end(),
+			     this->precedingLayer().outputErrors().begin());
+
 	}
 	
     }
@@ -1042,6 +1189,12 @@ namespace layers{
 								  m_f0DataS, allocator);
 		
 	    }
+
+	    if (m_modeMultiDimSignal != DFTMODEFORMULTIDIMSIGNAL_NONE){
+		(*layersArray)[layersArray->Size() - 1].AddMember("multiDimSignalMode",
+								  m_modeMultiDimSignal, allocator);
+	
+	    }
 	}   
     }
         
@@ -1074,7 +1227,7 @@ namespace layers{
 		if (targetLayer.type() != "skipini" && targetLayer.type() != "skipadd")
 		    throw std::runtime_error("noiseOutputLayer is not a skipini/skipadd layer");
 		// assert layer size
-		if (targetLayer.size() != this->size())
+		if (targetLayer.size() != this->__vSize())
 		    throw std::runtime_error("noiseOutputLayer layer size != DFT layer size");
 		
 		m_noiseOutputLayer = &targetLayer;
@@ -1090,7 +1243,34 @@ namespace layers{
 	}
 	return;
     }
-    
+
+    template <typename TDevice>
+    int  DFTPostoutputLayer<TDevice>::__vSize()
+    {
+	if (m_modeMultiDimSignal == DFTMODEFORMULTIDIMSIGNAL_CONCATE)
+	    return 1;
+	else
+	    return this->size();
+    }
+
+    template <typename TDevice>
+    int  DFTPostoutputLayer<TDevice>::__vMaxSeqLength()
+    {
+	if (m_modeMultiDimSignal == DFTMODEFORMULTIDIMSIGNAL_CONCATE)
+	    return this->maxSeqLength() * this->size() * this->parallelSequences();
+	else
+	    return this->maxSeqLength() * this->parallelSequences();
+    }
+
+
+    template <typename TDevice>
+    int  DFTPostoutputLayer<TDevice>::__vCurMaxSeqLength()
+    {
+	if (m_modeMultiDimSignal == DFTMODEFORMULTIDIMSIGNAL_CONCATE)
+	    return this->curMaxSeqLength() * this->size()  * this->parallelSequences();
+	else
+	    return this->curMaxSeqLength() * this->parallelSequences();
+    } 
     
     template class DFTPostoutputLayer<Cpu>;
     template class DFTPostoutputLayer<Gpu>;

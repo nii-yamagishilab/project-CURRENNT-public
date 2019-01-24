@@ -323,6 +323,7 @@ namespace layers {
     template <typename TDevice, typename TFfActFn>
     void SoftmaxLayer<TDevice, TFfActFn>::computeForwardPass(const int timeStep, const int nnState)
     {
+	throw std::runtime_error("Not implemented");
     }
 
     template <typename TDevice, typename TFfActFn>

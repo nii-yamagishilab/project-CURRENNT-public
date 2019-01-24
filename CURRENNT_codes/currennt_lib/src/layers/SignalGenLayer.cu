@@ -646,9 +646,9 @@ namespace layers{
 	(*layersArray)[layersArray->Size() - 1].AddMember("frequencyNoiseMag", m_noiseMag,
 							  allocator);
 
-	if (m_noiseType != NN_SIGGEN_LAYER_NOISE_UNIFORM)
-	    (*layersArray)[layersArray->Size() - 1].AddMember("noiseType", m_noiseType,
-							      allocator);
+	// if (m_noiseType != NN_SIGGEN_LAYER_NOISE_UNIFORM)
+	(*layersArray)[layersArray->Size() - 1].AddMember("noiseType", m_noiseType,
+							  allocator);
 
 	(*layersArray)[layersArray->Size() - 1].AddMember("phaseNoiseMag",     m_phaseNoiseMag,
 							  allocator);

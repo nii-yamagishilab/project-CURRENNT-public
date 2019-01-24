@@ -45,10 +45,11 @@ namespace layers{
 	typedef typename Cpu::int_vector          cpu_int_vector;
 
     public:
-
-	int             m_filter_causal;       // causal or non-causal
+	int             m_filter_mode;
+	int             m_filter_num;
 	int             m_filter_across_dim;   // whether share the single filter for each feat dim?
 	int             m_filter_length;       // length of each filter
+	
 	std::string     m_filter_coeffs_str;   // input string of filter coeffs
 	real_vector     m_filter_coeffs;       // buffer to store coeffs
 	cpu_real_vector m_filter_coeffs_H;     
