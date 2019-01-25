@@ -230,7 +230,8 @@ namespace layers {
 						  const helpers::JsonValue &weightsSection,
 						  Layer<TDevice> &precedingLayer,
 						  int             maxSeqLength,
-						  int             layerID)
+						  int             layerID,
+						  bool            flagTransformBeforeSoftmax)
         : FeedForwardLayer<TDevice, TFfActFn>(layerChild,
 					      weightsSection,
 					      precedingLayer,
@@ -239,6 +240,16 @@ namespace layers {
     {
         // resize the vector for temporary values
         m_patTmp.resize(this->patTypes().size());
+
+	m_transformBeforeSoftmax = flagTransformBeforeSoftmax;
+
+	if (m_transformBeforeSoftmax){
+	    printf("\n\t feedforwrd + softmax activation function ");
+	}else{
+	    if (this->precedingLayer().size() != this->size())
+		throw std::runtime_error("softmax layer size should be = the previous layer size");
+	    printf("\n\t softmax ");
+	}
     }
 
     template <typename TDevice, typename TFfActFn>
@@ -249,15 +260,24 @@ namespace layers {
     template <typename TDevice, typename TFfActFn>
     const std::string& SoftmaxLayer<TDevice, TFfActFn>::type() const
     {
-        static const std::string s = "softmax";
-        return s;
+        static const std::string s1 = "feedforward_softmax";
+	static const std::string s2 = "softmax";
+        return (m_transformBeforeSoftmax ? s1 : s2);
     }
 
     template <typename TDevice, typename TFfActFn>
     void SoftmaxLayer<TDevice, TFfActFn>::computeForwardPass(const int nnState)
     {
-        // compute the forward pass of the feedforward layer
-        FeedForwardLayer<TDevice, TFfActFn>::computeForwardPass(nnState);
+
+	if (m_transformBeforeSoftmax){
+	    // compute the forward pass of the feedforward layer
+	    FeedForwardLayer<TDevice, TFfActFn>::computeForwardPass(nnState);
+	}else{
+	    // or just copy the previous layer's output
+	    thrust::copy(this->precedingLayer().outputs().begin(),
+			 this->precedingLayer().outputs().end(),
+			 this->_outputs().begin());
+	}
 
         // calculate the offset to center the activations for safer exponentiation
         {{
@@ -323,7 +343,7 @@ namespace layers {
     template <typename TDevice, typename TFfActFn>
     void SoftmaxLayer<TDevice, TFfActFn>::computeForwardPass(const int timeStep, const int nnState)
     {
-	throw std::runtime_error("Not implemented");
+	throw std::runtime_error("Not implemented computeForwardPass(timeStep) for softmax layer");
     }
 
     template <typename TDevice, typename TFfActFn>
@@ -360,8 +380,14 @@ namespace layers {
                 );
         }}
 
-        // compute the backward pass of the feedforward layer
-        FeedForwardLayer<TDevice, TFfActFn>::computeBackwardPass(nnState);
+	if (m_transformBeforeSoftmax){
+	    // compute the backward pass of the feedforward layer
+	    FeedForwardLayer<TDevice, TFfActFn>::computeBackwardPass(nnState);
+	}else{
+	    // or just propagate gradients backward
+	    thrust::copy(this->outputErrors().begin(), this->outputErrors().end(),
+			 this->precedingLayer().outputErrors().begin());
+	}
     }
 
 

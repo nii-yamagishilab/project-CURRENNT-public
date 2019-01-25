@@ -42,7 +42,7 @@ namespace layers {
 
     private:
         real_vector m_patTmp;
-
+	bool        m_transformBeforeSoftmax;
     public:
         /**
          * Constructs the Layer
@@ -56,7 +56,8 @@ namespace layers {
             const helpers::JsonValue &weightsSection,
             Layer<TDevice>           &precedingLayer,
 	    int                       maxSeqLength,
-	    int                       layerID
+	    int                       layerID,
+	    bool                      flagTransformBeforeSoftmax
             );
 
         /**

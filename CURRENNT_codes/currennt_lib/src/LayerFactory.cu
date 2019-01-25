@@ -104,7 +104,10 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
 						*precedingLayer, maxSeqLength, layerID);    
     else if (layerType == "softmax")
     	return new SoftmaxLayer<TDevice, Identity>(layerChild, weightsSection,
-						   *precedingLayer, maxSeqLength, layerID);
+						   *precedingLayer, maxSeqLength, layerID, false);
+    else if (layerType == "feedforward_softmax")
+    	return new SoftmaxLayer<TDevice, Identity>(layerChild, weightsSection,
+						   *precedingLayer, maxSeqLength, layerID, true);
     else if (layerType == "lstm")
     	return new LstmLayer<TDevice>(layerChild, weightsSection,
 				      *precedingLayer, maxSeqLength, layerID, false);

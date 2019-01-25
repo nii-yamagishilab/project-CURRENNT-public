@@ -66,6 +66,22 @@ namespace layers{
 	cpu_real_vector m_setZeroVec_H;
 	std::string     m_setZeroStr;
 
+	real_vector     m_setBiasVec_D;
+	cpu_real_vector m_setBiasVec_H;
+	std::string     m_setBiasStr;
+
+	real_vector     m_stopGradVec_D;
+	cpu_real_vector m_stopGradVec_H;
+	std::string     m_stopGradStr;
+
+	real_vector     m_setScaleVec_D;
+	cpu_real_vector m_setScaleVec_H;
+	std::string     m_setScaleStr;
+
+	real_vector     m_setBinarizeVec_D;
+	cpu_real_vector m_setBinarizeVec_H;
+	std::string     m_setBinarizeStr;
+	
 	int             m_noiseSize;
 	real_t          m_noiseMag;
 	real_vector     m_noiseInput;

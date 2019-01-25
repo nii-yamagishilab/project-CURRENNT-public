@@ -122,6 +122,9 @@ namespace {
 	real_t *noiseData;
 
 	real_t *weights;
+	real_t *shifts;
+	real_t *stopGrad;
+	real_t *binarize;
 	
 	const char *patTypes;
 	
@@ -131,8 +134,11 @@ namespace {
 	    int dimIdx    = outputIdx % curLayerSize;
 	    int timeIdx   = outputIdx / curLayerSize;
 
+	    real_t tmp_output;
 	    // Assume one vector of one frame is formulated as [data, noise]
 	    if (dimIdx < preLayerSize){
+
+		/* Before stopGrad is added
 
 		// for the data part
 		if ((patTypes != NULL && patTypes[timeIdx] == PATTYPE_NONE)){
@@ -140,21 +146,54 @@ namespace {
 		    t.get<0>() = 0.0;
 		    
 		}else if (weights[dimIdx] < 0){
-		    // Dirty code: whey setZero is below 0, it is used here
-		    // negative weight: special mode
-		    //  forward: propagate the weight
+		    // Dirty code: whey setZero/scale is below 0, it is used to stop gradients
+		    
+		    //  forward: propagate as usual
 		    //  backward: kill the gradients
 		    if (flagForward)
 			t.get<0>() = preOutput[timeIdx * preLayerSize + dimIdx - preShift]
-			    * (-1.0 * weights[dimIdx]);
+			    * (-1.0 * weights[dimIdx]) + shifts[dimIdx];
 		    else
 			t.get<0>() = 0.0;
 		    
 		}else{
-		    // normal node
-		    t.get<0>() = preOutput[timeIdx * preLayerSize + dimIdx - preShift]
-			* weights[dimIdx];
+		    // normal node, where scale weight is used upon both forward and backward
+		    // note: the shift will not affect gradient
+		    if (flagForward)
+			t.get<0>() = preOutput[timeIdx * preLayerSize + dimIdx - preShift]
+			    * weights[dimIdx] + shifts[dimIdx];
+		    else
+			t.get<0>() = preOutput[timeIdx * preLayerSize + dimIdx - preShift]
+			    * weights[dimIdx];
+			    }*/
+		// for the data part
+		
+		if ((patTypes != NULL && patTypes[timeIdx] == PATTYPE_NONE)){
+		    // none valid time splot
+		    t.get<0>() = 0.0;
+		    
+		}else if (flagForward){
+
+		    // forward propagation
+		    tmp_output = preOutput[timeIdx * preLayerSize + dimIdx - preShift]
+			* weights[dimIdx] + shifts[dimIdx];
+		    if (binarize[dimIdx] > 0.0){
+			t.get<0>() = (tmp_output > 0.0?1.0:-1.0);
+		    }else{
+			t.get<0>() = tmp_output;
+		    }
+		}else{
+		    // backward propagation
+
+		    if (binarize[dimIdx] > 0.0 || stopGrad[dimIdx] > 0.0 )
+			// if stop gradient mode is on, or this dimension is binarized
+			t.get<0>() = 0.0;
+		    else
+			// normal mode
+			t.get<0>() = preOutput[timeIdx * preLayerSize + dimIdx - preShift]
+			    * weights[dimIdx];
 		}
+		
 	    }else{
 		// for the noise part
 		
@@ -706,8 +745,8 @@ namespace {
 
 	    int timeReso  = inputRes / outputRes;
 
-	    int trueTime  = 0;
-	    int paraBlok  = 0;
+	    //int trueTime  = 0;
+	    //int paraBlok  = 0;
 
 	    real_t initPhase = 2.0 * PI_DEFINITION * ((real_t)(t.get<1>())/thislayerSize);
 	    real_t spPhase = initPhase;
@@ -716,8 +755,8 @@ namespace {
 		if (patTypes[timeIdx] == PATTYPE_NONE)
 		    continue;
 		
-		trueTime = timeIdx / parallel;
-		paraBlok = timeIdx % parallel;
+		//trueTime = timeIdx / parallel;
+		//paraBlok = timeIdx % parallel;
 
 		// read and denormalize the raw data
 		real_t freq = sourceData[(timeIdx/timeReso - inputShiftTime) * prelayerSize
@@ -850,20 +889,97 @@ namespace layers{
 	/* ------ Configuration for weighting the input features ------ */
 	// Configuration for the weight of input vector
 	// Note: setZero can be negative, which is useby the dirty code in fillOutputVec for a
-	//       special propagation mode
-	m_setZeroStr  = ((layerChild->HasMember("setZero")) ? 
-			 ((*layerChild)["setZero"].GetString()) : (""));
+	//       special stop-gradient mode
+	// Now: the stop-gradient flag is moved to m_stopGradStr
+
+	// For compatiblity: setZero is used as a special mode that combines weight and stop
+	// grad
+
+	m_setZeroStr = (layerChild->HasMember("setZero")?
+			(*layerChild)["setZero"].GetString(): "");
+	m_setBiasStr = (layerChild->HasMember("shift")?
+			(*layerChild)["shift"].GetString() : "");
+	m_setScaleStr = (layerChild->HasMember("scale")?
+			 (*layerChild)["scale"].GetString() : "");
+	m_stopGradStr = (layerChild->HasMember("stopGrad")?
+			 (*layerChild)["stopGrad"].GetString() : "");
+	m_setBinarizeStr = (layerChild->HasMember("binarize")?
+			    (*layerChild)["binarize"].GetString() : "");
+
+	if (m_setBinarizeStr.size()){
+	    m_setBinarizeVec_H.clear();
+	    misFuncs::ParseFloatOpt(m_setBinarizeStr, m_setBinarizeVec_H);
+	}else{
+	    m_setBinarizeVec_H.resize(this->precedingLayer().size(), 0.0);
+	}
+	m_setBinarizeVec_D = m_setBinarizeVec_H;
+	
+	if (m_setBiasStr.size()){
+	    m_setBiasVec_H.clear();
+	    misFuncs::ParseFloatOpt(m_setBiasStr, m_setBiasVec_H);
+	}else{
+	    m_setBiasVec_H.resize(this->precedingLayer().size(), 0.0);
+	}
+	m_setBiasVec_D = m_setBiasVec_H;
+
+	if (m_setScaleStr.size()){
+	    m_setScaleVec_H.clear();
+	    misFuncs::ParseFloatOpt(m_setScaleStr, m_setScaleVec_H);
+	}else{
+	    m_setScaleVec_H.resize(this->precedingLayer().size(), 1.0);
+	}
+	m_setScaleVec_D = m_setScaleVec_H;
+	
+	if (m_stopGradStr.size()){
+	    m_stopGradVec_H.clear();
+	    misFuncs::ParseFloatOpt(m_stopGradStr, m_stopGradVec_H);
+	}else{
+	    m_stopGradVec_H.resize(this->precedingLayer().size(), 0.0);
+	}
+	m_stopGradVec_D = m_stopGradVec_H;
+	    
+	if (this->precedingLayer().size() != m_setBiasVec_D.size())
+	    throw std::runtime_error(
+		std::string("Error in operator ") + this->name() +
+		std::string(", shifts vector length unequal to previous layer size"));
+	if (this->precedingLayer().size() != m_setScaleVec_D.size())
+	    throw std::runtime_error(
+		std::string("Error in operator ") + this->name() +
+		std::string(", scales vector length unequal to previous layer size"));
+	if (this->precedingLayer().size() != m_stopGradVec_D.size())
+	    throw std::runtime_error(
+		std::string("Error in operator ") + this->name() +
+		std::string(", stopGrad vector length unequal to previous layer size"));
+
+	
 	if (m_setZeroStr.size()){
 	    m_setZeroVec_H.clear();
 	    misFuncs::ParseFloatOpt(m_setZeroStr, m_setZeroVec_H);
 	    m_setZeroVec_D = m_setZeroVec_H;
+
+	    if (this->precedingLayer().size() != m_setZeroVec_D.size())
+		throw std::runtime_error(
+			std::string("Error in operator ") + this->name() +
+			std::string(", setZero vector length unequal to previous layer size"));
+	
+	    // for compatiblity, convert setZero to scales and stopGrad
+	    for (int i = 0; i < m_setZeroVec_H.size(); i++)
+		if (m_setZeroVec_H[i] < 0.0){
+		    m_stopGradVec_H[i] = 1.0; // stop grad
+		    m_setScaleVec_H[i] = -1.0 * m_setZeroVec_H[i]; // get the correct weight
+		}else{
+		    m_stopGradVec_H[i] = 0.0; // not stop grad
+		    m_setScaleVec_H[i] = m_setZeroVec_H[i]; 
+		}
+	    m_setScaleVec_D = m_setScaleVec_H;
+	    m_stopGradVec_D = m_stopGradVec_H;
+	    
 	}else{
 	    m_setZeroVec_D.resize(this->precedingLayer().size(), 1.0);
 	}
-	
-	if (this->precedingLayer().size() != m_setZeroVec_D.size())
-	    throw std::runtime_error("Error operator setZero, unequal to previous layer size");
 
+	
+	
 	/* ------ Configuration of the output duplication ------ */
 	if (layerChild->HasMember("outputDownSampling")){
 	    printf("\toutputDownSampling flag has been changed to outputDuplicating\n");
@@ -1094,7 +1210,19 @@ namespace layers{
     {
         TrainableLayer<TDevice>::exportLayer(layersArray, allocator);
 	if (m_setZeroStr.size())
-	    (*layersArray)[layersArray->Size() - 1].AddMember("setZero",    m_setZeroStr.c_str(),
+	    (*layersArray)[layersArray->Size() - 1].AddMember("setZero",  m_setZeroStr.c_str(),
+							      allocator);
+	if (m_setBiasStr.size())
+	    (*layersArray)[layersArray->Size() - 1].AddMember("shift",    m_setBiasStr.c_str(),
+							      allocator);
+	if (m_setScaleStr.size())
+	    (*layersArray)[layersArray->Size() - 1].AddMember("scale",    m_setScaleStr.c_str(),
+							      allocator);
+	if (m_stopGradStr.size())
+	    (*layersArray)[layersArray->Size() - 1].AddMember("stopGrad",  m_stopGradStr.c_str(),
+							      allocator);
+	if (m_setBinarizeStr.size())
+	    (*layersArray)[layersArray->Size() - 1].AddMember("binarize",  m_setBinarizeStr.c_str(),
 							      allocator);
 	if (m_noiseSize > 0){
 	    (*layersArray)[layersArray->Size() - 1].AddMember("noiseRatio", m_noiseMag,
@@ -1532,7 +1660,12 @@ namespace layers{
 	    fn.noiseRepeat  = m_noiseRepeat;
 	    fn.flagForward  = true;
 	    fn.preShift  = 0;
-	    fn.weights   = helpers::getRawPointer(m_setZeroVec_D);
+	    
+	    fn.weights   = helpers::getRawPointer(m_setScaleVec_D);
+	    fn.shifts    = helpers::getRawPointer(m_setBiasVec_D);
+	    fn.stopGrad  = helpers::getRawPointer(m_stopGradVec_D);
+	    fn.binarize  = helpers::getRawPointer(m_setBinarizeVec_D);
+	    
 	    fn.preOutput = helpers::getRawPointer(this->precedingLayer().outputs());
 	    fn.noiseData = helpers::getRawPointer(this->m_noiseInput);
 	    fn.patTypes  = helpers::getRawPointer(this->patTypes());
@@ -1806,7 +1939,11 @@ namespace layers{
 	    fn.noiseRepeat  = m_noiseRepeat;
 	    fn.flagForward  = true;
 
-	    fn.weights   = helpers::getRawPointer(m_setZeroVec_D);
+	    fn.weights   = helpers::getRawPointer(m_setScaleVec_D);
+	    fn.shifts    = helpers::getRawPointer(m_setBiasVec_D);
+	    fn.stopGrad  = helpers::getRawPointer(m_stopGradVec_D);
+	    fn.binarize  = helpers::getRawPointer(m_setBinarizeVec_D);
+	    
 	    fn.preOutput = helpers::getRawPointer(this->precedingLayer().outputs());
 	    fn.preShift  = shiftIn;
 	    fn.noiseData = helpers::getRawPointer(this->m_noiseInput);
@@ -2105,7 +2242,12 @@ namespace layers{
 	    fn.noiseDim     = m_noiseSize;
 	    fn.flagForward  = false;
 	    fn.preShift  = 0;
-	    fn.weights   = helpers::getRawPointer(m_setZeroVec_D);
+	    
+	    fn.weights   = helpers::getRawPointer(m_setScaleVec_D);
+	    fn.shifts    = helpers::getRawPointer(m_setBiasVec_D);
+	    fn.stopGrad  = helpers::getRawPointer(m_stopGradVec_D);
+	    fn.binarize  = helpers::getRawPointer(m_setBinarizeVec_D);
+	    
 	    fn.preOutput = helpers::getRawPointer(this->outputErrors());
 	    fn.noiseData = helpers::getRawPointer(this->m_noiseInput);
 	    fn.patTypes  = helpers::getRawPointer(this->patTypes());
