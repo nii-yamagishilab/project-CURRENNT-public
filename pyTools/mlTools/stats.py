@@ -43,7 +43,10 @@ def getMeanStd(fileScp, fileDim, stdFloor=0.00001, f0Feature=0):
                 data = data[np.where(data>0)]
                 if data.shape[0] < 1:
                     continue
-                
+            if data.shape[0] < 1:
+                print('%s no data\n' % (fileName))
+                continue
+            
             # parallel algorithm
             # https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
             dataCount = data.shape[0]

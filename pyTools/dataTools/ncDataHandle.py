@@ -629,7 +629,7 @@ def bmat2nc_sub1(fileScp, outputfile, maskFile=None, flushT=300, waitT=30):
 
             if seqFrame < 1:
                 print("Error: data is empty. Please check %s in %s" % (temp[0], fileScp))
-                assert 1==0, errorMes([datafile], 3) + "Error in preparing data" % (datafile)
+                assert 1==0, errorMes([datafile], 3) + "Error in preparing data"
             
             seqLVar[idx1] = seqFrame #int(temp[3])
             

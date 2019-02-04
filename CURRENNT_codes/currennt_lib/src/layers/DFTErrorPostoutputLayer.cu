@@ -512,7 +512,9 @@ namespace layers{
     {
 	if (this->getSaveMemoryFlag())
 	    throw std::runtime_error("Memory save mode should be turned off");
-	
+
+	if (!this->flagTrainingMode())
+	    return;
 	
 	int timeLength = this->__vCurMaxSeqLength();
 	
