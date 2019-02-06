@@ -175,7 +175,14 @@ namespace layers {
             );
     }
 
-
+    template <typename TDevice>
+    void WeightedSsePostOutputLayer<TDevice>::computeBackwardPass(const int timeStep,
+								  const int nnState)
+    {
+	if (timeStep == this->curMaxSeqLength())
+	    this->computeBackwardPass(nnState);
+    }
+    
     // explicit template instantiations
     template class WeightedSsePostOutputLayer<Cpu>;
     template class WeightedSsePostOutputLayer<Gpu>;

@@ -1630,6 +1630,12 @@ namespace layers {
     }
 
     template <typename TDevice>
+    void RnnLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	throw std::runtime_error("RnnLayer computeBackwardPass(timeStep) not implemented");
+    }    
+    
+    template <typename TDevice>
     void RnnLayer<TDevice>::exportLayer(const helpers::JsonValue &layersArray, 
 					const helpers::JsonAllocator &allocator) const
     {

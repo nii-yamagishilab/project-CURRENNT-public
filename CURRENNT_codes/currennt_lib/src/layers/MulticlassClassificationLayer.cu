@@ -208,8 +208,12 @@ namespace layers {
         int n = this->curMaxSeqLength() * this->parallelSequences();
 
         real_t error = thrust::transform_reduce(
-            thrust::make_zip_iterator(thrust::make_tuple(m_patTargetClasses.begin(),   thrust::counting_iterator<int>(0))),
-            thrust::make_zip_iterator(thrust::make_tuple(m_patTargetClasses.begin()+n, thrust::counting_iterator<int>(0)+n)),
+            thrust::make_zip_iterator(
+		thrust::make_tuple(m_patTargetClasses.begin(),
+				   thrust::counting_iterator<int>(0))),
+            thrust::make_zip_iterator(
+		thrust::make_tuple(m_patTargetClasses.begin()+n,
+				   thrust::counting_iterator<int>(0)+n)),
             fn,
             (real_t)0,
             thrust::plus<real_t>()
@@ -245,13 +249,24 @@ namespace layers {
         fn.outputErrors = helpers::getRawPointer(this->_outputErrors());
 
         thrust::for_each(
-            thrust::make_zip_iterator(thrust::make_tuple(m_patTargetClasses.begin(),   thrust::counting_iterator<int>(0))),
-            thrust::make_zip_iterator(thrust::make_tuple(m_patTargetClasses.begin()+n, thrust::counting_iterator<int>(0)+n)),
+            thrust::make_zip_iterator(
+		thrust::make_tuple(m_patTargetClasses.begin(),
+				   thrust::counting_iterator<int>(0))),
+            thrust::make_zip_iterator(
+		thrust::make_tuple(m_patTargetClasses.begin()+n,
+				   thrust::counting_iterator<int>(0)+n)),
             fn
             );
     }
 
-
+    template <typename TDevice>
+    void MulticlassClassificationLayer<TDevice>::computeBackwardPass(const int timeStep,
+								     const int nnState)
+    {
+	if (timeStep == this->curMaxSeqLength())
+	    this->computeBackwardPass(nnState);
+    }
+    
     // explicit template instantiations
     template class MulticlassClassificationLayer<Cpu>;
     template class MulticlassClassificationLayer<Gpu>;

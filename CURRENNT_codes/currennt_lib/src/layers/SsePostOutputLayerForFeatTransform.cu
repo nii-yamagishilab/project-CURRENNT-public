@@ -193,7 +193,14 @@ namespace layers {
 	       this->_outputErrors().begin(),
 	       fn);
     }
-    
+
+    template <typename TDevice>
+    void SsePostOutputLayerForFeatTrans<TDevice>::computeBackwardPass(const int timeStep,
+								      const int nnState)
+    {
+	if (timeStep == this->curMaxSeqLength())
+	    this->computeBackwardPass(nnState);
+    }
     // explicit template instantiations
     template class SsePostOutputLayerForFeatTrans<Cpu>;
     template class SsePostOutputLayerForFeatTrans<Gpu>;

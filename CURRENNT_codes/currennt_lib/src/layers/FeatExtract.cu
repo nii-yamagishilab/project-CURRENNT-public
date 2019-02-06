@@ -461,6 +461,12 @@ namespace layers{
     }
 
     template <typename TDevice>
+    void FeatExtract<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	throw std::runtime_error("featextract not implemented for computeBackward(timestep)");
+    }
+
+    template <typename TDevice>
     void FeatExtract<TDevice>::reduceOutputBuffer()
     {
 	throw std::runtime_error("This operator layer doesn't support memory reduce mode");

@@ -154,7 +154,7 @@ namespace optimizers {
                 }
 		
                 // compute the backward pass and accumulate the weight updates
-                m_neuralNetwork.computeBackwardPass();
+                m_neuralNetwork.computeBackwardPass(frac->maxSeqLength(), (m_curEpoch-1));
 
 		// clean the gradients for GAN (do nothing for other networks)
 		m_neuralNetwork.cleanGradientsForDiscriminator();

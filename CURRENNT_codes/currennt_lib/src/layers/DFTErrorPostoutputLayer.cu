@@ -1247,6 +1247,13 @@ namespace layers{
     }
 
     template <typename TDevice>
+    void DFTPostoutputLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	if (timeStep == this->curMaxSeqLength())
+	    this->computeBackwardPass(nnState);
+    }
+    
+    template <typename TDevice>
     int  DFTPostoutputLayer<TDevice>::__vSize()
     {
 	if (m_modeMultiDimSignal == DFTMODEFORMULTIDIMSIGNAL_CONCATE)

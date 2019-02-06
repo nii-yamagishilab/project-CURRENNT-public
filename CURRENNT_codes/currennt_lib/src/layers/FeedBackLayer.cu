@@ -863,7 +863,14 @@ namespace layers{
 	
 	}
     }
-    
+
+    template <typename TDevice>
+    void FeedBackLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	//
+	throw std::runtime_error("feedback not implemented for computeBackwardPass ");
+    }
+
     template class FeedBackLayer<Cpu>;
     template class FeedBackLayer<Gpu>;
     

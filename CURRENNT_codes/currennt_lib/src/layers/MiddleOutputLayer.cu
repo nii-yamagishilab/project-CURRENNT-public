@@ -618,6 +618,12 @@ namespace layers{
     }
 
     template <typename TDevice>
+    void MiddleOutputLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	throw std::runtime_error("middleOutputLayer computeBackwardPass(timeStep) not implemented");
+    }
+    
+    template <typename TDevice>
     const std::string& MiddleOutputLayer<TDevice>::type() const
     {
         static const std::string s("middleoutput");

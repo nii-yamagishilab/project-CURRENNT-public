@@ -203,7 +203,47 @@ namespace layers{
 	    
 	}
     }
-	
+
+    // NN backward
+    template <typename TDevice>
+    void SkipForFeatTrans<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	if (this->getSaveMemoryFlag())
+	    throw std::runtime_error("Memory save mode should be turned off");
+
+	// absolute time
+	int effTimeS = timeStep     * this->parallelSequences();
+	int effTimeE = (timeStep+1) * this->parallelSequences();
+
+	// at first, add the errors in both this->outputErrorsFromSkipLayer() and m_outputErrors
+	thrust::transform(this->outputErrorsFromSkipLayer().begin() + this->size() * effTimeS,
+			  this->outputErrorsFromSkipLayer().begin() + this->size() * effTimeE,
+			  this->outputErrors().begin()              + this->size() * effTimeS,
+			  this->outputErrors().begin()              + this->size() * effTimeS,
+			  thrust::plus<real_t>());
+
+
+	// send erros to the all the previous layers
+	BOOST_REVERSE_FOREACH (Layer<TDevice> *layer, this->PreLayers()) {
+	    SkipLayer<TDevice>* tempLayer = dynamic_cast<SkipLayer<TDevice>*>(layer);
+	    if(tempLayer){
+		// this is an SkipAdd Layer, erros should be accumulated to 
+		// this->outputErrorsFromSkipLayer()
+		thrust::transform(
+		     this->outputErrors().begin()  + effTimeS * this->size(),
+		     this->outputErrors().begin()  + effTimeE * this->size(),
+		     tempLayer->outputErrorsFromSkipLayer().begin() + effTimeS * this->size(),
+		     tempLayer->outputErrorsFromSkipLayer().begin() + effTimeS * this->size(),
+		     thrust::plus<real_t>());
+	    }else{
+		// else, just copy the data to the outputErrors
+		thrust::copy(this->outputErrors().begin()  + effTimeS * this->size(),
+			     this->outputErrors().begin()  + effTimeE * this->size(),
+			     layer->outputErrors().begin() + effTimeS * this->size());
+	    }   
+	}
+    }
+
     // return all the preceding layers
     // template <typename TDevice>
     // std::vector<Layer<TDevice>*> SkipForFeatTrans<TDevice>::PreLayers()

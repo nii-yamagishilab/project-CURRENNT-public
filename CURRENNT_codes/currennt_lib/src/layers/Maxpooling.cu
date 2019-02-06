@@ -298,6 +298,11 @@ namespace layers {
 	}}
     }
     
+    template <typename TDevice>
+    void MaxPoolingLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	throw std::runtime_error("maxpooling computBackwardPass(timeStep) not implemented");
+    }
     
     template <typename TDevice>
     void MaxPoolingLayer<TDevice>::exportLayer(

@@ -267,6 +267,37 @@ namespace layers{
     }
 
     template <typename TDevice>
+    void GatedActLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	if (this->getSaveMemoryFlag())
+	    throw std::runtime_error("Memory save mode should be turned off");
+	
+	// absolute time
+	int effTimeS = timeStep     * this->parallelSequences();
+	int effTimeE = (timeStep+1) * this->parallelSequences();
+
+	{
+	    internal::tanhSigMergeGradient fn1;
+	    fn1.outputSize = this->size() * 2;
+	    fn1.coreBuf    = helpers::getRawPointer(this->precedingLayer().outputs());
+	    fn1.errors     = helpers::getRawPointer(this->outputErrors());
+	    fn1.patTypes   = helpers::getRawPointer(this->patTypes());
+	    
+	    thrust::for_each(
+               thrust::make_zip_iterator(
+		thrust::make_tuple(
+		  this->precedingLayer().outputErrors().begin() + effTimeS * this->size() * 2,
+		  thrust::counting_iterator<int>(0)             + effTimeS * this->size() * 2)),
+	       thrust::make_zip_iterator(
+		thrust::make_tuple(
+		  this->precedingLayer().outputErrors().begin() + effTimeE * this->size() * 2,
+		  thrust::counting_iterator<int>(0)             + effTimeE * this->size() * 2)),
+	       fn1);
+	}
+	
+    }
+
+    template <typename TDevice>
     void GatedActLayer<TDevice>::reduceOutputBuffer()
     {
 	//Layer<TDevice>::reduceOutputBuffer();

@@ -145,6 +145,8 @@ namespace layers {
 
 	virtual void computeBackwardPass(const int nnState);
 	
+	virtual void computeBackwardPass(const int timeStep, const int nnState);
+	
 	/**
 	 * Re-initialize the network
 	   only defines for Trainable Layers, here do nothing

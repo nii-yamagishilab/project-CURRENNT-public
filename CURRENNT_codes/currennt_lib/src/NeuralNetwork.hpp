@@ -108,7 +108,6 @@ class NeuralNetwork
 private:
     std::vector<boost::shared_ptr<layers::Layer<TDevice> > > m_layers;
     
-    /* Add 02-24 Wang Residual Network*/
     std::vector<layers::Layer<TDevice>*> m_skipAddLayers;
     std::vector<int> m_feedBackLayers;
     std::vector<int> m_vaeLayers;
@@ -117,8 +116,9 @@ private:
     std::vector<int> m_distillingLayers;
     std::vector<int> m_signalGenLayerId;
     std::vector<int> m_featTransNetRange;
-    
-    int m_firstFeedBackLayer;                                  // ID of the first feedback Layer
+    std::vector<int> m_feedBackHiddenLayers;
+
+    int m_firstFeedBackLayer;
     int m_middlePostOutputLayer;
     int m_featMatchLayer;
     int m_vaeLayer;
@@ -130,8 +130,61 @@ private:
 
     int m_waveNetMemSaveFlag;
     int m_totalNumLayers;
+
+    int m_wavNetCoreFirstIdx;
+    int m_dftLayerIdx;
     
     network_helpers::networkDepMng m_networkMng;
+
+    // initialize the layer indices by readong jsonDoc
+    void __InitializeNetworkLayerIdx(const helpers::JsonDocument &jsonDoc);
+    void __CreateNetworkLayers(const helpers::JsonDocument &jsonDoc,
+			       int parallelSequences,  int maxSeqLength, int inputSizeOverride);
+    void __CheckNetworkLayers();
+    void __LinkNetworkLayers();
+    void __CreateDependency();
+
+
+    // Training forward parts:
+    //  layer by layer (normal mode)
+    void __computeForward_LayerByLayer(const int curMaxSeqLength, const real_t uttCnt);
+    //  layer by layer (for AR model with teacher forcing training)
+    void __computeForward_TeacherForce_LayerByLayer(const int curMaxSeqLength, const real_t uttCnt);
+    //  step by step (for AR model with schedule sampling)
+    void __computeForward_ScheduleSamp_LayerByLayer(const int curMaxSeqLength, const real_t uttCnt);
+    //  step by step (for RNN network with feedback among hidden layers)
+    void __computeForward_StepByStep(const int curMaxSeqLength, const real_t uttCnt);
+
+    // Training backward parts:
+    //  layer by layer (normal mode)
+    //  note: the first three modes above use this mode for backward propagation.
+    //         Although Schedule sampling should have used backward_stepbystep 
+    void __computeBackward_LayerByLayer(const int curMaxSeqLength, const real_t uttCnt);
+    //  step by step (for RNN with feedback among hidden layers)
+    void __computeBackward_StepByStep(const int curMaxSeqLength, const real_t uttCnt);
+
+    
+    // Generation parts:
+    //  layer by layer (normal mode)
+    void __computeGenPass_LayerByLayer(const data_sets::DataSetFraction &fraction,
+				       const int curMaxSeqLength, const real_t generationOpt);
+    //  normalization flow (for autoregressive flow, NOT inverse autoregressive flow)
+    void __computeGenPass_NormFlow(const data_sets::DataSetFraction &fraction,
+				   const int curMaxSeqLength, const real_t generationOpt);
+    //  layer by layer with memory release/allocation per layer (for NSF)
+    void __computeGenPass_LayerByLayer_mem(const data_sets::DataSetFraction &fraction,
+					   const int curMaxSeqLength, const real_t generationOpt);
+
+    //  layer by layer for VAE network
+    void __computeGenPass_VAE(const data_sets::DataSetFraction &fraction,
+			      const int curMaxSeqLength, const real_t generationOpt);
+
+    //  step by step (for all types of AR model)
+    void __computeGenPass_StepByStep_AR(const data_sets::DataSetFraction &fraction,
+					const int curMaxSeqLength, const real_t generationOpt);
+    //  step by step (for all types of RNN with feedback in hidden layers)
+    void __computeGenPass_StepByStep_RNN_FBH(const data_sets::DataSetFraction &fraction,
+					     const int curMaxSeqLength, const real_t generationOpt);
     
 public:
     /**
@@ -141,8 +194,11 @@ public:
      * @param parallelSequences The maximum number of sequences that shall be computed in parallel
      * @param maxSeqLength      The maximum length of a sequence
      */
-    NeuralNetwork(const helpers::JsonDocument &jsonDoc, int parallelSequences, 
-		  int maxSeqLength, int inputSizeOverride=-1, int outputSizeOverride=-1);
+    NeuralNetwork(const helpers::JsonDocument &jsonDoc,
+		  int parallelSequences, 
+		  int maxSeqLength,
+		  int inputSizeOverride=-1,
+		  int outputSizeOverride=-1);
 
     /**
      * Destructs the neural network
@@ -203,9 +259,7 @@ public:
 
     /**
      * Computes the forward pass
-     */
-    void __computeForwardPassGen(const int curMaxSeqLength, const real_t generationOpt);
-    
+     */    
     void computeForwardPassGen(const data_sets::DataSetFraction &fraction,
 			       const int curMaxSeqLength, const real_t generationOpt);
     
@@ -214,7 +268,7 @@ public:
      *
      * The forward pass must be computed first!
      */
-    void computeBackwardPass();
+    void computeBackwardPass(const int curMaxSeqLength, const real_t uttCnt);
 
     /**
      * Calculates the error at the output layer

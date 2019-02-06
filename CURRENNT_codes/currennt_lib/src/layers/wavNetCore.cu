@@ -808,6 +808,12 @@ namespace layers{
     }
 
     template <typename TDevice>
+    void WavNetCore<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	throw std::runtime_error("WavNetCore computeBackwardPass(timeStep) not implemented");
+    }
+    
+    template <typename TDevice>
     void WavNetCore<TDevice>::reduceOutputBuffer()
     {
 	//Layer<TDevice>::reduceOutputBuffer();

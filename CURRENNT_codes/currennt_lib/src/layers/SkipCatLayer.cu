@@ -382,7 +382,78 @@ namespace layers{
 	    }
        }}
     }
+
+    // NN backward
+    template <typename TDevice>
+    void SkipCatLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	if (this->getSaveMemoryFlag())
+	    throw std::runtime_error("Memory save mode should be turned off");
 	
+	// absolute time
+	int effTimeS = timeStep     * this->parallelSequences();
+	int effTimeE = (timeStep+1) * this->parallelSequences();
+
+	// 
+	// at first, add the errors in both this->outputErrorsFromSkipLayer() and m_outputErrors
+	thrust::transform(this->outputErrorsFromSkipLayer().begin() + this->size() * effTimeS,
+			  this->outputErrorsFromSkipLayer().begin() + this->size() * effTimeE,
+			  this->outputErrors().begin()              + this->size() * effTimeS,
+			  this->outputErrors().begin()              + this->size() * effTimeS,
+			  thrust::plus<real_t>());
+	
+	// send erros to the all the previous layers
+	{{
+	    internal::CopyPartSkipCat fn;
+	    fn.source    = helpers::getRawPointer(this->outputErrors());
+	    fn.srcDim    = this->size();
+	    fn.patTypes  = helpers::getRawPointer(this->precedingLayer().patTypes());
+	    fn.srcShiftT = 0;
+	    fn.tarShiftT = 0;
+	    
+	    int n = this->precedingLayer().curMaxSeqLength();
+ 	    n = n * this->precedingLayer().parallelSequences();
+
+	    int cnt  = 0;
+	    int tmpDim = 0;
+	    BOOST_FOREACH (Layer<TDevice> *layer, this->PreLayers()) {
+
+		tmpDim = m_preSkipDim[cnt+1] - m_preSkipDim[cnt];
+		
+		fn.srcS    = m_preSkipDimAccu[cnt/2];
+		fn.tarS    = m_preSkipDim[cnt];
+		fn.copyDim = m_preSkipDim[cnt+1] - m_preSkipDim[cnt];
+		
+		SkipLayer<TDevice>* tempLayer = dynamic_cast<SkipLayer<TDevice>*>(layer);
+		if(tempLayer){
+		    fn.target  = helpers::getRawPointer(tempLayer->outputErrorsFromSkipLayer());
+		    fn.tarDim  = tempLayer->size();
+		    fn.accumulate = true;
+		    
+		}else{
+		    // if previous layer is not a SkipLayer, its gradients only comes
+		    // from this layer, thus, it is safe to set the gradients to zeros
+		    thrust::fill(layer->outputErrors().begin() + layer->size() * effTimeS,
+				 layer->outputErrors().begin() + layer->size() * effTimeE,
+				 0.0);
+		    
+		    fn.target  = helpers::getRawPointer(layer->outputErrors());
+		    fn.tarDim  = layer->size();
+		    fn.accumulate = false;
+		}
+		thrust::for_each(
+		  thrust::make_zip_iterator(
+		     thrust::make_tuple(this->outputErrors().begin()       + tmpDim * effTimeS, 
+					thrust::counting_iterator<int>(0)  + tmpDim * effTimeS)),
+		  thrust::make_zip_iterator(
+		      thrust::make_tuple(this->outputErrors().begin()      + tmpDim * effTimeE, 
+					 thrust::counting_iterator<int>(0) + tmpDim * effTimeE)),
+		  fn);
+		cnt += 2;
+	    }
+       }}
+    }
+
     // return all the preceding layers
     // template <typename TDevice>
     // std::vector<Layer<TDevice>*> SkipCatLayer<TDevice>::PreLayers()

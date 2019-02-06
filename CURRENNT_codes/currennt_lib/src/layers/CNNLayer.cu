@@ -1550,6 +1550,14 @@ namespace layers {
 	// dustbin.txt 20170421x03
     }
 
+
+    template <typename TDevice>
+    void CNNLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	throw std::runtime_error("BackwardPas(timeStep, nnState) not implemented for CNN");
+    }
+
+    
     template <typename TDevice>
     void CNNLayer<TDevice>::loadSequences(const data_sets::DataSetFraction &fraction,
 					  const int nnState)

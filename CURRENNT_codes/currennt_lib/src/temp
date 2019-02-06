@@ -1,0 +1,423 @@
+template <typename TDevice>
+void NeuralNetwork<TDevice>::__computeForwardPassGen(const int curMaxSeqLength, 
+						     const real_t generationOpt)
+{
+    layers::MDNLayer<TDevice> *olm;
+    const Configuration &config = Configuration::instance();
+    
+
+    if (m_firstFeedBackLayer < 0 && m_normflowLayers.empty()){
+	
+	// no feedback/normaling layer, a normal network
+	this->computeForwardPass(curMaxSeqLength, -1);
+	
+	// if MDN is available, infer the output, or copy the MDN parameter vector
+	olm = outMDNLayer();
+	if (olm != NULL) olm->getOutput(generationOpt);
+	
+	return;
+	
+    }else if (!m_normflowLayers.empty()){
+	// normalization flow
+
+	// computation within the normal layers
+	int cnt = 0;
+	BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
+	    // 
+	    if (cnt < m_normflowLayers[0] || cnt > m_normflowLayers[m_normflowLayers.size()-1])
+		layer->computeForwardPass(m_trainingState);
+	    cnt++;
+	}
+	
+	// generate normalzied output from MDN
+	olm = outMDNLayer();
+	if (olm != NULL) olm->getOutput(generationOpt);
+
+	// de-transform the output from MDN by the normalizing flows
+	// 1. load the output from MDN to the last normflow
+	layers::NormFlowLayer<TDevice>* tmpPtr =
+	    dynamic_cast<layers::NormFlowLayer<TDevice>*>(m_layers[m_normflowLayers.back()].get());
+	if (tmpPtr) tmpPtr->loadNormedOutput();
+	
+	// 2. de-transformation using the normflow layers
+	for (size_t index = m_normflowLayers.size()-1; index > 0 ; index--){
+	    int layerIdx1 = m_normflowLayers[index];
+	    int layerIdx2 = m_normflowLayers[index-1];
+	    
+	    // de-transformation between layerIdx1 and layerIdx2
+	    for (int timeStep = 0, cnt = 0; timeStep < curMaxSeqLength; timeStep ++, cnt = 0){
+		
+		BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
+		    if (cnt > layerIdx2 && cnt <= layerIdx1){
+			if (timeStep % (layer->getResolution()) == 0){
+			    // prepare the matrix (for rnn, lstm)
+			    layer->prepareStepGeneration(timeStep/layer->getResolution());
+			    
+			    // compute for 1 frame			
+			    layer->computeForwardPass(timeStep/layer->getResolution(),
+						      m_trainingState);
+			}
+		    }
+		    cnt++;
+		}
+	    }
+	    
+	    // prepare for the next flow
+	    tmpPtr = dynamic_cast<layers::NormFlowLayer<TDevice>*>(m_layers[layerIdx2].get());
+	    if (tmpPtr) tmpPtr->loadNormedOutput();
+	}
+
+	// 3. copy the de-transformed output to the output of network
+	m_layers[m_normflowLayers[0]]->computeForwardPass(0, m_trainingState);
+	
+	
+    }else if (config.vaeEncoderOutputLayer()>0){
+	// Inference for VAE
+	
+	// For a VAE network, the feedback layer in the encoder should take the
+	// golden target features as input if we just want to extract latent
+	// variables from the network. In this case, config.vaeEncoderOutputlayer() is
+	// used to specify the layer to generate the latent variables
+	if (config.vaeEncoderOutputLayer() >= m_totalNumLayers)
+	    throw std::runtime_error("vaeEncoderOutputLayer is larger than network depth");
+	if (m_vaeLayer < 0)
+	    throw std::runtime_error("vaeEncoderOutputLayer() is used while network is not VAE");
+	
+	// Feedback the natural output data provided by data.nc
+	this->postOutputLayer().retrieveFeedBackData();
+
+	if (config.dropoutbeforeVAE() == 1){
+	    // Prepare the random seed
+	    static boost::mt19937 *gen = NULL;
+	    if (!gen) {
+		gen = new boost::mt19937;
+		gen->seed(config.randomSeed()+98); // any random number
+	    }
+	    boost::random::uniform_real_distribution<real_t> dist(0, 1);
+
+	    real_t threshold = ((real_t)config.scheduleSampPara())/100;
+	    
+	    // Prepare the random vector
+	    Cpu::real_vector randNum;
+	    randNum.reserve(curMaxSeqLength);
+	    for (size_t i = 0; i < curMaxSeqLength; ++i){
+		if (dist(*gen) > threshold){
+		    randNum.push_back(0);
+		}else{
+		    randNum.push_back(1);
+		}
+	    }
+
+	    // dropout 
+	    typename TDevice::real_vector temp = randNum;
+	    this->postOutputLayer().retrieveFeedBackData(temp, config.scheduleSampOpt());
+	}
+	
+	// Assume no dropout here
+	// propagate until the vae layer
+	int cnt = 0 ;
+	BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
+	    if (cnt > m_vaeLayer) break; 
+	    layer->computeForwardPass(m_trainingState);
+	    cnt++;
+	}
+	
+	//if (config.vaeEncoderOutputLayer() == m_totalNumLayers - 1){
+	//  olm = outMDNLayer();
+	//  if (olm != NULL) olm->getOutput(generationOpt);
+	//}
+	return;
+
+    }else{
+
+	// Feedback exists, and not for latent code inference
+	
+	// Prepare the random seed
+	static boost::mt19937 *gen = NULL;
+	if (!gen) {
+	    gen = new boost::mt19937;
+	    gen->seed(config.randomSeed()+98); // any random number
+	}
+	boost::random::uniform_real_distribution<real_t> dist(0, 1);
+
+	
+	int scheduleSampOpt = config.scheduleSampOpt();
+	int scheduleSampPara= config.scheduleSampPara();
+	printf("SSAMPOpt: %d, SSAMPPara: %d\n", scheduleSampOpt, scheduleSampPara);
+	
+	real_t sampThreshold = 0.0;
+	int    methodCode    = 0;
+	int    cnt           = 0;
+
+	if (this->m_vaeNetworkType != VAENETWORKTYPE_0){
+	    // Special network of VAE
+	    
+	    switch (this->m_vaeNetworkType){
+	    case VAENETWORKTYPE_1:
+	    case VAENETWORKTYPE_3:
+		// propagate for layers without AR dependency
+
+		cnt = 0;
+		BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
+		    if (cnt == m_firstFeedBackLayer) break;
+		    layer->computeForwardPass(m_trainingState);
+		    cnt++;
+		}
+		break;
+	    case VAENETWORKTYPE_2:
+		// encoder and condition network has no AR dependency,
+		// just propagate through all layers
+		// (assume latent code has been loaded in vae layer)
+		this->computeForwardPass(curMaxSeqLength, -1);
+		olm = outMDNLayer();
+		if (olm != NULL) olm->getOutput(generationOpt);
+		return;
+		break;
+	    case VAENETWORKTYPE_4:
+	    default:
+		throw std::runtime_error("Impossible error");
+		break;
+	    }
+	    
+	}else{
+	    // For a normal network with feedback layers
+	    
+	    // layers without time dependency
+	    // can be simultaneously calculated with all frames
+	    // Forward computation for layers before Feedback
+	    cnt = 0;
+	    BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
+		if (cnt == m_firstFeedBackLayer) break; 
+		layer->computeForwardPass(m_trainingState);
+		cnt++;
+	    }
+	}
+	    
+	
+	// Parameter for genreation
+	switch (scheduleSampOpt){
+
+	// Case 0: use probability vector for feedback
+	//         1. native training approach
+	//         2. schedule sampling (soft-feedback training)
+	case NN_FEEDBACK_GROUND_TRUTH:
+	case NN_FEEDBACK_SC_SOFT:
+	    // always uses the soft vector (default option)
+	    sampThreshold  = 1;
+	    methodCode     = NN_FEEDBACK_GROUND_TRUTH;
+	    break;
+
+	// Case 1: use one hot vector
+	case NN_FEEDBACK_SC_MAXONEHOT:
+	    if (scheduleSampPara > 0){
+		sampThreshold = 1;
+		methodCode = NN_FEEDBACK_GROUND_TRUTH;
+	    }else{
+		sampThreshold = (-1.0 * (real_t)scheduleSampPara / 100.0);
+		methodCode = NN_FEEDBACK_SC_MAXONEHOT;
+	    }
+	    // use the one-hot best
+	    break;
+	    
+	// Case 2: dropout
+	case NN_FEEDBACK_DROPOUT_1N:
+	    methodCode = NN_FEEDBACK_DROPOUT_1N;
+	    sampThreshold = ((real_t)scheduleSampPara)/100;
+	    break;					    
+	case NN_FEEDBACK_DROPOUT_ZERO:
+	    methodCode = NN_FEEDBACK_DROPOUT_ZERO;
+	    sampThreshold = ((real_t)scheduleSampPara)/100;
+	    break;
+	    
+	// Case 3: beam search
+	case NN_FEEDBACK_BEAMSEARCH:
+	    methodCode = NN_FEEDBACK_SC_MAXONEHOT;
+	    //beamSize   = (int)scheduleSampPara;
+	    if (config.vaeEncoderOutputLayer() >= 0)
+		throw std::runtime_error("vaeEncoderOutputLayer is implemented for beamsearch");
+	    break;
+	}
+
+
+	//Generation
+	// Normal generation (Greedy)
+	if (scheduleSampOpt != NN_FEEDBACK_BEAMSEARCH){
+	    
+	    int feedBackFrom = m_firstFeedBackLayer;
+	    
+	    for (int timeStep = 0, cnt = 0; timeStep < curMaxSeqLength; timeStep ++, cnt = 0){
+		
+		BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
+		    if (cnt >= feedBackFrom){
+
+			if (timeStep % (layer->getResolution()) == 0){
+			    // prepare the matrix (for rnn, lstm)
+			    layer->prepareStepGeneration(timeStep/layer->getResolution());
+			    // compute for 1 frame			
+			    layer->computeForwardPass(timeStep/layer->getResolution(),
+						      m_trainingState);
+			}
+		    }
+		    cnt++;
+		}
+		
+		// Generate the output from MDN
+		if (timeStep % (this->postOutputLayer().getResolution()) == 0){
+		    int tmpOutputLayerReso = this->postOutputLayer().getResolution();
+		    
+		    olm = outMDNLayer();
+		    if (olm != NULL) olm->getOutput(timeStep/olm->getResolution(), generationOpt);
+		
+		    // Feedback the data
+		    if (dist(*gen) < sampThreshold){
+			// default case: feedback prob vec
+			this->postOutputLayer().retrieveFeedBackData(timeStep/tmpOutputLayerReso,
+								     NN_FEEDBACK_GROUND_TRUTH);
+		    }else{
+			// special method: use one-hot or dropout
+			this->postOutputLayer().retrieveFeedBackData(timeStep/tmpOutputLayerReso,
+								     methodCode);
+			printf("%d ", timeStep);
+		    }
+		}
+	    }
+	    
+	// Beam search generation
+	}else{
+	    
+	    int stateNum;       // number of states per time step
+	    int layerCnt;       // counter of the hidden layers
+	    int beamSize   = (int)scheduleSampPara; // size of beam
+	    
+	    /* ----- pre-execution check  ----- */
+	    if (beamSize < 0)
+		throw std::runtime_error("beam size cannot be < 1");
+	    if (m_firstFeedBackLayer < 0)
+		throw std::runtime_error("No need to use beam size for network without feedback");
+	    olm = outMDNLayer();
+	    if (olm == NULL)
+		throw std::runtime_error("Beam size is used for non-MDN output layer");
+	    stateNum = olm->mdnParaDim();
+	    if (beamSize >= stateNum)
+		throw std::runtime_error("Beam size is larger than the number of state");
+
+	    /* ----- initialization ----- */
+	    // count the number of hidden elements in the network
+	    std::vector<int> netStateSize;
+	    int hidEleNum = 0;	// number of hidden elements in the network
+	    
+	    layerCnt  = 0;
+	    BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
+		if (layerCnt >= m_firstFeedBackLayer){
+		    netStateSize.push_back(layer->hiddenStateSize());
+		    hidEleNum += layer->hiddenStateSize();
+		}
+		layerCnt++;
+	    }
+	    // allocate memory spaces for searching 
+	    beamsearch::searchState<TDevice>  bmState(netStateSize, curMaxSeqLength, stateNum);
+	    beamsearch::searchEngine<TDevice> bmEngine(beamSize);
+	    for (int i = 0; i < beamSize + beamSize * stateNum; i++)
+		bmEngine.addState(bmState);
+	    bmEngine.setValidBeamSize(1);
+	    std::vector<beamsearch::sortUnit> preSortVec(stateNum);
+	    // allocate memory spaces for hidden features of network
+	    Cpu::real_vector netStateTmpTmp(hidEleNum, 0.0);
+	    typename TDevice::real_vector netStateTmp = netStateTmpTmp;
+
+
+	    
+	    /* ----- Search loop ----- */
+	    for (int timeStep = 0; timeStep < curMaxSeqLength; timeStep++){
+
+		// Count the extended number of states
+		int stateCnt = 0;
+		
+		// loop over beam
+		for (int searchPT = 0; searchPT < bmEngine.getValidBeamSize(); searchPT ++){
+
+		    // get the state to be extended
+		    beamsearch::searchState<TDevice>& bmState2 = bmEngine.retrieveState(searchPT);
+		    
+		    // prepare states from bmState2
+		    bmState.liteCopy(bmState2);
+		    
+		    // set the network state
+		    // 1. set the feedback data
+		    if (timeStep > 0)
+			this->postOutputLayer().setFeedBackData(timeStep-1, bmState2.getStateID());
+		    
+		    // 2. set the hidde layers and compute
+		    layerCnt = 0;
+		    BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
+			if (layerCnt >= m_firstFeedBackLayer){
+			    int layerID = layerCnt - m_firstFeedBackLayer;
+			    layer->prepareStepGeneration(timeStep);
+			    if (timeStep > 0){
+				netStateTmp = bmState2.getNetState(layerID);
+				layer->setHiddenState(timeStep-1, netStateTmp);
+			    }
+			    layer->computeForwardPass(timeStep, m_trainingState);
+
+			    // store the state of network in new states 
+			    // this should be in step3. but this is more efficient
+			    layer->retrieveHiddenState(timeStep, netStateTmp);
+			    netStateTmpTmp = netStateTmp;
+			    bmState.setNetState(layerID, netStateTmpTmp);
+			}
+			layerCnt++;
+		    }
+		    // 3. pre-select the states to be explored
+		    for (int newStateID = 0; newStateID < stateNum; newStateID++){
+			preSortVec[newStateID].prob = olm->retrieveProb(timeStep, newStateID);
+			preSortVec[newStateID].idx  = newStateID;
+		    }
+		    std::sort(preSortVec.begin(), preSortVec.end(), beamsearch::compareFunc);
+		    
+		    // 4. add new search state
+		    //  probability before this step
+		    for (int i = 0; i < bmEngine.getBeamSize(); i++){
+			
+			bmState.setStateID(preSortVec[i].idx);
+			bmState.setStateTrace(timeStep, preSortVec[i].idx);
+			bmState.setTimeStep(timeStep);
+			if (preSortVec[i].prob < 1e-15f)
+			    continue; // trim the zero probability path
+			else
+			    bmState.setProb(bmState2.getProb() + std::log(preSortVec[i].prob));
+			bmState.setProbTrace(timeStep, preSortVec[i].prob);
+			bmEngine.setState(bmEngine.getBeamSize() + stateCnt, bmState);
+			bmEngine.setSortUnit(stateCnt, bmState);
+			stateCnt++;
+		    }
+		}	
+		bmEngine.sortSet(stateCnt);
+		bmEngine.printBeam();
+	    }
+	    
+	    // Finish the beam search, finally, generate
+	    bmEngine.printBeam();
+	    bmState.fullCopy(bmEngine.retrieveState(0));
+	    for (int timeStep = 0; timeStep < curMaxSeqLength; timeStep++){
+		if (timeStep > 0)
+		    this->postOutputLayer().setFeedBackData(timeStep-1,
+							    bmState.getStateID(timeStep-1));
+		
+		layerCnt = 0;
+		BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
+		    if (layerCnt >= m_firstFeedBackLayer){
+			layer->prepareStepGeneration(timeStep);
+			layer->computeForwardPass(timeStep, m_trainingState);
+		    }
+		    layerCnt++;
+		}
+		
+		olm = outMDNLayer();
+		if (olm != NULL) olm->getOutput(timeStep, generationOpt);
+	    }
+	    
+	} // Beam search generation
+	
+	return;
+    } // Generation for network with feedback layers (structured prediction)
+}

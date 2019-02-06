@@ -674,6 +674,11 @@ namespace layers{
     
     }
 
+    template <typename TDevice>
+    void BatchNormLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	throw std::runtime_error("Error: Batchnorm is not for online computation");
+    }
     
     template class BatchNormLayer<Cpu>;
     template class BatchNormLayer<Gpu>;

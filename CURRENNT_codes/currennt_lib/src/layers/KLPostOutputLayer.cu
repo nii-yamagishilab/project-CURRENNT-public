@@ -333,6 +333,12 @@ namespace layers {
 	thrust::copy(m_errorBuf.begin(), m_errorBuf.begin() + n, this->_outputErrors().begin());
     }
 
+    template <typename TDevice>
+    void KLPostOutputLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	if (timeStep == this->curMaxSeqLength())
+	    this->computeBackwardPass(nnState);
+    }
     // explicit template instantiations
     template class KLPostOutputLayer<Cpu>;
     template class KLPostOutputLayer<Gpu>;

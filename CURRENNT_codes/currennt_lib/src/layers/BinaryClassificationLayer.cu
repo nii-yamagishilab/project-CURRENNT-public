@@ -211,11 +211,27 @@ namespace layers {
         int n = this->curMaxSeqLength() * this->parallelSequences();
 
         thrust::for_each(
-            thrust::make_zip_iterator(thrust::make_tuple(this->_outputErrors().begin(),   this->_targets().begin(),   this->_actualOutputs().begin(),   thrust::counting_iterator<int>(0))),
-            thrust::make_zip_iterator(thrust::make_tuple(this->_outputErrors().begin()+n, this->_targets().begin()+n, this->_actualOutputs().begin()+n, thrust::counting_iterator<int>(0)+n)),
-            fn
-            );
+            thrust::make_zip_iterator(
+		thrust::make_tuple(this->_outputErrors().begin(),
+				   this->_targets().begin(),
+				   this->_actualOutputs().begin(),
+				   thrust::counting_iterator<int>(0))),
+            thrust::make_zip_iterator(
+		thrust::make_tuple(this->_outputErrors().begin() + n,
+				   this->_targets().begin() + n,
+				   this->_actualOutputs().begin() + n,
+				   thrust::counting_iterator<int>(0)+n)),
+            fn);
 
+    }
+
+    template <typename TDevice>
+    void BinaryClassificationLayer<TDevice>::computeBackwardPass(const int timeStep,
+								 const int nnState)
+    {
+	// Assume the output layer don't need to use this method
+	if (timeStep == this->curMaxSeqLength())
+	    this->computeBackwardPass(nnState);
     }
 
 

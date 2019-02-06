@@ -75,3 +75,7 @@ In Optimizer.cu, the last epoch will restore the best weights
    the weights learned from epoch***.autosave will be covered by the
    best-weights
    
+
+20190206
+#1 lstm and rnn layers use swap,
+#  this will not work is swap in the future will change the pointers

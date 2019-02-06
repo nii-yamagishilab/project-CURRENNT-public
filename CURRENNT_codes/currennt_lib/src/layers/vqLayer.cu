@@ -1050,6 +1050,12 @@ namespace layers{
     }
 
 
+    // NN backward
+    template <typename TDevice>
+    void vqLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	throw std::runtime_error("vqLayer computeBackwardPass(timeStep) not implemented");
+    }
     
     template <typename TDevice>
     real_t vqLayer<TDevice>::codeError() const

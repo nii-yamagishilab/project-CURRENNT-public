@@ -906,10 +906,16 @@ namespace layers{
     void StructTransLayer<TDevice>::computeForwardPass(const int timeStep, const int nnState)
     {
 	// Not implemented yet
-	throw std::runtime_error("Not implemented structTransLayer computeForward(timeStep)");
-	
+	throw std::runtime_error("Not implemented structTransLayer computeForward(timeStep)");	
     }
 
+    // NN forward
+    template <typename TDevice>
+    void StructTransLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	// Not implemented yet
+	throw std::runtime_error("Not implemented structTransLayer computeBackward(timeStep)");	
+    }
 
     // NN backward
     template <typename TDevice>

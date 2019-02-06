@@ -288,7 +288,7 @@ namespace layers {
 
             thrust::transform(
                 thrust::counting_iterator<int>(0),
-                thrust::counting_iterator<int>(0) + this->curMaxSeqLength() * this->parallelSequences(),
+                thrust::counting_iterator<int>(0)+this->curMaxSeqLength()*this->parallelSequences(),
                 m_patTmp.begin(),
                 fn
                 );
@@ -303,8 +303,12 @@ namespace layers {
             int n = this->curMaxSeqLength() * this->parallelSequences() * this->size();
 
             thrust::for_each(
-                thrust::make_zip_iterator(thrust::make_tuple(this->_outputs().begin(),   thrust::counting_iterator<int>(0))),
-                thrust::make_zip_iterator(thrust::make_tuple(this->_outputs().begin()+n, thrust::counting_iterator<int>(0)+n)),
+                thrust::make_zip_iterator(
+		     thrust::make_tuple(this->_outputs().begin(),
+					thrust::counting_iterator<int>(0))),
+                thrust::make_zip_iterator(
+		     thrust::make_tuple(this->_outputs().begin()+n,
+					thrust::counting_iterator<int>(0)+n)),
                 fn
                 );
         }}
@@ -318,8 +322,12 @@ namespace layers {
             int n = this->curMaxSeqLength() * this->parallelSequences();
 
             thrust::for_each(
-                thrust::make_zip_iterator(thrust::make_tuple(m_patTmp.begin(),   thrust::counting_iterator<int>(0))),
-                thrust::make_zip_iterator(thrust::make_tuple(m_patTmp.begin()+n, thrust::counting_iterator<int>(0)+n)),
+                thrust::make_zip_iterator(
+			thrust::make_tuple(m_patTmp.begin(),
+					   thrust::counting_iterator<int>(0))),
+                thrust::make_zip_iterator(
+			thrust::make_tuple(m_patTmp.begin()+n,
+					   thrust::counting_iterator<int>(0)+n)),
                 fn
                 );
         }}
@@ -333,8 +341,12 @@ namespace layers {
             int n = this->curMaxSeqLength() * this->parallelSequences() * this->size();
 
             thrust::for_each(
-                thrust::make_zip_iterator(thrust::make_tuple(this->_outputs().begin(),   thrust::counting_iterator<int>(0))),
-                thrust::make_zip_iterator(thrust::make_tuple(this->_outputs().begin()+n, thrust::counting_iterator<int>(0)+n)),
+                thrust::make_zip_iterator(
+			thrust::make_tuple(this->_outputs().begin(),
+					   thrust::counting_iterator<int>(0))),
+                thrust::make_zip_iterator(
+			thrust::make_tuple(this->_outputs().begin()+n,
+					   thrust::counting_iterator<int>(0)+n)),
                 fn
                 );
         }}
@@ -359,10 +371,9 @@ namespace layers {
 
             thrust::transform(
                 thrust::counting_iterator<int>(0),
-                thrust::counting_iterator<int>(0) + this->curMaxSeqLength() * this->parallelSequences(),
+                thrust::counting_iterator<int>(0)+this->curMaxSeqLength()*this->parallelSequences(),
                 m_patTmp.begin(),
-                fn
-                );
+                fn);
         }}
 
         // calculate the errors
@@ -374,8 +385,14 @@ namespace layers {
             int n = this->curMaxSeqLength() * this->parallelSequences() * this->size();
 
             thrust::for_each(
-                thrust::make_zip_iterator(thrust::make_tuple(this->outputErrors().begin(),   this->_outputs().begin(),   thrust::counting_iterator<int>(0))),
-                thrust::make_zip_iterator(thrust::make_tuple(this->outputErrors().begin()+n, this->_outputs().begin()+n, thrust::counting_iterator<int>(0)+n)),
+                thrust::make_zip_iterator(
+			thrust::make_tuple(this->outputErrors().begin(),
+					   this->_outputs().begin(),
+					   thrust::counting_iterator<int>(0))),
+                thrust::make_zip_iterator(
+			thrust::make_tuple(this->outputErrors().begin()+n,
+					   this->_outputs().begin()+n,
+					   thrust::counting_iterator<int>(0)+n)),
                 fn
                 );
         }}
@@ -388,6 +405,12 @@ namespace layers {
 	    thrust::copy(this->outputErrors().begin(), this->outputErrors().end(),
 			 this->precedingLayer().outputErrors().begin());
 	}
+    }
+
+    template <typename TDevice, typename TFfActFn>
+    void SoftmaxLayer<TDevice, TFfActFn>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	throw std::runtime_error("Not implemented computeBackwardPass(timeStep) for softmax layer");
     }
 
 

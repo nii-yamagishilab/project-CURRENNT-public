@@ -172,13 +172,24 @@ namespace layers {
         int n = this->curMaxSeqLength() * this->parallelSequences() * this->size();
 
         thrust::transform(
-            thrust::make_zip_iterator(thrust::make_tuple(this->_actualOutputs().begin(),   this->_targets().begin(),   thrust::counting_iterator<int>(0))),
-            thrust::make_zip_iterator(thrust::make_tuple(this->_actualOutputs().begin()+n, this->_targets().begin()+n, thrust::counting_iterator<int>(0)+n)),
+            thrust::make_zip_iterator(
+		thrust::make_tuple(this->_actualOutputs().begin(),
+				   this->_targets().begin(),
+				   thrust::counting_iterator<int>(0))),
+            thrust::make_zip_iterator(
+		thrust::make_tuple(this->_actualOutputs().begin()+n,
+				   this->_targets().begin()+n,
+				   thrust::counting_iterator<int>(0)+n)),
             this->_outputErrors().begin(),
-            fn
-            );
+            fn);
     }
 
+    template <typename TDevice>
+    void RmsePostOutputLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	if (timeStep == this->curMaxSeqLength())
+	    this->computeBackwardPass(nnState);
+    }
 
     // explicit template instantiations
     template class RmsePostOutputLayer<Cpu>;

@@ -873,7 +873,15 @@ namespace layers{
 	    
 	}
     }
-       
+
+    // NN backward
+    template <typename TDevice>
+    void NormFlowLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	throw std::runtime_error("NormFlowLayer computeBackwardPass(timeStep) not implemented");
+    }
+
+    
     template <typename TDevice>
     const std::string& NormFlowLayer<TDevice>::type() const
     {

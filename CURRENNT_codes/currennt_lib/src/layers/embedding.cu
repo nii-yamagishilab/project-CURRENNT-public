@@ -503,7 +503,11 @@ namespace layers {
     }
 
     
-
+    template <typename TDevice>
+    void EmbeddingLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	throw std::runtime_error("EmbeddingLayer computeBackwardPass(timeStep) not implemented");
+    }
     
     template class EmbeddingLayer<Cpu>;
     template class EmbeddingLayer<Gpu>;

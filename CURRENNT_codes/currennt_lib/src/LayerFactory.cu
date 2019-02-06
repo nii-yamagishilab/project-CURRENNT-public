@@ -68,6 +68,7 @@
 #include "layers/SsePostOutputLayerForFeatTransform.hpp"
 #include "layers/FeatExtract.hpp"
 #include "layers/GatedActLayer.hpp"
+#include "layers/FeedBackHiddenLayer.hpp"
 #include <stdexcept>
 
 
@@ -175,6 +176,9 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
     else if (layerType == "gatedact")
     	return new GatedActLayer<TDevice>(layerChild, weightsSection,
 					  *precedingLayer, maxSeqLength, layerID);
+    else if (layerType == "feedback_hidden")
+    	return new FeedBackHiddenLayer<TDevice>(layerChild, weightsSection,
+						*precedingLayer, maxSeqLength, layerID);
     
     /*
     // not implemented yet

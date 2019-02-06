@@ -917,6 +917,14 @@ namespace layers {
     }
     
     template <typename TDevice>
+    void MDNLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	if (timeStep == this->curMaxSeqLength())
+	    this->computeBackwardPass(nnState);
+    }
+    
+
+    template <typename TDevice>
     void MDNLayer<TDevice>::exportConfig(const helpers::JsonValue     &weightsObject, 
 					 const helpers::JsonAllocator &allocator) const
     {

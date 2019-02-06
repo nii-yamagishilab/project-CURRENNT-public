@@ -707,6 +707,12 @@ namespace layers {
     }
 
     template <typename TDevice, typename TActFn>
+    void ParaLayer<TDevice, TActFn>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	throw std::runtime_error("ParaLayer computeBackwardPass(timeStep) not implemented");
+    }
+    
+    template <typename TDevice, typename TActFn>
     void ParaLayer<TDevice, TActFn>::exportLayer(const helpers::JsonValue &layersArray, 
 						 const helpers::JsonAllocator &allocator) const
     {

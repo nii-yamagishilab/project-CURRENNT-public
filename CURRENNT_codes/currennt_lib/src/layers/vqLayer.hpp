@@ -82,6 +82,9 @@ namespace layers{
 	// NN backward
 	virtual void computeBackwardPass(const int nnState);
 
+	// NN backward
+	virtual void computeBackwardPass(const int timeStep, const int nnState);
+
 	// Load sequences
         virtual void loadSequences(const data_sets::DataSetFraction &fraction, const int nnState);
 

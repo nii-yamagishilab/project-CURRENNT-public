@@ -24,28 +24,41 @@
  * You should have received a copy of the GNU General Public License
  * along with CURRENNT.  If not, see <http://www.gnu.org/licenses/>.
  *****************************************************************************/
-/*
- */
 
-#ifndef LAYERS_GATEDACTLAYER_HPP
-#define LAYERS_GATEDACTLAYER_HPP
+#ifndef LAYERS_FEEDBACKHIDDENLAYER_HPP
+#define LAYERS_FEEDBACKHIDDENLAYER_HPP
 
-
+#include "Layer.hpp"
 #include "TrainableLayer.hpp"
+#include <boost/foreach.hpp>
+#include <boost/shared_ptr.hpp>
+#include <vector>
 
-namespace layers{
-
+namespace layers {
     template <typename TDevice>
-    class GatedActLayer : public TrainableLayer<TDevice>
+    class FeedBackHiddenLayer : public TrainableLayer<TDevice>
     {
 	typedef typename TDevice::real_vector     real_vector;
-	typedef typename Cpu::real_vector         cpu_real_vector;
 	typedef typename TDevice::int_vector      int_vector;
 	typedef typename TDevice::pattype_vector  pattype_vector;
 	typedef typename Cpu::int_vector          cpu_int_vector;
 	
+    private:
+	int             m_targetDim;      // dimension of the target data
+	int             m_targetDimStart; // the 1st dimension of the target vector to be fed back
+	int             m_targetDimEnd;   // the last dim of the target vector to be fed back
+	real_vector     m_targetBuffer;   // buffer for the target data
+	Layer<TDevice> *m_targetLayer;    // target layer to be fed back
+
+	std::string     m_targetLayerName;
+
+	// configuration of the previous layer
+	int             m_prevDimStart;
+	int             m_prevDimEnd;
+	
     public:
-	GatedActLayer(
+	
+	FeedBackHiddenLayer(
 	    const helpers::JsonValue &layerChild,
 	    const helpers::JsonValue &weightsSection,
             Layer<TDevice>           &precedingLayer,
@@ -53,8 +66,12 @@ namespace layers{
 	    int                       layerID
 	);
 
-	virtual ~GatedActLayer();
+	virtual ~FeedBackHiddenLayer();
 	
+	// load the target data from the target layer
+	void linkTargetLayer(Layer<TDevice> &targetLayer);
+
+	int returnTargetLayerID();
 	
 	virtual const std::string& type() const;
 	
@@ -73,26 +90,12 @@ namespace layers{
 	// export
 	virtual void exportLayer(const helpers::JsonValue &layersArray, 
 				 const helpers::JsonAllocator &allocator) const;
-	//
+
+	// load sequences
 	virtual void loadSequences(const data_sets::DataSetFraction &fraction, const int nnState);
-
-
-	const real_vector& context() const;
-
-	virtual void reduceOutputBuffer();
-	
-	virtual int  outputBufPtrBias(const int timeStepTimesParallel, const int nnState);
-
-	std::vector<int> dependLayerIDs();
-
-	void clearAllBuffers();
-
-	void resizeAllBuffers(const int timeLength);
-
-
-	
     };
-    
+
 }
+
 
 #endif

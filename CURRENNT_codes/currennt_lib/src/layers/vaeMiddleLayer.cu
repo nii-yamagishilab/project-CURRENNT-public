@@ -571,6 +571,12 @@ namespace layers{
     }
 
     template <typename TDevice>
+    void VaeMiddleLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	throw std::runtime_error("vaeMiddleLayer computeBackwardPass(timeStep) not implemented");
+    }
+    
+    template <typename TDevice>
     const std::string& VaeMiddleLayer<TDevice>::type() const
     {
         static const std::string s("vae");

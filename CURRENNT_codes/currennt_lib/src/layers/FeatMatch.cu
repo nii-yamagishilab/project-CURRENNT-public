@@ -223,6 +223,12 @@ namespace layers{
     }
 
     template <typename TDevice>
+    void FeatMatchLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	throw std::runtime_error("Single step computeBackwardPass is not implemented featMatch");
+    }
+
+    template <typename TDevice>
     const std::string& FeatMatchLayer<TDevice>::type() const
     {
         static const std::string s("featmatch");

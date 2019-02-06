@@ -378,7 +378,72 @@ namespace layers{
 	}
 	
     }
+
+    // NN backward
+    template <typename TDevice>
+    void SkipWeightAddLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	if (this->getSaveMemoryFlag())
+	    throw std::runtime_error("Memory save mode should be turned off");
+
+	int effTimeS = timeStep     * this->parallelSequences();
+	int effTimeE = (timeStep+1) * this->parallelSequences();
+
+	// at first, add the errors in both this->outputErrorsFromSkipLayer() and m_outputErrors
+	thrust::transform(this->outputErrorsFromSkipLayer().begin() + this->size() * effTimeS,
+			  this->outputErrorsFromSkipLayer().begin() + this->size() * effTimeE,
+			  this->outputErrors().begin()              + this->size() * effTimeS,
+			  this->outputErrors().begin()              + this->size() * effTimeS,
+			  thrust::plus<real_t>());
+
+	{
+	    SkipLayer<TDevice>* tempLayer = NULL;
+	    
+	    internal::ComputeLayerOutputGradFn fn;
+	    fn.layerSize = this->size();
+	    fn.patTypes  = helpers::getRawPointer(this->patTypes());
+	    fn.z_shift   = m_z_shift;
+	    fn.z_scale   = m_z_scale;
+	    fn.mode      = m_mode;
+		    
+	    tempLayer = dynamic_cast<SkipLayer<TDevice>*>(this->PreLayers()[0]);
+	    if (tempLayer)
+		fn.grad_x = helpers::getRawPointer(tempLayer->outputErrorsFromSkipLayer());
+	    else
+		fn.grad_x = helpers::getRawPointer(this->PreLayers()[0]->outputErrors());
+
+	    tempLayer = dynamic_cast<SkipLayer<TDevice>*>(this->PreLayers()[1]);
+	    if (tempLayer)
+		fn.grad_y = helpers::getRawPointer(tempLayer->outputErrorsFromSkipLayer());
+	    else
+		fn.grad_y = helpers::getRawPointer(this->PreLayers()[1]->outputErrors());
+
+	    tempLayer = dynamic_cast<SkipLayer<TDevice>*>(this->PreLayers()[2]);
+	    if (tempLayer)
+		fn.grad_z = helpers::getRawPointer(tempLayer->outputErrorsFromSkipLayer());
+	    else
+		fn.grad_z = helpers::getRawPointer(this->PreLayers()[2]->outputErrors());
+
+	    thrust::for_each(
+	       thrust::make_zip_iterator(
+		  thrust::make_tuple(
+		     this->PreLayers()[0]->outputs().begin() + effTimeS * this->size(),   
+		     this->PreLayers()[1]->outputs().begin() + effTimeS * this->size(),
+		     this->PreLayers()[2]->outputs().begin() + effTimeS * this->size(), 
+		     this->outputErrors().begin()            + effTimeS * this->size(),
+		     thrust::counting_iterator<int>(0)       + effTimeS * this->size())),
+	       thrust::make_zip_iterator(
+		  thrust::make_tuple(
+		     this->PreLayers()[0]->outputs().begin() + effTimeE * this->size(),   
+		     this->PreLayers()[1]->outputs().begin() + effTimeE * this->size(),
+		     this->PreLayers()[2]->outputs().begin() + effTimeE * this->size(),
+		     this->outputErrors().begin()            + effTimeE * this->size(),
+		     thrust::counting_iterator<int>(0)       + effTimeE * this->size())),
+	       fn);
+	}
 	
+    }
+
     template <typename TDevice>
     typename SkipWeightAddLayer<TDevice>::real_vector& SkipWeightAddLayer<TDevice>::outputFromGate()
     {	

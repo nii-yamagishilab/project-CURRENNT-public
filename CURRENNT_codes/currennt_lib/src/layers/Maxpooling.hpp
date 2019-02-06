@@ -70,6 +70,8 @@ namespace layers {
 
 	virtual void computeForwardPass(const int timeStep, const int nnState);
 
+	virtual void computeBackwardPass(const int timeStep, const int nnState);
+
 	virtual void exportLayer(const helpers::JsonValue     &layersArray,
 				 const helpers::JsonAllocator &allocator) const;
 	

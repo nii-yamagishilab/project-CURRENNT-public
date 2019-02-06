@@ -180,6 +180,10 @@ namespace layers {
     {
     }
 
+    template <typename TDevice>
+    void InputLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+    }
 
     /* Add 16-02-22 Wang: for WE updating */
     // return the reference to m_weBank;

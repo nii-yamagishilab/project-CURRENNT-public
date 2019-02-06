@@ -417,7 +417,14 @@ namespace layers {
 			      thrust::plus<real_t>());
 	}
     }
-    
+
+    template <typename TDevice>
+    void PostOutputLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	if (timeStep == this->curMaxSeqLength())
+	    this->computeBackwardPass(nnState);
+    }
+
 
     /* Add 0401 wang for weighted MSE*/
     // return flag

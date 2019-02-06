@@ -269,6 +269,11 @@ namespace layers{
     void ExternalLoader<TDevice>::computeBackwardPass(const int nnState)
     {	
     }
+    
+    template <typename TDevice>
+    void ExternalLoader<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {	
+    }
 
     template class ExternalLoader<Cpu>;
     template class ExternalLoader<Gpu>;

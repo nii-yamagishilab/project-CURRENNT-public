@@ -1852,13 +1852,13 @@ namespace layers{
 	    
 		thrust::for_each(
                  thrust::make_zip_iterator(
-		  thrust::make_tuple(this->outputs().begin()           + (st - shiftOut),
+		  thrust::make_tuple(this->outputs().begin()                   + (st - shiftOut),
 				     this->precedingLayer().outputs().begin()  + (st - shiftIn),
-				     thrust::counting_iterator<int>(0) + st)),
+				     thrust::counting_iterator<int>(0)         + st)),
 		 thrust::make_zip_iterator(
-		  thrust::make_tuple(this->outputs().begin()           + (et - shiftOut),
+		  thrust::make_tuple(this->outputs().begin()                   + (et - shiftOut),
 				     this->precedingLayer().outputs().begin()  + (et - shiftIn),
-				     thrust::counting_iterator<int>(0) + et)),
+				     thrust::counting_iterator<int>(0)         + et)),
 		 fn1);
 		
 	    }else{
@@ -2160,7 +2160,8 @@ namespace layers{
 	}else if (m_dropoutRate > 0){
 	    
 	    // inverted dropout data
-	    int n = timeLength * this->size();	    
+	    int n = timeLength * this->size();
+	    
 	    if (nnState == NN_STATE_GAN_NOGAN_TRAIN){
 		// Training stage
 		
@@ -2178,9 +2179,9 @@ namespace layers{
 					   this->outputErrors().begin(),
 					   thrust::counting_iterator<int>(0))),
 		 thrust::make_zip_iterator(
-			thrust::make_tuple(this->precedingLayer().outputErrors().begin()+ n,
-					   this->outputErrors().begin() + n,
-					   thrust::counting_iterator<int>(0) + n)),
+			thrust::make_tuple(this->precedingLayer().outputErrors().begin() + n,
+					   this->outputErrors().begin()                  + n,
+					   thrust::counting_iterator<int>(0)             + n)),
 		 fn1);
 		
 	    }
@@ -2266,6 +2267,142 @@ namespace layers{
 
     }
 
+
+    template <typename TDevice>
+    void OperationLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	
+	int timeLength = this->curMaxSeqLength() * this->parallelSequences();
+	int effTimeStart = timeStep       * this->parallelSequences();
+	int effTimeEnd   = (timeStep + 1) * this->parallelSequences();
+
+	if (this->getSaveMemoryFlag())
+	    throw std::runtime_error("Memory save mode should be turned off");
+
+	
+	if (m_lastShot == NN_OPE_LAST_SHOT_MODE1 || m_lastShot == NN_OPE_LAST_SHOT_MODE2 ||
+	    m_lastShot == NN_OPE_LAST_SHOT_MODE5 || m_lastShot == NN_OPE_LAST_SHOT_MODE6 ||
+	    m_lastShot == NN_OPE_LAST_SHOT_MODE9 ||
+	    m_lastShot == NN_OPE_LAST_SHOT_MODE3 || m_lastShot == NN_OPE_LAST_SHOT_MODE4 ||
+	    m_lastShot == NN_OPE_LAST_SHOT_MODE7 || m_lastShot == NN_OPE_LAST_SHOT_MODE8){
+	    
+	    // these modes cannot support online training
+	    
+	}else if (m_lastShot == NN_OPE_LAST_SHOT_MODE10){
+	    // to be implemented
+	    
+	}else if (m_dropoutRate > 0){
+	    
+	    // inverted dropout data
+	    
+	    if (nnState == NN_STATE_GAN_NOGAN_TRAIN){
+		// Training stage
+		
+		internal::invertedDropout fn1;
+		fn1.curLayerSize = this->size();
+		fn1.threshold    = m_dropoutRate;
+		
+		fn1.noise        = helpers::getRawPointer(m_noiseInput);
+		fn1.patTypes     = helpers::getRawPointer(this->patTypes());
+		//fn1.sourceData   = helpers::getRawPointer(this->outputErrors());
+		
+		thrust::for_each(
+                 thrust::make_zip_iterator(
+		  thrust::make_tuple(
+		    this->precedingLayer().outputErrors().begin() + this->size() * effTimeStart,
+		    this->outputErrors().begin()                  + this->size() * effTimeStart,
+		    thrust::counting_iterator<int>(0)             + this->size() * effTimeStart)),
+		 thrust::make_zip_iterator(
+		  thrust::make_tuple(
+		    this->precedingLayer().outputErrors().begin() + this->size() * effTimeEnd,
+		    this->outputErrors().begin()                  + this->size() * effTimeEnd,
+		    thrust::counting_iterator<int>(0)             + this->size() * effTimeEnd)),
+		 fn1);
+	    }
+	    
+	}else if (m_changeTimeRes){
+
+	    internal::timeResolutionChangeGrad fn1;
+	    fn1.inputRes  = this->precedingLayer().getResolution();
+	    fn1.outputRes = this->getResolution();
+	    fn1.layerSize = this->size();
+	    fn1.parallel  = this->parallelSequences();
+	    fn1.sourceData  = helpers::getRawPointer(this->outputErrors());
+	    fn1.patTypes    = helpers::getRawPointer(this->precedingLayer().patTypes());
+	    	    
+	    thrust::for_each(
+              thrust::make_zip_iterator(
+		thrust::make_tuple(
+		 this->precedingLayer().outputErrors().begin() + this->size() * effTimeStart,
+		 thrust::counting_iterator<int>(0)             + this->size() * effTimeStart)),
+	      thrust::make_zip_iterator(
+		thrust::make_tuple(
+		 this->precedingLayer().outputErrors().begin() + this->size() * effTimeEnd,
+		 thrust::counting_iterator<int>(0)             + this->size() * effTimeEnd)),
+	      fn1);
+	    
+	}else if (m_freqDim >= 0){
+	    // do nothing
+	    
+	}else{
+	    
+	    if (m_outDupRate > 1){
+		internal::outDuplicationGradOperation fn1;
+		fn1.featureDim    = this->size();
+		fn1.resolution    = m_outDupRate;
+		fn1.maxTimeLength = timeLength;
+		fn1.dataMatrix    = helpers::getRawPointer(this->outputErrors());	
+		fn1.parall        = this->parallelSequences();
+		fn1.patTypes      = helpers::getRawPointer(this->patTypes());
+		
+		thrust::for_each(
+                 thrust::make_zip_iterator(
+		    thrust::make_tuple(
+		       this->outputErrors().begin()      + this->size() * effTimeStart,
+		       thrust::counting_iterator<int>(0) + this->size() * effTimeStart)),
+		 thrust::make_zip_iterator(
+		  thrust::make_tuple(
+		       this->outputErrors().begin()      + this->size() * effTimeEnd,
+		       thrust::counting_iterator<int>(0) + this->size() * effTimeEnd)),
+		 fn1);
+	    }
+	
+	    {
+		
+		internal::fillOutputVec fn;
+		fn.curLayerSize = this->precedingLayer().size();
+		fn.preLayerSize = this->size();
+		fn.noiseDim     = m_noiseSize;
+		fn.flagForward  = false;
+		fn.preShift  = 0;
+	    
+		fn.weights   = helpers::getRawPointer(m_setScaleVec_D);
+		fn.shifts    = helpers::getRawPointer(m_setBiasVec_D);
+		fn.stopGrad  = helpers::getRawPointer(m_stopGradVec_D);
+		fn.binarize  = helpers::getRawPointer(m_setBinarizeVec_D);
+		
+		fn.preOutput = helpers::getRawPointer(this->outputErrors());
+		fn.noiseData = helpers::getRawPointer(this->m_noiseInput);
+		fn.patTypes  = helpers::getRawPointer(this->patTypes());
+		
+		int pl_size = this->precedingLayer().size();
+		thrust::for_each(
+                 thrust::make_zip_iterator(
+		   thrust::make_tuple(
+		     this->precedingLayer().outputErrors().begin() + pl_size * effTimeStart,
+		     thrust::counting_iterator<int>(0)             + pl_size * effTimeStart)),
+		 thrust::make_zip_iterator(
+		   thrust::make_tuple(
+		     this->precedingLayer().outputErrors().begin() + pl_size * effTimeEnd,
+		     thrust::counting_iterator<int>(0)             + pl_size * effTimeEnd)),
+	       fn);
+	    }
+	}
+
+    }
+
+
+    
     template <typename TDevice>
     void OperationLayer<TDevice>::reduceOutputBuffer()
     {

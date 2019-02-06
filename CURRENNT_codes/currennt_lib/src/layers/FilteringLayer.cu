@@ -516,7 +516,7 @@ namespace layers {
     template <typename TDevice>
     void FilteringLayer<TDevice>::computeForwardPass(const int timeStep, const int nnState)
     {
-	throw std::runtime_error("Not implemented");
+	throw std::runtime_error("Filtering computeForwardPass(timeStep) not implemented");
     }
 
     template <typename TDevice>
@@ -580,6 +580,11 @@ namespace layers {
 	
     }
     
+    template <typename TDevice>
+    void FilteringLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	throw std::runtime_error("FilteringLayer computeBackwardPass(timeStep) not implemented");
+    }
     
     template <typename TDevice>
     void FilteringLayer<TDevice>::exportLayer(

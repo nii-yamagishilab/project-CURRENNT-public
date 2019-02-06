@@ -72,6 +72,8 @@ namespace layers {
 	
 	virtual void computeBackwardPass(const int nnState);
 
+	virtual void computeBackwardPass(const int timeStep, const int nnState);
+
 	virtual void loadSequences(const data_sets::DataSetFraction &fraction, const int nnState);
 
 	virtual real_t vaeKLD();

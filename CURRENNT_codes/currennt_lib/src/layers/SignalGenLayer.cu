@@ -965,6 +965,12 @@ namespace layers{
     }
 
     template <typename TDevice>
+    void SignalGenLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {	
+	// do nothing
+    }
+
+    template <typename TDevice>
     void SignalGenLayer<TDevice>::reduceOutputBuffer()
     {
 	throw std::runtime_error("signalgen not implemented");

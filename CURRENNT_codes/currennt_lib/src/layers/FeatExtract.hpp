@@ -83,6 +83,9 @@ namespace layers{
 	// NN backward
 	virtual void computeBackwardPass(const int nnState);
 
+	// NN forward, per frame
+	virtual void computeBackwardPass(const int timeStep, const int nnState);
+
 	// export
 	virtual void exportLayer(const helpers::JsonValue &layersArray, 
 				 const helpers::JsonAllocator &allocator) const;

@@ -265,6 +265,15 @@ namespace layers {
 	       fn);
 	}
     }
+
+
+    template <typename TDevice>
+    void SsePostOutputLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	if (timeStep == this->curMaxSeqLength())
+	    this->computeBackwardPass(nnState);
+    }
+
     // explicit template instantiations
     template class SsePostOutputLayer<Cpu>;
     template class SsePostOutputLayer<Gpu>;

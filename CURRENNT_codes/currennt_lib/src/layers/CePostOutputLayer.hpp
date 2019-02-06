@@ -81,6 +81,8 @@ namespace layers {
          * @see Layer::computeBackwardPass()
          */
         virtual void computeBackwardPass(const int nnState);
+	
+	virtual void computeBackwardPass(const int timeStep, const int nnState);
     };
 
 } // namespace layers

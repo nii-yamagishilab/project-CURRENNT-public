@@ -76,8 +76,8 @@ namespace layers {
         };
 
         struct timestep_matrices_t {
-            helpers::Matrix<TDevice> tmpOutputs;
-            helpers::Matrix<TDevice> tmpOutputErrors;
+            helpers::Matrix<TDevice> tmpOutputs;       // wrapper of output datum of 1 timestep
+            helpers::Matrix<TDevice> tmpOutputErrors;  // ...
             helpers::Matrix<TDevice> niActs;
             helpers::Matrix<TDevice> igActs;
             helpers::Matrix<TDevice> fgActs;
@@ -97,18 +97,18 @@ namespace layers {
         };
 
         struct forward_backward_info_t {
-            real_vector tmpOutputs;
-            real_vector tmpOutputErrors;
-            real_vector cellStates;
-            real_vector cellStateErrors;
-            real_vector niActs;
-            real_vector igActs;
-            real_vector fgActs;
-            real_vector ogActs;
-            real_vector niDeltas;
-            real_vector igDeltas;
-            real_vector fgDeltas;
-            real_vector ogDeltas;
+            real_vector tmpOutputs;             // buffer to store output data sequence
+            real_vector tmpOutputErrors;        // buffer to receive sequence of grad from next layer
+            real_vector cellStates;             // buffer to store cell states
+            real_vector cellStateErrors;        // buffer to store gradients to cell states
+            real_vector niActs;                 // buffer to store net-input data 
+            real_vector igActs;                 // buffer to store input-gate data
+            real_vector fgActs;                 // buffer to store forgate-gate data
+            real_vector ogActs;                 // buffer to store output-gate data
+            real_vector niDeltas;               // buffer to store grad of net-input
+            real_vector igDeltas;               // buffer to store grad of input-gate
+            real_vector fgDeltas;               // buffer to store grad of forget-gate
+            real_vector ogDeltas;               // buffer to store grad of output-gate
 
             helpers::Matrix<TDevice> niActsMatrix;
             helpers::Matrix<TDevice> igActsMatrix;
@@ -119,38 +119,42 @@ namespace layers {
             helpers::Matrix<TDevice> fgDeltasMatrix;
             helpers::Matrix<TDevice> ogDeltasMatrix;
 
+	    // wrappers for input2hidden, hidden2hidden transformation matrices
             weight_matrices_t                weightMatrices;
+
+	    // wrappers for grads of input2hidden, hidden2hidden transformation matrices
             weight_matrices_t                weightUpdateMatrices;
+
+	    // wrappers for each time step of the sequence
             std::vector<timestep_matrices_t> timestepMatrices;
 
-	    bool_vector skipCR;   // the vector to specify the skipping
+	    bool_vector skipCR;   // the vector to specify the skipping for clock LSTM
 	    
         };
 
     private:
         const bool m_isBidirectional;
         
-        real_t *_rawNiBiasWeights;
-        real_t *_rawIgBiasWeights;
-        real_t *_rawFgBiasWeights;
-        real_t *_rawOgBiasWeights;
-        real_t *_rawIgPeepholeWeights;
-        real_t *_rawFgPeepholeWeights;
-        real_t *_rawOgPeepholeWeights;
+        real_t *_rawNiBiasWeights;              // pointers to the raw net-input bias
+        real_t *_rawIgBiasWeights;              // pointers to the raw input-gate bias
+        real_t *_rawFgBiasWeights;              // pointers to the raw forget-gate bias
+        real_t *_rawOgBiasWeights;              // pointers to the raw output-gate bias
+        real_t *_rawIgPeepholeWeights;          // pointers to the input-gate peephole weights
+        real_t *_rawFgPeepholeWeights;          // pointers to the forget-gate peephole weights
+        real_t *_rawOgPeepholeWeights;          // pointers to the output-gate peephole weights
 
-        forward_backward_info_t m_fw;
+        forward_backward_info_t m_fw;           // 
         forward_backward_info_t m_bw;
+	
+        helpers::Matrix<TDevice> m_precLayerOutputsMatrix;  // matrix wrapper for previous's output
 
-        helpers::Matrix<TDevice> m_precLayerOutputsMatrix;
-
-	// For CLLSTM
+	// For clock LSTM
 	bool                     m_clockRNN;        // whether use clock LSTM
 	std::string              m_crStepStr;       //
 	Cpu::int_vector          m_crStep;          // a vector of [start1,end1,...,startN,endN]
 	int_vector               m_crStepDevice;    //
 	real_vector              m_h2hClockRNN;     // for hidden to hidden link
 	int                      m_numH2Hmat;       // number of possible Clock updating schedule
-
 	
     public:
         /**
@@ -277,6 +281,11 @@ namespace layers {
 	* NN forward per frame
 	*/
 	virtual void computeForwardPass(const int timeStep, const int nnState);
+
+	/**
+         * @see Layer::computeBackwardPass()
+         */
+        virtual void computeBackwardPass(const int timeStep, const int nnState);
 
 	virtual void prepareStepGeneration(const int timeStep);
 

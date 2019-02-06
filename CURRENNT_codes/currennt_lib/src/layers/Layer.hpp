@@ -237,6 +237,8 @@ namespace layers {
 	virtual void linkTargetLayer(Layer<TDevice> &targetLayer);
 
 	virtual void linkFollowingLayer(Layer<TDevice> &targetLayer);
+
+	virtual int returnTargetLayerID();
 	
 	/**
 	 * Set and read the m_currTrainingEpoch
@@ -262,6 +264,8 @@ namespace layers {
 	virtual void prepareStepGeneration(const int timeStep);
 	
 	virtual void computeForwardPass(const int timeStep, const int nnState)=0;
+
+	virtual void computeBackwardPass(const int timeStep, const int nnState)=0;
 
 	virtual real_vector& feedbackOutputs(const bool flagTrain);
 

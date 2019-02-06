@@ -132,7 +132,8 @@ namespace layers {
 	virtual void reInitWeight();
 
 	virtual void computeForwardPass(const int timeStep, const int nnState);
-	
+
+	virtual void computeBackwardPass(const int timeStep, const int nnState);
     };
 
 } // namespace layers

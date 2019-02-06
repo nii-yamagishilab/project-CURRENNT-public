@@ -98,6 +98,9 @@ namespace layers {
 	// NN backward
 	virtual void computeBackwardPass(const int nnState);
 	
+	// NN forward
+	virtual void computeBackwardPass(const int timeStep, const int nnState);
+
 	// Gate output
 	real_vector& outputFromGate();
 	

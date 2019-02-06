@@ -102,6 +102,9 @@ namespace layers {
 	// NN backward
 	virtual void computeBackwardPass(const int nnState);
 
+	// NN backward
+	virtual void computeBackwardPass(const int timeStep, const int nnState);
+
 	// load the target data from the target layer
 	void linkTargetLayer(Layer<TDevice> &targetLayer);
 

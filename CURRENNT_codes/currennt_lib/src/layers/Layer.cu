@@ -319,6 +319,15 @@ namespace layers {
 	// this function will be override by those layers requiring targetLayer
     }
 
+
+    
+    template <typename TDevice>
+    int Layer<TDevice>::returnTargetLayerID()
+    {
+	return -1;
+    }
+
+    
     template <typename TDevice>
     void Layer<TDevice>::linkFollowingLayer(Layer<TDevice> &targetLayer)
     {

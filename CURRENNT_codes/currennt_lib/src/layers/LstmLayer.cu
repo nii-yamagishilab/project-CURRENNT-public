@@ -56,38 +56,40 @@ namespace {
 
     struct ComputeBlockOutputFn
     {
-        int    effLayerSize;
-        int    prevOutputDistance;
-        real_t bias;
+        int    effLayerSize;           // layer size (dimension size of hidden feature)
+        int    prevOutputDistance;     // address shift from the previous step's output 
+        real_t bias;                   // scaling factor for the bias
 
-        const char   *patTypes;
+        const char   *patTypes;        // flags of the current time step (dummy data or not)
 
-        const real_t *niBiasWeights;
-        const real_t *igBiasWeights;
-        const real_t *fgBiasWeights;
-        const real_t *ogBiasWeights;
+        const real_t *niBiasWeights;   // bias weight for the net input
+        const real_t *igBiasWeights;   // bias weight for the input gate
+        const real_t *fgBiasWeights;   // bias weight for the forget gate
+        const real_t *ogBiasWeights;   // bias weight for the output gate
 
-        const real_t *igPeepWeights;
-        const real_t *fgPeepWeights;
-        const real_t *ogPeepWeights;
+        const real_t *igPeepWeights;   // peephole weight for input gate
+        const real_t *fgPeepWeights;   // peephole weight for forget gate
+        const real_t *ogPeepWeights;   // peephole weight for output gate
 
-	const bool   *skipCRNN;     // whether this step should be skipped
+	const bool   *skipCRNN;        // whether this step should be skipped
 	
-        real_t *cellStates;
-        real_t *niActs;
-        real_t *igActs;
-        real_t *fgActs;
-        real_t *ogActs;
+        real_t *cellStates;            // buffer for the cell states (whole sequence of cell)
+        real_t *niActs;                // buffer for the net input (whole sequence)
+        real_t *igActs;                // buffer for the input gate (whole sequence)
+        real_t *fgActs;                // buffer for the forget gate (whole sequence)
+        real_t *ogActs;                // buffer for the output gate (whole sequence)
 
         __host__ __device__ real_t operator() (const int &outputIdx,
 					       const thrust::tuple<bool, bool> &t) const
         {
-            // unpack the tuple
+	    // Whether this is the first timestep
             bool firstCall    = t.get<0>();
+
+	    // Whether it is necessary to check the dummy nodes (for parallel computation mode)
             bool checkPatType = t.get<1>();
 
-            // check if we can skip the whole calculation because the pattern is a dummy
-            // in that case, we set the all values of that pattern to zero
+	    // If checkPatType is yes, there must be short utterance(s) in the parallel batch that
+	    //  have been processed completed. Skip them the dummy nodes in these utterances,
             if (checkPatType) {
                 int patIdx = outputIdx / effLayerSize;
                 if (patTypes[patIdx] == PATTYPE_NONE) {
@@ -97,14 +99,16 @@ namespace {
                 }
             }
 
-            // calculate indices
+	    
+            // calculate dimension index
             int blockIdx = outputIdx % effLayerSize;
 
+	    // compute for this LSTM cell
 	    if (skipCRNN != NULL && skipCRNN[blockIdx] && !firstCall){
-		// CLLSTM, Skip update
+		// Clock LSTM
+
 		// cell state copy from previous step
 		cellStates[outputIdx] = cellStates[outputIdx + prevOutputDistance];
-
 		
 		/*
 		niActs[outputIdx] = 0.0;
@@ -127,6 +131,7 @@ namespace {
 		// hidden output 'copies' from previous state (computed again)
 		return (cell_output_act_fn_t::fn(cellStates[outputIdx + prevOutputDistance]) *
 			ogActs[outputIdx + prevOutputDistance]);
+		
 	    }else{
 		// Normal LSTM computation
 		
@@ -162,10 +167,8 @@ namespace {
 		
 		// calculate the cell state and store the result
 		real_t cellState = niAct * igAct;
-		
 		if (!firstCall)
 		    cellState += cellStates[outputIdx + prevOutputDistance] * fgAct;
-
 		cellStates[outputIdx] = cellState;
 
 		// calculate the output gate activation and store the result
@@ -233,7 +236,7 @@ namespace {
 
     struct ComputeBlockErrorsFn
     {
-        int effLayerSize;
+        int effLayerSize;            // Similar to the data buffer in ComputeBackFn
         int prevOutputDistance;
 
         const char *patTypes;
@@ -242,31 +245,31 @@ namespace {
         const real_t *fgPeepWeights;
         const real_t *ogPeepWeights;
 
-        const real_t *cellStates;
-        const real_t *niActs;
-        const real_t *igActs;
+        const real_t *cellStates;    // However, cellStates, niActs, igActs, fgActs, ogActs
+        const real_t *niActs;        //  now store the feature after activation functions
+        const real_t *igActs;        //  in gate/cell
         const real_t *fgActs;
         const real_t *ogActs;
-	const bool   *skipCRNN;
 	
-        real_t *cellStateErrors;
-        real_t *niDeltas;
-        real_t *igDeltas;
-        real_t *fgDeltas;
-        real_t *ogDeltas;
+	const bool   *skipCRNN;      // skip flag for Clock LSTM
+	
+        real_t *cellStateErrors;     // gradients w.r.t cell states (whole sequence)
+        real_t *niDeltas;            // gradients w.r.t net input (whole sequence)
+        real_t *igDeltas;            // gradients w.r.t input gate (whole sequence)
+        real_t *fgDeltas;            // gradients w.r.t forget gate (whole sequence)
+        real_t *ogDeltas;            // gradients w.r.t output gate (whole sequence)
 
         __host__ __device__ void operator() (
 		const thrust::tuple<const real_t&, int, bool, bool, bool> &t) const
         {
-            // unpack the tuple
+	    // gradients w.r.t output of the LSTM cell
             real_t outputErr    = t.get<0>();
+	    
             int    outputIdx    = t.get<1>();
             bool   firstCall    = t.get<2>();
             bool   lastCall     = t.get<3>();
             bool   checkPatType = t.get<4>();
 
-            // check if we can skip the whole calculation because the pattern is a dummy
-            // in that case, we set all values of that pattern to zero
             if (checkPatType) {
                 int patIdx = outputIdx / effLayerSize;
                 if (patTypes[patIdx] == PATTYPE_NONE) {
@@ -279,11 +282,11 @@ namespace {
                 }
             }
 
-            // calculate indices
+            // dimension index
             int blockIdx = outputIdx % effLayerSize;
 
 	    if (skipCRNN != NULL && skipCRNN[blockIdx]){
-
+		// Clock LSTM
 		/*
 		// store the niag deltas and the cell state error
 		// ig, fg, set to zero, so that a normal LSTM unit precedings a skipped unit can
@@ -305,7 +308,8 @@ namespace {
 		real_t cellState = cellStates  [outputIdx]; // cellState 
 		
 		real_t ogDelta   = (gate_act_fn_t::deriv(ogAct) *
-				    cell_output_act_fn_t::fn(cellState) * outputErr) + ogDeltas[outputIdx];
+				    cell_output_act_fn_t::fn(cellState) * outputErr) +
+		    ogDeltas[outputIdx];
 		
 		real_t cellStateErr = ogAct *
 		    cell_output_act_fn_t::deriv(cell_output_act_fn_t::fn(cellState)) * outputErr;
@@ -337,6 +341,8 @@ namespace {
 		
 	    }else{
 
+		// Normal LSTM
+		
 		// load the niag activations, the cell state and the output error
 		real_t niAct     = niActs      [outputIdx]; // output after activation function
 		real_t igAct     = igActs      [outputIdx]; // output after activation function
@@ -641,6 +647,256 @@ namespace {
         }
     };
 
+    struct ComputeWeightUpdateFn_online
+    {
+	// Similar to ComputWeightUpdateFn
+	//  However, computeBackwardPass(TimeStep) only accumulate the
+	//  gradient for a single time step, thus, wu must load the currennt
+	//  gradient from weight_grad and then summed with the new gradients
+	
+        int    layerSize;
+        int    effLayerSize;
+        int    precLayerSize;
+        int    timestepDistance;
+        int    parallelSequences;
+        int    patternsCount;
+        int    biasWeightsOffset;
+        int    internalWeightsOffset;
+        int    peepholeWeightsOffset;
+        real_t bias;
+
+        const real_t *plOutputs;
+        const real_t *fwOutputs;   
+        const real_t *bwOutputs;   
+        const real_t *fwCellStates;
+        const real_t *bwCellStates;
+        const real_t *fwNiDeltas;  
+        const real_t *bwNiDeltas;  
+        const real_t *fwIgDeltas;  
+        const real_t *bwIgDeltas;  
+        const real_t *fwFgDeltas;  
+        const real_t *bwFgDeltas;  
+        const real_t *fwOgDeltas;  
+        const real_t *bwOgDeltas;  
+
+	const real_t *weight_grad;      // buffer of the weight gradients
+	
+        __host__ __device__ real_t operator() (const int &weightIdx) const
+        {
+            // determine the weight type
+            // 
+            // weightType = 0bXXYY with XX = {input, bias, internal, peephole}
+            //                     and  YY = {NI, IG, FG, OG}
+            //
+            // weightType = 0b0000 ( 0): NI input weight
+            //              0b0001 ( 1): IG input weight
+            //              0b0010 ( 2): FG input weight
+            //              0b0011 ( 3): OG input weight
+            //              0b0100 ( 4): NI bias weight
+            //              0b0101 ( 5): IG bias weight
+            //              0b0110 ( 6): FG bias weight
+            //              0b0111 ( 7): OG bias weight
+            //              0b1000 ( 8): NI internal weight
+            //              0b1001 ( 9): IG internal weight
+            //              0b1010 (10): FG internal weight
+            //              0b1011 (11): OG internal weight
+            //              0b1100 (12): not used
+            //              0b1101 (13): IG peephole weight
+            //              0b1110 (14): FG peephole weight
+            //              0b1111 (15): OG peephole weight
+            int inwc = layerSize * precLayerSize;
+            int biwc = layerSize;
+            int itwc = layerSize * effLayerSize;
+            int pewc = layerSize;
+
+            int weightType = (int)(weightIdx >= 0                     + 1 * inwc) +
+                             (int)(weightIdx >= 0                     + 2 * inwc) +
+                             (int)(weightIdx >= 0                     + 3 * inwc) +
+                             (int)(weightIdx >= 0                     + 4 * inwc) + 
+                             (int)(weightIdx >= biasWeightsOffset     + 1 * biwc) +
+                             (int)(weightIdx >= biasWeightsOffset     + 2 * biwc) +
+                             (int)(weightIdx >= biasWeightsOffset     + 3 * biwc) +
+                             (int)(weightIdx >= biasWeightsOffset     + 4 * biwc) +
+                             (int)(weightIdx >= internalWeightsOffset + 1 * itwc) +
+                             (int)(weightIdx >= internalWeightsOffset + 2 * itwc) +
+                             (int)(weightIdx >= internalWeightsOffset + 3 * itwc) +
+                             (int)(weightIdx >= internalWeightsOffset + 4 * itwc) * 2 +
+                             (int)(weightIdx >= peepholeWeightsOffset + 1 * pewc) +
+                             (int)(weightIdx >= peepholeWeightsOffset + 2 * pewc);
+
+            int weightTypeX = weightType & 0xC;
+            int weightTypeY = weightType & 0x3;
+
+            // calculate indices, offsets and increments 
+            const real_t *offOutputs;
+            int           tgtBlockIdx;
+            int           offOutputsInc;
+            bool          skipFirstPattern = false;
+            bool          skipLastPattern  = false;
+            bool          isBwStateWeight;
+
+            switch (weightTypeX) {
+            // input weight
+            case 0x0: 
+                {{
+                    // calculate indices
+                    int inputWeightIdx = weightIdx;
+
+		    // dimension corresponds to the input data
+                    int plBlockIdx     = inputWeightIdx % precLayerSize;
+
+		    // dimension corresponds to the output of the input gate
+		    // Note: there are four gates, blockIdx is the relative dimension
+		    //       within the gate.
+		    // 
+		    //       we can also calculate
+		    //       inputWeightIdx = (inputWeightIdx - weightTypeY * biasWeightsOffset/4)
+		    //       plBlockIdx     = inputWeightIdx % precLayerSize
+		    //       blockIdx       = inputWeightIdx / precLayerSize
+		    //
+		    //       or
+		    //       blockIdx  = inputWeightIdx/preclayerSize - weightTypeY * layerSize
+                    int blockIdx       = ((inputWeightIdx - weightTypeY * (biasWeightsOffset/4)) /
+					  precLayerSize);
+		    
+                    // check if we calculate backward state weights and adjust the block index
+                    isBwStateWeight = (blockIdx >= effLayerSize);
+                    if (isBwStateWeight)
+                        blockIdx -= effLayerSize;
+                    
+                    // set values for the loop below
+                    tgtBlockIdx   = blockIdx;
+                    offOutputs    = &plOutputs[plBlockIdx];
+                    offOutputsInc = precLayerSize;
+                }}
+                break;
+
+            // bias weight
+            case 0x4: 
+                {{
+                    // calculate indices
+                    int biasWeightIdx = weightIdx - biasWeightsOffset;
+                    int blockIdx      = biasWeightIdx - weightTypeY * layerSize;
+
+                    // check if we calculate backward state weights and adjust the block index
+                    isBwStateWeight = (blockIdx >= effLayerSize);
+                    if (isBwStateWeight)
+                        blockIdx -= effLayerSize;
+
+                    // set values for the loop below
+                    tgtBlockIdx   = blockIdx;
+                    offOutputs    = NULL;
+                    offOutputsInc = 0;
+                }}
+                break;
+
+            // internal weight
+            case 0x8: 
+                {{
+                    // calculate indices
+                    int internalWeightIdx = weightIdx - internalWeightsOffset;
+                    int srcBlockIdx       = internalWeightIdx % effLayerSize;
+                    int blockIdx          = (internalWeightIdx / effLayerSize -
+					     weightTypeY * layerSize);
+
+                    // check if we calculate backward state weights and adjust the block index
+                    isBwStateWeight = (blockIdx >= effLayerSize);
+                    if (isBwStateWeight)
+                        blockIdx -= effLayerSize;
+
+                    // set values for the loop below
+                    tgtBlockIdx   = blockIdx;
+                    offOutputs    = (isBwStateWeight ?
+				     &bwOutputs[srcBlockIdx] : &fwOutputs[srcBlockIdx]);
+                    offOutputsInc = effLayerSize;
+
+                    if (isBwStateWeight) {
+                        offOutputs += timestepDistance;
+                        skipLastPattern = true;
+                    }
+                    else {
+                        offOutputs -= timestepDistance;
+                        skipFirstPattern = true;
+                    }
+                }}
+                break;
+
+            // peephole weight
+            default: 
+                {{
+                    // calculate indices
+                    int peepholeWeightIdx = weightIdx - peepholeWeightsOffset;
+                    int blockIdx          = peepholeWeightIdx - (weightTypeY-1) * layerSize;
+                    
+                    // check if we calculate backward state weights and adjust the block index
+                    isBwStateWeight = (blockIdx >= effLayerSize);
+                    if (isBwStateWeight)
+                        blockIdx -= effLayerSize;
+
+                    // select the appropriate cell states and adjust the block index
+                    const real_t *cellStates = (isBwStateWeight ? bwCellStates : fwCellStates);
+                    
+                    // set the timeshift
+                    int timeShift;
+                    if (weightTypeY == 0x3) {
+                        timeShift = 0;
+                    }
+                    else {
+                        if (isBwStateWeight) {
+                            timeShift       = timestepDistance;
+                            skipLastPattern = true;
+                        }
+                        else {
+                            timeShift        = -timestepDistance;
+                            skipFirstPattern = true;
+                        }
+                    }
+
+                    // set values for the loop below
+                    tgtBlockIdx   = blockIdx;
+                    offOutputs    = &cellStates[blockIdx + timeShift];
+                    offOutputsInc = effLayerSize;
+                }}
+                break;
+            }
+
+            // determine the start of the delta values
+            const real_t *niagDeltasLut[] = {
+                fwNiDeltas,
+                fwIgDeltas,
+                fwFgDeltas,
+                fwOgDeltas,
+                bwNiDeltas,
+                bwIgDeltas,
+                bwFgDeltas,
+                bwOgDeltas
+            };
+
+            // calculate the weight update over all patterns            
+            const real_t *offDeltas =
+		&niagDeltasLut[weightTypeY + (isBwStateWeight ? 4 : 0)][tgtBlockIdx];
+
+            if (skipFirstPattern) {
+                offOutputs += parallelSequences * offOutputsInc;
+                offDeltas  += parallelSequences * effLayerSize;
+            }
+
+            int numPatterns = patternsCount;
+            if (skipFirstPattern || skipLastPattern)
+                numPatterns -= parallelSequences;
+
+            real_t wu = weight_grad[weightIdx];
+            for (int i = 0; i < numPatterns; ++i) {
+                wu += (offOutputs ? *offOutputs : bias) * *offDeltas;
+                    
+                offOutputs += offOutputsInc;
+                offDeltas  += effLayerSize;
+            }
+
+            return wu;
+        }
+    };
+    
     struct SetH2HMatrixLSTM{
 	// Create the H2Hmatrix for each time step
 	// The created matrix is a lower-triangle (block) matrix
@@ -764,7 +1020,7 @@ namespace layers {
     }
 
 
-        // Parse m_crStep
+    // Parse m_crStep
     // input:  m_crStep (from the function above) and time step
     // change: tmpSkipFlagCR (which dimension should be skipped in forward propagation)
     // return: which Hidden2Hidden matrix should be used ?
@@ -833,8 +1089,7 @@ namespace layers {
 	    // copy the configuration to device
 	    m_crStepDevice = m_crStep;
 
-	    // for Clock defined by auxiliary data
-
+	    // for Clock schedule defined by auxiliary data
 	    if (config.auxillaryDataDir().size() > 0){
 		// check the number of block and the dimension of the auxiliary data
 		if ((m_crStep.size()/2) > config.auxillaryDataDim() * CHAR_BIT){
@@ -855,6 +1110,9 @@ namespace layers {
 	}
 
 	// ----- configuration of pointers
+	// Please check the weight address in GPU/CPU memory plotted in LstmLayer.hpp
+	//
+	// points to the bias (for net input, input gate, forget gate, output gate)
         _rawNiBiasWeights     = helpers::getRawPointer(this->weights()) + 4 * ls * pls + 0 * ls;
         _rawIgBiasWeights     = helpers::getRawPointer(this->weights()) + 4 * ls * pls + 1 * ls;
         _rawFgBiasWeights     = helpers::getRawPointer(this->weights()) + 4 * ls * pls + 2 * ls;
@@ -865,26 +1123,30 @@ namespace layers {
 	if (!(weightsSection.isValid() && weightsSection->HasMember(this->name().c_str())) &&
 	    config.lstmForgetIni() > 0.0001){
 	    Cpu::real_vector tmpBias(ls, config.lstmForgetIni());
+	    // copy the orginal forget gate bias to tmpBias
 	    thrust::copy(this->weights().begin()+ 4 * ls * pls + 2 * ls,
 			 this->weights().begin()+ 4 * ls * pls + 3 * ls,
 			 tmpBias.begin());
+	    // adjust the forget gate bias
 	    for (int i = 0; i<ls; i++)
 		tmpBias[i] += config.lstmForgetIni();
-	    
+	    // copy the adjusted forget gate bias back into GPU
 	    thrust::copy(tmpBias.begin(), tmpBias.end(),
 			 this->weights().begin()+ 4 * ls * pls + 2 * ls);
 	    printf("[ForgetBias %f]", config.lstmForgetIni());
 	}
 	
-
+	// pointers for peephole connections
         _rawIgPeepholeWeights = (helpers::getRawPointer(this->weights()) + 4 * ls * pls + 4 * ls +
 				 4 * ls * ls / (m_isBidirectional ? 2 : 1) + 0 * ls);
         _rawFgPeepholeWeights = (helpers::getRawPointer(this->weights()) + 4 * ls * pls + 4 * ls +
 				 4 * ls * ls / (m_isBidirectional ? 2 : 1) + 1 * ls);
         _rawOgPeepholeWeights = (helpers::getRawPointer(this->weights()) + 4 * ls * pls + 4 * ls +
 				 4 * ls * ls / (m_isBidirectional ? 2 : 1) + 2 * ls);
+
 	
-        // create the forward and backward info structs
+	// Create the forward and backward info structs
+	//  forward_back_info_t stores the data/matrices-wrappers for the whole sequences 
         forward_backward_info_t* fwbwArr[] = { &m_fw, &m_bw };
         for (int fwbwArrIdx = 0; fwbwArrIdx < (m_isBidirectional ? 2 : 1); ++fwbwArrIdx) {
             forward_backward_info_t *fwbw = fwbwArr[fwbwArrIdx];
@@ -894,17 +1156,12 @@ namespace layers {
             int ls  = this->size();
             int els = this->size() / (m_isBidirectional ? 2 : 1);
 
-            // cell states, niags, deltas, ...
+            
             Cpu::real_vector tmp(this->outputs().size() / (m_isBidirectional ? 2 : 1), 0);
 
-	    // for the CLLSTM
-	    if (m_clockRNN){
-		Cpu::bool_vector tmp2(this->outputs().size()/(m_isBidirectional ? 2 : 1), false);
-		fwbw->skipCR      = tmp2;
-	    }
-	    
+	    // initialize output / gradient buffer (size : D * T, D dimension, T length)
             if (m_isBidirectional) {
-                fwbw->tmpOutputs      = tmp;
+                fwbw->tmpOutputs          = tmp;
                 if (this->flagTrainingMode())
 		    fwbw->tmpOutputErrors = tmp;
             }else {
@@ -913,32 +1170,56 @@ namespace layers {
 		    fwbw->tmpOutputErrors.swap(this->outputErrors());
             }
 	    
-            fwbw->cellStates      = tmp;
-            fwbw->niActs          = tmp;
-            fwbw->igActs          = tmp;
-            fwbw->fgActs          = tmp;
-            fwbw->ogActs          = tmp;
-	    if (this->flagTrainingMode()){
+            fwbw->cellStates      = tmp;        // cell state
+            fwbw->niActs          = tmp;        // net-input 
+            fwbw->igActs          = tmp;        // input-gate
+            fwbw->fgActs          = tmp;        // forget-gate
+            fwbw->ogActs          = tmp;        // output-gate
+	    
+	    if (this->flagTrainingMode()){      // grad for the data above
 		fwbw->cellStateErrors = tmp;
 		fwbw->niDeltas        = tmp;
 		fwbw->igDeltas        = tmp;
 		fwbw->fgDeltas        = tmp;
 		fwbw->ogDeltas        = tmp;
 	    }
-            
-            // weight matrices
+
+	    // for the Clock LSTM
+	    if (m_clockRNN){
+		Cpu::bool_vector tmp2(this->outputs().size()/(m_isBidirectional ? 2 : 1), false);
+		fwbw->skipCR  = tmp2;
+	    }
+
+	    
+            // Wrap the raw weight values with helpers::Matrix<TDevice>
+	    //  
             weight_matrices_t* wmArr [] = { &fwbw->weightMatrices, &fwbw->weightUpdateMatrices };
             real_vector*       wtsArr[] = { &this->weights(),      &this->_weightUpdates() };
+	    
             for (int wmArrIdx = 0; wmArrIdx < 2; ++wmArrIdx) {
+		
+		// wm: wrappers of raw weight values (helpers::Matrix<TDevice>)
                 weight_matrices_t *wm  = wmArr [wmArrIdx];
+		// wts: vector of raw weight values (in physical memory)
                 real_vector       *wts = wtsArr[wmArrIdx];
 
+		// size of the weight matrix to transform previous layer's output
                 int numInputWeights      = ls * pls;
+		// size of the weight matrix to transform previous step's output
                 int numInternalWeights   = ls * els;
+
+		// address of initial weight value of input-2-hidden matrix in this->weights()
+		//  for forward direction buffer: 0
+		//  for backward direction buffer: numInputWeights / 2
                 int inputWeightsStart    = (((fwbwArrIdx == 1) ? (numInputWeights    / 2) : 0));
+
+		// address of initiial weight value of hidden-2-hidden matrix
+		//  for forward direction buffer: 4 * (ls * (pls + 1))
+		//  for backward direction buffer: 4 * (ls * (pls + 1)) + ls * els / 2
                 int internalWeightsStart = (((fwbwArrIdx == 1) ? (numInternalWeights / 2) : 0) +
 					    4 * (ls * (pls + 1)));
 
+		// given the addres above, wrap the weights into helps::Matrix
                 wm->niInput = helpers::Matrix<TDevice>(wts, pls, els,
 						       inputWeightsStart + 0 * numInputWeights);
                 wm->igInput = helpers::Matrix<TDevice>(wts, pls, els,
@@ -962,24 +1243,36 @@ namespace layers {
 					internalWeightsStart + 3 * numInternalWeights);
             }
 
-            // matrices for each timestep
+	    // Wrap the weights values/ data buffer into help::Matrix for each time step	    
             for (int timestep = 0; timestep < this->maxSeqLength(); ++timestep) {
+		
+		// effective dimension of the hidden feature
                 int rows   = this->size() / (m_isBidirectional ? 2 : 1);
+		// number of parallel utterances
                 int cols   = this->parallelSequences();
+		// address of the data buffer for the current time step
                 int offset = timestep * rows * cols;
+		// parallel utterance numbers
 		int paraN  = this->parallelSequences();
 		
                 timestep_matrices_t tm;
+		// wrap the datum buffer of the current timestep
                 tm.tmpOutputs      = helpers::Matrix<TDevice>(&fwbw->tmpOutputs,
 							      rows, cols, offset);
+		// wrap the net-inut buffer of the current timestep
                 tm.niActs          = helpers::Matrix<TDevice>(&fwbw->niActs,
 							      rows, cols, offset);
+		// wrap the input-gate buffer of the current timestep
                 tm.igActs          = helpers::Matrix<TDevice>(&fwbw->igActs,
 							      rows, cols, offset);
+		// wrap the forget-gate buffer of the current timestep
                 tm.fgActs          = helpers::Matrix<TDevice>(&fwbw->fgActs,
 							      rows, cols, offset);
+		// wrap the output-gate buffer of the current timestep
                 tm.ogActs          = helpers::Matrix<TDevice>(&fwbw->ogActs,
 							      rows, cols, offset);
+
+		// wrappers for the grad 
 		if (this->flagTrainingMode()){
 		    tm.tmpOutputErrors = helpers::Matrix<TDevice>(&fwbw->tmpOutputErrors,
 								  rows, cols, offset);
@@ -993,23 +1286,28 @@ namespace layers {
 								  rows, cols, offset);
 		}
 		
-		// clock configuration
+		// wrappers for the hidden2hidden transformation matrices in Clock LSTM
+		// note: Different hidden2hidden matrices are used at different time steps.
+		//       Thus wrappers of hidden2hidden matrices should be created for each step.
+		//       Because the number of possifle hidden2hidden matrices are fixed,
+		//       we se a index to point to the requried h2h matrix 
 		if (m_clockRNN){
-		    // 
 		    // tmpFlagCR:    a skip flag for each dimenison in a parallel block
 		    Cpu::bool_vector tmpFlagCR(rows * paraN, false);
 		    
-		    // h2hMatrixIdx: which hidden2hidden matrix should be used
-		    //               h2hMatrixIdx \in [0  2^band_number-1]
+		    // h2hMatrixIdx: index of the hidden2hidden matrix that should be used
+		    //    note: h2hMatrixIdx \in [0  2^band_number-1]
 		    int h2hMatrixIdx = DimSkipFlagCRLSTM(tmpFlagCR, m_crStep, timestep, paraN)-1;
 		    
 		    if (h2hMatrixIdx<0){
 			printf("Zero input at time %d", timestep);
 			throw std::runtime_error("Error in timeresolution configuration");
 		    }
-		    
+
+		    // address of the skip flag vector for the current time step
 		    tm.skipCRPos = timestep * rows * paraN;
 
+		    // for debugging
 		    if (DEBUG_CLOCKLSTM){
 			printf("%d:\n", timestep);
 			for(int i = 0; i < tmpFlagCR.size(); i++){
@@ -1020,10 +1318,11 @@ namespace layers {
 		    
 		    thrust::copy(tmpFlagCR.begin(), tmpFlagCR.end(), 
 				 fwbw->skipCR.begin() + tm.skipCRPos);
-		    
+
+		    // index of the h2h transformation matrix
 		    tm.h2hIdx    = h2hMatrixIdx;
 
-		    // matrices for forward and backward direction are separated
+		    // h2h matrices
 		    h2hMatrixIdx = (h2hMatrixIdx * els * els +
 				    ((fwbwArrIdx == 1) ? (m_h2hClockRNN.size()/2) : 0));
 
@@ -1039,10 +1338,11 @@ namespace layers {
 		    tm.ogH2HWrap = helpers::Matrix<TDevice>(&m_h2hClockRNN, els, els,
 							    h2hMatrixIdx);
 		}
-		
                 fwbw->timestepMatrices.push_back(tm);
             }
+	    // done, create sequences of timestep_matrices_t 
         }
+	// done create forward_backward_info_t for forward/backward directions
 
         if (!m_isBidirectional) {
             m_fw.tmpOutputs     .swap(this->_outputs());
@@ -1160,25 +1460,31 @@ namespace layers {
             return m_fw.ogDeltas;
     }
 
+    
     template <typename TDevice>
     void LstmLayer<TDevice>::loadSequences(const data_sets::DataSetFraction &fraction,
 					   const int nnState)
     {
         TrainableLayer<TDevice>::loadSequences(fraction, nnState);
 
+	
 	if (this->precedingLayer().getSaveMemoryFlag()){
-	    // This step is fact useless. The matrix will be defined in prepareStepGeneration
+	    // This step is fact useless.
+	    // In memory save mode (step-by-step generation), loadSequences will not be lauched
 	    m_precLayerOutputsMatrix = helpers::Matrix<TDevice>(
 		&this->precedingLayer().outputs(), this->precedingLayer().size(), 
 		this->parallelSequences());
 	}else{
+	    // Wrap the sequence of vectors of previous layer's output 
 	    m_precLayerOutputsMatrix = helpers::Matrix<TDevice>(
 		&this->precedingLayer().outputs(), this->precedingLayer().size(), 
 		this->curMaxSeqLength() * this->parallelSequences());
 	}
 
-        // ---- prepare the matrix for LSTM
-	// update the niag matrices
+        // Prepare the matrix wrappers for LSTM
+	//  This wrappers are used to convert previous layer's output into hidden features
+	//  Because the previous layer's output may have different time length,
+	//  these matrices wrappers must be changed for each training utterance
         forward_backward_info_t* fwbwArr[] = { &m_fw, &m_bw };
         for (int fwbwArrIdx = 0; fwbwArrIdx < (m_isBidirectional ? 2 : 1); ++fwbwArrIdx) {
             forward_backward_info_t *fwbw = fwbwArr[fwbwArrIdx];
@@ -1201,9 +1507,8 @@ namespace layers {
 		thrust::fill(fwbw->ogDeltas.begin(), fwbw->ogDeltas.end(), 0.0);
 	    }
         }
-
 	
-	// ---- prepare the matrix for CLLSTM
+	// Prepare matrix wrappers for clock LSTM
 	if (m_clockRNN){
 	    
 	    int rows    = this->size() / (m_isBidirectional ? 2 : 1);
@@ -1211,8 +1516,9 @@ namespace layers {
 	    int ls      = this->size();
 	    int pls     = this->precedingLayer().size();
 	    int h2hsize = rows * rows;
-	    
-	    // Read in the context-dependent time clock
+
+	    // For context-dependent clock LSTM
+	    //  read in the context-boundary and create context-dependent schedule
 	    if (fraction.auxDataDim()>0){
 		Cpu::pattype_vector clockTime = fraction.auxPattypeData();
 		if (clockTime.size() != this->curMaxSeqLength())
@@ -1335,7 +1641,7 @@ namespace layers {
 		}
 	    }
 	
-	    // For debug
+	    // For debugging
 	    // Show all the H2H matrices
 	    if (DEBUG_CLOCKLSTM){
 		
@@ -1398,9 +1704,13 @@ namespace layers {
     template <typename TDevice>
     void LstmLayer<TDevice>::prepareStepGeneration(const int timeStep)
     {
-	m_precLayerOutputsMatrix = helpers::Matrix<TDevice>(
+	
+	// Wrap the previous output matrix on single slice of data
+	m_precLayerOutputsMatrix =
+	    helpers::Matrix<TDevice>(
 		&this->precedingLayer().outputs(),
-		this->precedingLayer().size(), this->parallelSequences(),
+		this->precedingLayer().size(),
+		this->parallelSequences(),
 		(timeStep * this->parallelSequences() * this->precedingLayer().size() - 
 		 this->precedingLayer().outputBufPtrBias(timeStep*this->parallelSequences(), 0)));
     }
@@ -1413,8 +1723,10 @@ namespace layers {
         if (!m_isBidirectional) {
             m_fw.tmpOutputs.swap(this->_outputs());
         }
-
-        // sum up the activations from the preceding layer
+	
+        // Input-to-hidden transformation
+	// Transform the output of previous layer's output into the hidden features
+	//  for normal network, sequence-of-data -> transform -> sequence-of-data
         {{
             // forward states
             m_fw.niActsMatrix.assignProduct(m_fw.weightMatrices.niInput,
@@ -1439,14 +1751,16 @@ namespace layers {
             }
         }}
 
-        // compute the block outputs
+	// Hidden-2-hidden and computation in each LSTM cell
+	// 
         {{
             int els = this->size() / (m_isBidirectional ? 2 : 1);
             int n   = this->parallelSequences() * els;
 
-            // forward states
+            // Initialize the computation function
+	    // 
             internal::ComputeBlockOutputFn fn;
-            fn.effLayerSize       = els;
+            fn.effLayerSize       = els;            
             fn.prevOutputDistance = -n;
             fn.bias               = this->bias();
             fn.patTypes           = helpers::getRawPointer(this->patTypes());
@@ -1463,10 +1777,14 @@ namespace layers {
             fn.fgActs             = helpers::getRawPointer(m_fw.fgActs);
             fn.ogActs             = helpers::getRawPointer(m_fw.ogActs);
 
+	    // conduct the comptuation step by step
             for (int timestep = 0; timestep < this->curMaxSeqLength(); ++timestep) {
-                // collect outputs from previous timestep
+		
+                // conduct hidden-2-hidden transformation
+		//  (transform the output of previous step)
                 if (timestep != 0) {
 		    if (m_clockRNN){
+			// Clock LSTM uses schedule-dependent hidden2hidden matrices
 			m_fw.timestepMatrices[timestep].niActs.addProduct(
 			  m_fw.timestepMatrices[timestep].niH2HWrap, true,
 			  m_fw.timestepMatrices[timestep-1].tmpOutputs, false);
@@ -1480,6 +1798,7 @@ namespace layers {
 			  m_fw.timestepMatrices[timestep].ogH2HWrap, true,
 			  m_fw.timestepMatrices[timestep-1].tmpOutputs, false);
 		    }else{
+			// normal LSTM uses the same hidden2hidden matrices for time steps
 			m_fw.timestepMatrices[timestep].niActs.addProduct(
 			  m_fw.weightMatrices.niInternal, true,
 			  m_fw.timestepMatrices[timestep-1].tmpOutputs, false);
@@ -1495,17 +1814,17 @@ namespace layers {
 		    }
                 }
 
-		// for ClockRNN
+		// Set the skipflag for clock LSTM
 		if (m_clockRNN)
 		    fn.skipCRNN  = (helpers::getRawPointer(m_fw.skipCR) + 
 				    m_fw.timestepMatrices[timestep].skipCRPos);
 		else
 		    fn.skipCRNN  = NULL;
 
-                // compute outputs
+                // Conduct the computation in an LSTM cell
                 thrust::transform(
-                    thrust::counting_iterator<int>(n*timestep),
-                    thrust::counting_iterator<int>(n*timestep) + n,
+                    thrust::counting_iterator<int>(n * timestep),
+                    thrust::counting_iterator<int>(n * timestep) + n,
                     thrust::make_zip_iterator(
 		      thrust::make_tuple(
 			thrust::constant_iterator<bool>(!timestep),
@@ -1513,8 +1832,10 @@ namespace layers {
                     m_fw.tmpOutputs.begin() + n*timestep,
                     fn);
             }
+	    // Done for forward computation over the whole utterance
 
             // backward states
+	    //  similar to forward computation
             if (m_isBidirectional) {
                 fn.prevOutputDistance = +n;
                 fn.niBiasWeights     += els;
@@ -1606,7 +1927,7 @@ namespace layers {
     template <typename TDevice>
     void LstmLayer<TDevice>::computeForwardPass(const int timeStep, const int nnState)
     {
-
+	// This mode is not supposed to be used by bi-directional LSTM
 	if (m_isBidirectional)
 	    return;
 	
@@ -1614,7 +1935,7 @@ namespace layers {
         if (!m_isBidirectional) {
             m_fw.tmpOutputs.swap(this->_outputs());
         }
-
+	
         // sum up the activations from the preceding layer for one time step
         {{
 	    // forward states
@@ -1653,8 +1974,11 @@ namespace layers {
             fn.fgActs             = helpers::getRawPointer(m_fw.fgActs);
             fn.ogActs             = helpers::getRawPointer(m_fw.ogActs);
 
+	    // hidden-2-hidden transformation
             if (timeStep != 0) {
+
 		if (m_clockRNN){
+		    // clock LSTM, schedule-dependent hidden-2-hidden transformation matrices
 		    m_fw.timestepMatrices[timeStep].niActs.addProduct(
 			m_fw.timestepMatrices[timeStep].niH2HWrap, true, 
 			m_fw.timestepMatrices[timeStep-1].tmpOutputs, false);
@@ -1668,6 +1992,7 @@ namespace layers {
 			m_fw.timestepMatrices[timeStep].ogH2HWrap, true, 
 			m_fw.timestepMatrices[timeStep-1].tmpOutputs, false);		    
 		}else{
+		    // normal LSTM, the same hidden-2-hidden matrices for all time steps
 		    m_fw.timestepMatrices[timeStep].niActs.addProduct(
 			m_fw.weightMatrices.niInternal, true, 
 			m_fw.timestepMatrices[timeStep-1].tmpOutputs, false);
@@ -1682,6 +2007,7 @@ namespace layers {
 			m_fw.timestepMatrices[timeStep-1].tmpOutputs, false);		    
 		}
 	    }
+	    
 	    // for ClockRNN
 	    if (m_clockRNN)
 		fn.skipCRNN  = (helpers::getRawPointer(m_fw.skipCR) + 
@@ -1689,7 +2015,7 @@ namespace layers {
 	    else
 		fn.skipCRNN  = NULL;
 
-	    // compute outputs
+	    // compute outputs in each cell
 	    thrust::transform(
 		thrust::counting_iterator<int>(n * timeStep),
 		thrust::counting_iterator<int>(n * timeStep) + n,
@@ -1716,8 +2042,7 @@ namespace layers {
     template <typename TDevice>
     void LstmLayer<TDevice>::computeBackwardPass(const int nnState)
     {
-        // for unidirectional LSTM,
-	// we can write the output errors directly in the layer output errors vector
+	// Load the gradients propagated backward from the next layer
         if (m_isBidirectional) {
             internal::ResortOutputErrorsFn fn;
             fn.layerSize      = this->size();
@@ -1733,13 +2058,13 @@ namespace layers {
                 thrust::make_zip_iterator(thrust::make_tuple(this->outputErrors().begin()+n,
 							     thrust::counting_iterator<int>(0)+n)),
                 fn);
-        }
-        else {
+        }else {
             m_fw.tmpOutputs     .swap(this->outputs());
             m_fw.tmpOutputErrors.swap(this->outputErrors());
         }
 
-        // calculate the block errors
+	
+        // Calculate the gradients w.r.t activation in each gates/cell state
         {{
             int els = this->size() / (m_isBidirectional ? 2 : 1);
             int n   = this->parallelSequences() * els;
@@ -1764,10 +2089,12 @@ namespace layers {
             fn.ogDeltas           = helpers::getRawPointer(m_fw.ogDeltas);
 
             for (int timestep = this->curMaxSeqLength()-1; timestep >= 0; --timestep) {
-                // collect errors from previous timestep
+		
+                // First, gradients from next timestep to the current timestep
                 if (timestep != this->curMaxSeqLength()-1) {
 
 		    if (m_clockRNN){
+			// Clock LSTM uses schedule-dependent hidden2hidden matrices
 			m_fw.timestepMatrices[timestep].tmpOutputErrors.addProduct(
 				m_fw.timestepMatrices[timestep+1].niH2HWrap, false,
 				m_fw.timestepMatrices[timestep+1].niDeltas, false);
@@ -1781,6 +2108,7 @@ namespace layers {
 				m_fw.timestepMatrices[timestep+1].ogH2HWrap, false,
 				m_fw.timestepMatrices[timestep+1].ogDeltas, false);
 		    }else{
+			// normal LSTM uses the same hidden2hidden matrices
 			m_fw.timestepMatrices[timestep].tmpOutputErrors.addProduct(
 				m_fw.weightMatrices.niInternal, false,
 				m_fw.timestepMatrices[timestep+1].niDeltas, false);
@@ -1796,6 +2124,7 @@ namespace layers {
 		    }
                 }
 
+		// Clock LSTM requires the skip flag
 		if (m_clockRNN){
 		    fn.skipCRNN  = helpers::getRawPointer(m_fw.skipCR) + 
 			m_fw.timestepMatrices[timestep].skipCRPos;
@@ -1803,7 +2132,7 @@ namespace layers {
 		    fn.skipCRNN = NULL;
 		}
 
-                // compute errors
+                // Compute errors in LSTM cells
                 thrust::for_each(
                     thrust::make_zip_iterator(
 		      thrust::make_tuple(
@@ -1901,6 +2230,7 @@ namespace layers {
             }
         }}
 
+	// For Clock LSTM
 	// set the gradient for skipped unit to zero
 	// The reason is that, there is only one buffer to store the gradient for the activation
 	// of each gate. For skipped unit, gradient must be propagated to previous LSTM units,
@@ -1946,6 +2276,8 @@ namespace layers {
 		dynamic_cast<Layer<TDevice>*>(&this->precedingLayer());
 	    
             if (pl) {
+		// Matrix wrapper for the outputErrors of previous layer
+		//  ??? Why not define a m_precLayerOutputErrorsMatrix ???
                 helpers::Matrix<TDevice> plErrorsMatrix(
 			&pl->outputErrors(), pl->size(),
 			this->curMaxSeqLength() * this->parallelSequences());
@@ -2024,6 +2356,219 @@ namespace layers {
             this->_outputs()    .swap(m_fw.tmpOutputs);
         }
     }
+
+
+    template <typename TDevice>
+    void LstmLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	// absolute time
+	int effTimeS = timeStep     * this->parallelSequences();
+	int effTimeE = (timeStep+1) * this->parallelSequences();
+
+        // for unidirectional LSTM,
+	// we can write the output errors directly in the layer output errors vector
+        if (m_isBidirectional) {
+	    throw std::runtime_error("bi-directional LSTM cannot do BackwardPass(timeStep)");
+        }else {
+	    m_fw.tmpOutputs     .swap(this->outputs());
+	    m_fw.tmpOutputErrors.swap(this->outputErrors());
+        }
+
+	
+	int els = this->size() / (m_isBidirectional ? 2 : 1);
+	int n   = this->parallelSequences() * els;
+
+        // calculate the block errors
+        {{
+            
+            // forward states
+            internal::ComputeBlockErrorsFn fn;
+            fn.effLayerSize       = els;
+            fn.prevOutputDistance = -n;
+            fn.patTypes           = helpers::getRawPointer(this->patTypes());
+            fn.igPeepWeights      = _rawIgPeepholeWeights;
+            fn.fgPeepWeights      = _rawFgPeepholeWeights;
+            fn.ogPeepWeights      = _rawOgPeepholeWeights;
+            fn.cellStates         = helpers::getRawPointer(m_fw.cellStates);
+            fn.niActs             = helpers::getRawPointer(m_fw.niActs);
+            fn.igActs             = helpers::getRawPointer(m_fw.igActs);
+            fn.fgActs             = helpers::getRawPointer(m_fw.fgActs);
+            fn.ogActs             = helpers::getRawPointer(m_fw.ogActs);
+            fn.cellStateErrors    = helpers::getRawPointer(m_fw.cellStateErrors);
+            fn.niDeltas           = helpers::getRawPointer(m_fw.niDeltas);
+            fn.igDeltas           = helpers::getRawPointer(m_fw.igDeltas);
+            fn.fgDeltas           = helpers::getRawPointer(m_fw.fgDeltas);
+            fn.ogDeltas           = helpers::getRawPointer(m_fw.ogDeltas);
+
+            {
+		int timestep = effTimeS;
+                // collect errors from previous timestep
+                if (timestep != this->curMaxSeqLength()-1) {
+
+		    if (m_clockRNN){
+			m_fw.timestepMatrices[timestep].tmpOutputErrors.addProduct(
+				m_fw.timestepMatrices[timestep+1].niH2HWrap, false,
+				m_fw.timestepMatrices[timestep+1].niDeltas, false);
+			m_fw.timestepMatrices[timestep].tmpOutputErrors.addProduct(
+				m_fw.timestepMatrices[timestep+1].igH2HWrap, false,
+				m_fw.timestepMatrices[timestep+1].igDeltas, false);
+			m_fw.timestepMatrices[timestep].tmpOutputErrors.addProduct(
+				m_fw.timestepMatrices[timestep+1].fgH2HWrap, false,
+				m_fw.timestepMatrices[timestep+1].fgDeltas, false);
+			m_fw.timestepMatrices[timestep].tmpOutputErrors.addProduct(
+				m_fw.timestepMatrices[timestep+1].ogH2HWrap, false,
+				m_fw.timestepMatrices[timestep+1].ogDeltas, false);
+		    }else{
+			m_fw.timestepMatrices[timestep].tmpOutputErrors.addProduct(
+				m_fw.weightMatrices.niInternal, false,
+				m_fw.timestepMatrices[timestep+1].niDeltas, false);
+			m_fw.timestepMatrices[timestep].tmpOutputErrors.addProduct(
+				m_fw.weightMatrices.igInternal, false,
+				m_fw.timestepMatrices[timestep+1].igDeltas, false);
+			m_fw.timestepMatrices[timestep].tmpOutputErrors.addProduct(
+				m_fw.weightMatrices.fgInternal, false,
+				m_fw.timestepMatrices[timestep+1].fgDeltas, false);
+			m_fw.timestepMatrices[timestep].tmpOutputErrors.addProduct(
+				m_fw.weightMatrices.ogInternal, false,
+				m_fw.timestepMatrices[timestep+1].ogDeltas, false);
+		    }
+                }
+
+		if (m_clockRNN){
+		    fn.skipCRNN  = helpers::getRawPointer(m_fw.skipCR) + 
+			m_fw.timestepMatrices[timestep].skipCRPos;
+		}else{
+		    fn.skipCRNN = NULL;
+		}
+
+                // compute errors
+                thrust::for_each(
+                    thrust::make_zip_iterator(
+		      thrust::make_tuple(
+			  m_fw.tmpOutputErrors.begin() + n*timestep,
+			  thrust::counting_iterator<int>(n*timestep),
+			  thrust::constant_iterator<bool>(timestep == this->curMaxSeqLength()-1),
+			  thrust::constant_iterator<bool>(!timestep),
+			  thrust::constant_iterator<bool>(timestep >= this->curMinSeqLength()))),
+                    thrust::make_zip_iterator(
+		      thrust::make_tuple(
+			  m_fw.tmpOutputErrors.begin() + n*timestep + n,
+			  thrust::counting_iterator<int>(n*timestep)+ n,
+			  thrust::constant_iterator<bool>(timestep == this->curMaxSeqLength()-1)+n,
+			  thrust::constant_iterator<bool>(!timestep)+ n,
+			  thrust::constant_iterator<bool>(timestep >= this->curMinSeqLength())+n)),
+                    fn);
+            }
+
+        }}
+
+	// set the gradient for skipped unit to zero
+	// The reason is that, there is only one buffer to store the gradient for the activation
+	// of each gate. For skipped unit, gradient must be propagated to previous LSTM units,
+	// but not to the previous layer and weight/bias
+	if (m_clockRNN){
+	    {{
+		internal::CleanUnitDeltasClockLSTM fn;
+		fn.skipCRNN    = helpers::getRawPointer(m_fw.skipCR);
+		fn.unitDeltas  = helpers::getRawPointer(m_fw.niDeltas);
+		thrust::for_each(
+		   thrust::make_zip_iterator(
+			thrust::make_tuple(
+				thrust::counting_iterator<int>(0),
+				m_fw.skipCR.begin())),
+		   thrust::make_zip_iterator(
+			thrust::make_tuple(
+				thrust::counting_iterator<int>(0) + m_fw.skipCR.size(),
+				m_fw.skipCR.end())),
+		   fn);
+	    }}
+	}
+
+	
+        // back-propagate the error to the preceding layer
+        {{
+            Layer<TDevice> *pl =
+		dynamic_cast<Layer<TDevice>*>(&this->precedingLayer());
+	    
+            if (pl) {
+                helpers::Matrix<TDevice> plErrorsMatrix(&pl->outputErrors(),
+							pl->size(),
+							this->parallelSequences(),
+							pl->size() * effTimeS);
+
+                // forward states
+                plErrorsMatrix.assignProduct(m_fw.weightMatrices.niInput, false,
+					     m_fw.timestepMatrices[timeStep].niDeltas, false);
+                plErrorsMatrix.addProduct   (m_fw.weightMatrices.igInput, false,
+					     m_fw.timestepMatrices[timeStep].igDeltas, false);
+                plErrorsMatrix.addProduct   (m_fw.weightMatrices.fgInput, false,
+					     m_fw.timestepMatrices[timeStep].fgDeltas, false);
+                plErrorsMatrix.addProduct   (m_fw.weightMatrices.ogInput, false,
+					     m_fw.timestepMatrices[timeStep].ogDeltas, false);
+
+                // backward states
+                if (m_isBidirectional) {
+		    throw std::runtime_error("bi-direc LSTM cannot do BackwardPass(timeStep)");
+                }
+		
+            }else{
+		throw std::runtime_error("Impossible error: previous layer is not a layer");
+	    }
+	    
+        }}
+
+        // compute the weight updates
+        {{
+            internal::ComputeWeightUpdateFn_online fn;
+            fn.layerSize             = this->size();
+            fn.effLayerSize          = this->size() / (m_isBidirectional ? 2 : 1);
+            fn.precLayerSize         = this->precedingLayer().size();
+            fn.timestepDistance      = (this->parallelSequences() * this->size() /
+					(m_isBidirectional ? 2 : 1));
+            fn.parallelSequences     = this->parallelSequences();
+            fn.patternsCount         = this->parallelSequences();
+	    
+	    // offset to the weight section
+            fn.biasWeightsOffset     =  this->size() * this->precedingLayer().size() * 4;
+            fn.internalWeightsOffset =  fn.biasWeightsOffset     + this->size() * 4;
+            fn.peepholeWeightsOffset = (fn.internalWeightsOffset +
+					this->size() * fn.effLayerSize * 4);
+            fn.bias                  = this->bias();
+
+	    // 
+            fn.plOutputs   = (helpers::getRawPointer(this->precedingLayer().outputs()) +
+			      this->precedingLayer().size() * effTimeS);
+            fn.fwOutputs   = (helpers::getRawPointer(m_fw.tmpOutputs) + 
+			      els * effTimeS);
+            fn.bwOutputs      = (helpers::getRawPointer(m_bw.tmpOutputs) + els * effTimeS);
+            fn.fwCellStates   = (helpers::getRawPointer(m_fw.cellStates) + els * effTimeS);
+            fn.bwCellStates   = (helpers::getRawPointer(m_bw.cellStates) + els * effTimeS);
+            fn.fwNiDeltas     = (helpers::getRawPointer(m_fw.niDeltas) + els * effTimeS);
+            fn.bwNiDeltas     = (helpers::getRawPointer(m_bw.niDeltas) + els * effTimeS);
+	    fn.fwIgDeltas     = (helpers::getRawPointer(m_fw.igDeltas) + els * effTimeS);
+            fn.bwIgDeltas     = (helpers::getRawPointer(m_bw.igDeltas) + els * effTimeS);
+            fn.fwFgDeltas     = (helpers::getRawPointer(m_fw.fgDeltas) + els * effTimeS);
+	    fn.bwFgDeltas     = (helpers::getRawPointer(m_bw.fgDeltas) + els * effTimeS);
+            fn.fwOgDeltas     = (helpers::getRawPointer(m_fw.ogDeltas) + els * effTimeS);
+            fn.bwOgDeltas     = (helpers::getRawPointer(m_bw.ogDeltas) + els * effTimeS);
+
+	    fn.weight_grad   = helpers::getRawPointer(this->_weightUpdates());
+	    // elementwise operation
+            thrust::transform(
+                thrust::counting_iterator<int>(0),
+                thrust::counting_iterator<int>(0) + (int)this->weightUpdates().size(),
+                this->_weightUpdates().begin(),
+                fn);
+        }}
+
+        // re-swap the output errors and the tmp output errors of the forward pass
+        if (!m_isBidirectional) {
+            this->outputErrors().swap(m_fw.tmpOutputErrors);
+            this->_outputs()    .swap(m_fw.tmpOutputs);
+        }
+    }
+
+
     
     template <typename TDevice>
     void LstmLayer<TDevice>::exportLayer(const helpers::JsonValue &layersArray, 

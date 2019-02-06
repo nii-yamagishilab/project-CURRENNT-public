@@ -1099,6 +1099,12 @@ namespace layers{
 		
     }
 	
+   // NN backward
+    template <typename TDevice>
+    void DistillingLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	throw std::runtime_error("Not implemented distillingLayer computeBackward(timeStep)");
+    }
     
     template <typename TDevice>
     const std::string& DistillingLayer<TDevice>::type() const

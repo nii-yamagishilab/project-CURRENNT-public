@@ -84,7 +84,10 @@ namespace layers {
 
 	// NN forward
 	virtual void computeForwardPass(const int timeStep, const int nnState);
-	
+
+	// NN backward
+	virtual void computeBackwardPass(const int timeStep, const int nnState);
+
 	// return reference to the m_outputErrorsFromSkipLayer
 	// real_vector& outputErrorsFromSkipLayer();
 

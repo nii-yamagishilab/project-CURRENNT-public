@@ -183,6 +183,14 @@ namespace layers {
     }
 
 
+    template <typename TDevice>
+    void CePostOutputLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
+    {
+	if (timeStep == this->curMaxSeqLength())
+	    this->computeBackwardPass(nnState);
+    }
+
+
     // explicit template instantiations
     template class CePostOutputLayer<Cpu>;
     template class CePostOutputLayer<Gpu>;

@@ -122,12 +122,35 @@ namespace {
         real_t bias;
 
         const real_t *deltas;
-        
+	
         __host__ __device__ real_t operator() (const int &biasWeightIdx) const
         {
             const real_t *offDeltas = deltas + biasWeightIdx;
 
             real_t wu = 0;
+            for (int i = 0; i < patternsCount; ++i) {
+                wu += bias * *offDeltas;
+                offDeltas += layerSize;
+            }
+
+            return wu;
+        }
+    };
+
+    struct ComputeBiasWeightUpdateFn_online
+    {
+        int    layerSize;
+        int    patternsCount;
+        real_t bias;
+
+        const real_t *deltas;
+        const real_t *bias_grad;
+	
+        __host__ __device__ real_t operator() (const int &biasWeightIdx) const
+        {
+            const real_t *offDeltas = deltas + biasWeightIdx;
+
+            real_t wu = bias_grad[biasWeightIdx];
             for (int i = 0; i < patternsCount; ++i) {
                 wu += bias * *offDeltas;
                 offDeltas += layerSize;
@@ -1103,6 +1126,108 @@ namespace layers {
 	// #2018101202
     }
 
+
+    template <typename TDevice, typename TActFn>
+    void FeedForwardLayer<TDevice, TActFn>::computeBackwardPass(const int timeStep,
+								const int nnState)
+    {
+	
+	if (this->getSaveMemoryFlag())
+	    throw std::runtime_error("Memory save mode should be turned off");
+	if (m_batchNorm)
+	    throw std::runtime_error("Error: batchnorm is not for online training");
+	if (m_weightNorm)
+	    throw std::runtime_error("Error: weightnorm is not implemented");
+	
+	// start and end time steps 
+	int effTimeStart = timeStep     * this->parallelSequences();
+	int effTimeEnd   = (timeStep+1) * this->parallelSequences();
+	
+	// initialize the gradients at the first step (the last time step in backward computation)
+	if (timeStep == this->curMaxSeqLength() - 1)
+	    thrust::fill(this->_weightUpdates().begin(), this->_weightUpdates().end(), 0.0);
+ 
+	// compute deltas
+	{{
+            internal::ComputeDeltaFn<TActFn> fn;
+            thrust::for_each(
+               thrust::make_zip_iterator(
+		thrust::make_tuple(this->outputErrors().begin() + effTimeStart * this->size(),
+				   this->outputs().begin()      + effTimeStart * this->size())),
+	       thrust::make_zip_iterator(
+		thrust::make_tuple(this->outputErrors().begin() + effTimeEnd   * this->size(),
+				   this->outputs().begin()      + effTimeEnd   * this->size())),
+                fn);
+	}}
+
+
+	// get the pointer of the preceding layer
+	Layer<TDevice> *pl = dynamic_cast<Layer<TDevice>*>(&this->precedingLayer());
+	
+	if (!pl){
+	    printf("\nGradients cannot be propagated after %s. ", this->name().c_str());
+	    throw std::runtime_error("Backpropagation error");		
+	}
+	
+	// Back-propagate the error to the preceding layer
+	{{
+                helpers::Matrix<TDevice> plErrorsMatrix(&pl->outputErrors(),   
+							pl->size(),    
+							this->parallelSequences(),
+							effTimeStart * pl->size());
+                helpers::Matrix<TDevice> weightsMatrix (&this->weights(),      
+							pl->size(),   
+							this->size());
+                helpers::Matrix<TDevice> deltasMatrix  (&this->outputErrors(), 
+							this->size(),
+							this->parallelSequences(),
+							effTimeStart * this->size());
+                plErrorsMatrix.assignProduct(weightsMatrix, false, deltasMatrix, false);
+	}}
+
+	
+	// compute the input weight updates
+	{{
+            helpers::Matrix<TDevice> weightUpdatesMatrix(&this->_weightUpdates(),           
+							 pl->size(), 
+							 this->size());
+
+            helpers::Matrix<TDevice> plOutputsMatrix    (&this->precedingLayer().outputs(), 
+							 pl->size(), 
+							 this->parallelSequences(),
+							 effTimeStart * pl->size());
+	    
+            helpers::Matrix<TDevice> deltasMatrix       (&this->outputErrors(),             
+							 this->size(), 
+							 this->parallelSequences(),
+							 effTimeStart * this->size());
+
+            weightUpdatesMatrix.addProduct(plOutputsMatrix, false, deltasMatrix, true);
+	}}
+
+	    
+	// compute the bias weight updates
+	{{
+            internal::ComputeBiasWeightUpdateFn_online fn;
+            fn.layerSize     = this->size();
+            fn.patternsCount = this->parallelSequences();
+            fn.bias          = this->bias();
+            fn.deltas        = (helpers::getRawPointer(this->outputErrors()) +
+				effTimeStart * this->size());
+	    fn.bias_grad     = (helpers::getRawPointer(this->_weightUpdates()) +
+				this->precedingLayer().size() * this->size());
+	    
+            thrust::transform(
+                thrust::counting_iterator<int>(0),
+                thrust::counting_iterator<int>(0) + this->size(),
+                this->_weightUpdates().begin() + this->precedingLayer().size() * this->size(),
+                fn);
+	}}
+
+    }
+
+
+    
     template <typename TDevice, typename TActFn>
     void FeedForwardLayer<TDevice, TActFn>::exportLayer(
 	const helpers::JsonValue     &layersArray, 
