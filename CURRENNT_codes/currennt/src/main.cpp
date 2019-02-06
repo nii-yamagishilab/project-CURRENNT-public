@@ -30,6 +30,7 @@
 #include "../../currennt_lib/src/helpers/JsonClasses.hpp"
 #include "../../currennt_lib/src/rapidjson/prettywriter.h"
 #include "../../currennt_lib/src/rapidjson/filestream.h"
+#include "../../currennt_lib/src/helpers/misFuncs.hpp"
 
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/date_time/posix_time/posix_time_duration.hpp>
@@ -50,6 +51,7 @@
 #include <cstdlib>
 #include <iomanip>
 
+/*  -------- Helper functions ----------- */
 
 void swap32 (uint32_t *p)
 {
@@ -74,6 +76,8 @@ void swapFloat(float *p)
   temp = *( q + 1 ); *( q + 1 ) = *( q + 2 ); *( q + 2 ) = temp;
 }
 
+
+/*  -------- Helper functions definitions ----------- */
 enum data_set_type
 {
     DATA_SET_TRAINING,
@@ -83,37 +87,30 @@ enum data_set_type
 };
 
 // helper functions (implementation below)
-void readJsonFile(
- rapidjson::Document *doc,           
- const std::string   &filename
-);
+void readJsonFile(rapidjson::Document *doc, const std::string &filename);
+boost::shared_ptr<data_sets::DataSet> loadDataSet(data_set_type dsType);
 
-boost::shared_ptr<data_sets::DataSet> loadDataSet(
- data_set_type dsType
-);
+template <typename TDevice> void printLayers(const NeuralNetwork<TDevice> &nn);
+template <typename TDevice> void printOptimizer(const optimizers::Optimizer<TDevice> &optimizer);
+template <typename TDevice> void saveNetwork(const NeuralNetwork<TDevice> &nn, 
+					     const std::string &filename, const real_t nnlr, 
+					     const real_t welr);
+void createModifiedTrainingSet(data_sets::DataSet *trainingSet, int parallelSequences, 
+			       bool outputsToClasses, boost::mutex &swapTrainingSetsMutex);
 
-template <typename TDevice> void printLayers(
- const NeuralNetwork<TDevice> &nn
-);
+template <typename TDevice> void saveState(const NeuralNetwork<TDevice> &nn, 
+					   const optimizers::Optimizer<TDevice> &optimizer, 
+					   const std::string &infoRows, const real_t nnlr, 
+					   const real_t welr);
 
-template <typename TDevice> void printOptimizer(
- const optimizers::Optimizer<TDevice> &optimizer
-);
+template <typename TDevice> void restoreState(NeuralNetwork<TDevice> *nn, 
+					      optimizers::Optimizer<TDevice> *optimizer, 
+					      std::string *infoRows);
 
-template <typename TDevice> void saveNetwork(
- const NeuralNetwork<TDevice> &nn, 
- const std::string &filename, const real_t nnlr, 
- const real_t welr
-);
-
-void createModifiedTrainingSet(
- data_sets::DataSet *trainingSet, 
- int parallelSequences, 
- bool outputsToClasses, 
- boost::mutex &swapTrainingSetsMutex
-);
+std::string printfRow(const char *format, ...);
 
 
+/*  -------- Network helper functions definitions ----------- */
 real_t getGenerationOpt(){
 
     // generationOpt:
@@ -130,25 +127,9 @@ real_t getGenerationOpt(){
 	    (config.mdnPara()));
 }
 
-template <typename TDevice> void saveState(
- const NeuralNetwork<TDevice> &nn, 
- const optimizers::Optimizer<TDevice> &optimizer, 
- const std::string &infoRows, const real_t nnlr, 
- const real_t welr
-);
 
-template <typename TDevice> void restoreState(
- NeuralNetwork<TDevice> *nn, 
- optimizers::Optimizer<TDevice> *optimizer, 
- std::string *infoRows
-);
+/*  -------- main function definition ----------- */
 
-std::string printfRow(
- const char *format, ...
-);
-
-
-// main function
 template <typename TDevice>
 int trainerMain(const Configuration &config)
 {
@@ -157,16 +138,14 @@ int trainerMain(const Configuration &config)
 	/*********** Initialize the network and data set *****************/
 	
         // read the neural network description file 
-        std::string networkFile =
-	    (config.continueFile().empty() ? 
-	     config.networkFile() : config.continueFile());
+        std::string networkFile = (config.continueFile().empty() ? 
+				   config.networkFile() : config.continueFile());
         printf("Reading network from '%s'... ", networkFile.c_str());
         fflush(stdout);
 	
-	// Modify 0302 Wang: 
-	// netDocParameter: pointer to network parameter
-	//  (trained_network.jsn or .autosave)
+
 	// netDoc: the normal pointer to network.jsn
+	// netDocParameter: pointer to network parameter (trained_network.jsn or .autosave)
 	// rapidjson::Document *netDocPtr(0); No Need to use netDocPtr
 	rapidjson::Document netDocParameter;
         rapidjson::Document netDoc;
@@ -202,11 +181,9 @@ int trainerMain(const Configuration &config)
         // calculate the maximum sequence length
         int maxSeqLength;
         if (config.trainingMode())
-            maxSeqLength = std::max(
-			       trainingSet->maxSeqLength(), 
-			       std::max(
-				   validationSet->maxSeqLength(), 
-				   testSet->maxSeqLength()));
+            maxSeqLength = std::max(trainingSet->maxSeqLength(), 
+				    std::max(validationSet->maxSeqLength(),
+					     testSet->maxSeqLength()));
 	else if(config.printWeightPath().size()>0)
 	    maxSeqLength = 0;
         else
@@ -214,20 +191,6 @@ int trainerMain(const Configuration &config)
 
         int parallelSequences = config.parallelSequences();
 	
-        /* 
-	int chaDim = config.txtChaDim();
-	int maxTxtLength;
-	if (config.trainingMode()){
-	    maxTxtLength = std::max(
-			       trainingSet->maxTxtLength(),
-			       std::max(
-				   validationSet->maxTxtLength(),
-				   testSet->maxTxtLength()));
-	}else if(config.printWeightPath().size()>0){
-	    maxTxtLength = 0;
-	}else{
-	    maxTxtLength = feedForwardSet->maxTxtLength();
-        }*/
 
         // create the neural network
         printf("Creating the neural network...");
@@ -284,18 +247,13 @@ int trainerMain(const Configuration &config)
 	/* Add 16-02-22 Wang: for WE updating */
 	if (config.weUpdate()){
 	    // Load the vector bank
-	    neuralNetwork.initWeUpdate(
-		 config.weBankPath(),
-		 config.weDim(),
-		 config.weIDDim(),
-		 maxSeqLength * parallelSequences
-		 );
+	    neuralNetwork.initWeUpdate(config.weBankPath(), config.weDim(),
+				       config.weIDDim(), maxSeqLength * parallelSequences);
 	    
 	    // Initialize the noise to be added for WE (optional)
-	    if (!neuralNetwork.initWeNoiseOpt(
-		 config.weNoiseStartDim(),
-		 config.weNoiseEndDim(),
-		 config.weNoiseDev())){
+	    if (!neuralNetwork.initWeNoiseOpt(config.weNoiseStartDim(),
+					      config.weNoiseEndDim(),
+					      config.weNoiseDev())){
 		throw std::runtime_error("Error in configuration of weNoise");
 	    }
 	}
@@ -371,41 +329,31 @@ int trainerMain(const Configuration &config)
 
             //printf("done.\n");
             printOptimizer(config, *optimizer);
-
             std::string infoRows;
 
-            // continue from autosave?
+            
             if (!config.continueFile().empty()) {
+		// continue from autosave?
                 printf("Restoring state from '%s'... ", config.continueFile().c_str());
                 fflush(stdout);
                 restoreState(&neuralNetwork, &*optimizer, &infoRows);
                 printf("done.\n\n");
-            }
-	    
-	    
-	    // Add 05-27: Add the function to read in the weight
-	    // Note: this part is only utilized in the training stage
-	    if (config.continueFile().empty() && !config.trainedParameterPath().empty()){
-		// Modify 05-29
-		// Note: no need to re-initialize a .autosave
-		//if (config.continueFile().empty()){
-		//    printf("WARNING: Network parameter will be over-written by %s\n", 
-		//	   config.trainedParameterPath().c_str());
-		//}
-		printf("Read NN parameter from %s\n",
-		       config.trainedParameterPath().c_str());
-		readJsonFile(&netDocParameter,
-			     config.trainedParameterPath());
-		
-		neuralNetwork.importWeights(netDocParameter,
-					    config.trainedParameterCtr());
-		
-	    }else if (!config.continueFile().empty() &&
-		      !config.trainedParameterPath().empty()){
-		printf("Re-initialize .autosave using another network is unnecessary\n");
-		
+
+		if (!config.trainedParameterPath().empty()){
+		    printf("\ncurrennt --continue *.autosave uses model parameters in *.autosave");
+		    printf("\n --trainedModel %s ignored", config.trainedParameterPath().c_str());
+		}
+            }else if (!config.trainedParameterPath().empty()){
+		printf("Read network weights from %s\n", config.trainedParameterPath().c_str());
+		std::vector<std::string> tmp_preTrained;
+		misFuncs::ParseStrOpt(config.trainedParameterPath(), tmp_preTrained, ",");
+		for (int cnt = 0 ; cnt < tmp_preTrained.size(); cnt++) {
+		    readJsonFile(&netDocParameter, tmp_preTrained[cnt]);
+		    neuralNetwork.importWeights(netDocParameter, config.trainedParameterCtr());
+		}
 	    }else{
-		// nothing
+		// training and initializing from scratch
+		printf("Initializing and training the model from scratch\n");
 	    }
 
 	    

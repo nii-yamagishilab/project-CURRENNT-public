@@ -78,8 +78,8 @@ private:
     unsigned    m_weDim;          // dimension of the input we vector
     real_t      m_weLearningRate; // learning rate for we
     std::string m_weBank;         // path to the we data
-    std::string m_trainedParameter;    // path of the trained model, only model weights  will be read
-    std::string m_trainedParameterCtr; // a control string to decide which layer should be read in
+    std::string m_trainedModelPath; // path of the trained model, only model weights  will be read
+    std::string m_trainedParameterCtr;  // a control string to decide which layer should be read in
     /* Add 20160902 WE noise options*/
     int         m_weNoiseStartDim;    // noise adding, from which dimension?
     int         m_weNoiseEndDim;      // noise adding, end at which dimension

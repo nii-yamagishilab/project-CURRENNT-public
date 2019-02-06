@@ -520,7 +520,7 @@ Configuration::Configuration(int argc, const char *argv[])
 	 po::value(&m_weBank)            ->default_value(""),       
 	 "the path to the word vectors")
 	("trainedModel",      
-	 po::value(&m_trainedParameter)  ->default_value(""), 
+	 po::value(&m_trainedModelPath)  ->default_value(""), 
 	 "the path to the trained model paratemeter")
 	("trainedModelCtr",   
 	 po::value(&m_trainedParameterCtr) ->default_value(""), 
@@ -1203,7 +1203,7 @@ const std::string& Configuration::weightMaskPath() const
 
 const std::string& Configuration::trainedParameterPath() const
 {
-    return m_trainedParameter;
+    return m_trainedModelPath;
 }
 
 const std::string& Configuration::trainedParameterCtr() const
