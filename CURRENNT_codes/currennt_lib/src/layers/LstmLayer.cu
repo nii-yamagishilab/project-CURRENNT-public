@@ -2401,7 +2401,7 @@ namespace layers {
             fn.ogDeltas           = helpers::getRawPointer(m_fw.ogDeltas);
 
             {
-		int timestep = effTimeS;
+		int timestep = timeStep;
                 // collect errors from previous timestep
                 if (timestep != this->curMaxSeqLength()-1) {
 
