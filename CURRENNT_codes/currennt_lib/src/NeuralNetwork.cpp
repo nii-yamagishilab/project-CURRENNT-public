@@ -2087,6 +2087,9 @@ void NeuralNetwork<TDevice>::__computeGenPass_LayerByLayer(
 					const int curMaxSeqLength, 
 					const real_t generationOpt)
 {
+    // load sequences
+    this->loadSequences(fraction);
+    
     // Normal forward computation
     this->__computeForward_LayerByLayer(curMaxSeqLength, -1);
 
@@ -2103,6 +2106,8 @@ void NeuralNetwork<TDevice>::__computeGenPass_NormFlow(
 					const int curMaxSeqLength, 
 					const real_t generationOpt)
 {
+    this->loadSequences(fraction);
+    
     // computation within the normal layers
     int cnt = 0;
     BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
@@ -2157,6 +2162,7 @@ void NeuralNetwork<TDevice>::__computeGenPass_VAE(const data_sets::DataSetFracti
 						  const int curMaxSeqLength, 
 						  const real_t generationOpt)
 {
+    this->loadSequences(fraction);	
     // Inference for VAE
 	
     // For a VAE network, the feedback layer in the encoder should take the
@@ -2221,6 +2227,7 @@ void NeuralNetwork<TDevice>::__computeGenPass_StepByStep_AR(
 					const int curMaxSeqLength, 
 					const real_t generationOpt)
 {
+    this->loadSequences(fraction);
     const Configuration &config = Configuration::instance();
     // Feedback exists, and not for latent code inference
     layers::MDNLayer<TDevice> *olm;
@@ -2522,6 +2529,8 @@ void NeuralNetwork<TDevice>::__computeGenPass_StepByStep_RNN_FBH(
 					const int curMaxSeqLength, 
 					const real_t generationOpt)
 {
+    this->loadSequences(fraction);
+    
     if (m_waveNetMemSaveFlag == NETWORK_WAVENET_SAVE_MA)
 	throw std::runtime_error("To be implemented for combination of NSF with RNN_FBH");
     
@@ -2535,41 +2544,182 @@ void NeuralNetwork<TDevice>::__computeGenPass_StepByStep_RNN_FBH(
 }
 
 template <typename TDevice>
+void NeuralNetwork<TDevice>::__computeGenPass_special_NSF_FBH(
+					const data_sets::DataSetFraction &fraction,
+					const int curMaxSeqLength, const real_t generationOpt)
+{
+    
+    /* current implementation only supports on feedback hidden layer*/
+    if (m_feedBackHiddenLayers.size() != 1)
+	throw std::runtime_error("No support for network with multiple feedback_hidden layers");
+
+    int feedback_layer_idx = m_feedBackHiddenLayers[0];
+    int feedback_target_layer_idx = m_layers[m_feedBackHiddenLayers[0]]->returnTargetLayerID();
+    int timeResolution = m_feedBackHiddenLayersTimeResos[0];
+    
+    if (feedback_target_layer_idx < feedback_layer_idx ||
+	feedback_target_layer_idx > m_totalNumLayers)
+	throw std::runtime_error("feedback_hidden target layer not linked");
+    if (timeResolution <= 1)
+	throw std::runtime_error("feedback_hidden should be in condition module");
+
+    // Condition module, use the method of computeforward_stepbystep
+    int counter = 0;
+    // before feedback layer, simple layer-by-layer propagation
+    BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
+	if (counter == feedback_layer_idx)
+	    break;
+	layer->loadSequences(fraction, m_trainingState);
+	layer->computeForwardPass(m_trainingState);
+	counter++;
+    }
+	
+    // inside a feedback block, step by step, layer by layer
+    for (int timeStep = 0;
+	 timeStep < misFuncs::getResoLength(curMaxSeqLength, timeResolution, 1);
+	 timeStep++){
+	
+	counter = 0;
+
+	BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
+	    if (counter > feedback_target_layer_idx)
+		break;
+	    if (counter >= feedback_layer_idx && counter <= feedback_target_layer_idx){
+		layer->loadSequences(fraction, m_trainingState);
+		layer->prepareStepGeneration(timeStep);
+		layer->computeForwardPass(timeStep, m_trainingState);
+	    }
+	    counter++;
+	}
+    }
+
+    // LayerByLayer_mem
+    // Make a copy of the network layer dependency
+    network_helpers::networkDepMng tmp_networkMng = this->m_networkMng;
+	
+    int layerID = 0;
+    BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
+
+	if (layerID <= feedback_target_layer_idx){
+	    // nothing
+	}else{
+		
+	    // print out the index every 10 layers
+	    if (layerID % 10 == 0) std::cout << layerID << " " << std::flush;
+
+	    
+	    if (!(this->flagLayerCanbeOptimizedMA(layerID))){	
+		// This layer can not be optimized in memory, do normal propagation
+		layer->loadSequences(fraction, m_trainingState);
+		layer->computeForwardPass(m_trainingState);    
+	    }else{
+
+		// If this layer can be optimized, do the memory-save operation
+		
+		// check each layer in fromwhich layers
+		BOOST_FOREACH (int fromwhich,
+			       tmp_networkMng.get_layerDep(layerID).get_fromwhich()){
+		    if (fromwhich > 0 && this->m_layers[fromwhich]->outputs().size() == 0)
+			throw std::runtime_error("Error from which");
+		}
+
+		if (tmp_networkMng.get_layerDep(layerID).empty_towhich()){
+		    // no other layer needs the output of this layer, skip propagation
+		}else{
+		    layer->resizeAllBuffers(curMaxSeqLength);
+		    layer->loadSequences(fraction, m_trainingState);
+		    layer->computeForwardPass(m_trainingState);
+		}	
+		// release the memory of layers that send input data to this layer
+		BOOST_FOREACH (int fromwhich,
+			       tmp_networkMng.get_layerDep(layerID).get_fromwhich()){
+		    
+		    if (this->flagLayerCanbeOptimizedMA(fromwhich)){
+			// If the 'input' layer can be optimized
+			// Delete dependency temporarily
+			tmp_networkMng.get_layerDep(fromwhich).del_towhich(layerID);
+			// If the 'input' layer is no longer needed by any layer, release the mem
+			if (tmp_networkMng.get_layerDep(fromwhich).empty_towhich())
+			    this->m_layers[fromwhich]->clearAllBuffers();
+		    }
+		}
+		// Delete the dependency fromwhich
+		tmp_networkMng.get_layerDep(layerID).nul_fromwhich();	    
+	    }
+	}
+	layerID++;
+    }
+    return;
+}
+
+
+template <typename TDevice>
 void NeuralNetwork<TDevice>::computeForwardPassGen(const data_sets::DataSetFraction &fraction,
 						   const int curMaxSeqLength, 
 						   const real_t generationOpt)
 {
 
     const Configuration &config = Configuration::instance();
-    
-    if (m_waveNetMemSaveFlag == NETWORK_WAVENET_SAVE_MA && m_feedBackHiddenLayers.empty() &&
-	m_feedBackLayers.empty() && m_normflowLayers.empty()){
-	// for normal network with memory save flag
-	this->__computeGenPass_LayerByLayer_mem(fraction, curMaxSeqLength, generationOpt);
-    }else if(m_feedBackHiddenLayers.empty() && m_feedBackLayers.empty() &&
-	     m_normflowLayers.empty()){
-	// for normal network without memory save flag
-	this->loadSequences(fraction);
-	this->__computeGenPass_LayerByLayer(fraction, curMaxSeqLength, generationOpt);
-    }else if(m_feedBackHiddenLayers.empty() && m_feedBackLayers.empty()){
-	// for normal network with normalizing flow
-	this->loadSequences(fraction);
-	this->__computeGenPass_NormFlow(fraction, curMaxSeqLength, generationOpt);
-    }else if (m_feedBackHiddenLayers.empty()){
-	// for models with feedback links (from target layer to hidden layers)
 
-	this->loadSequences(fraction);	
-	if (m_vaeLayer >= 0 && config.vaeEncoderOutputLayer()>0)
-	    // for VAE network
-	    this->__computeGenPass_VAE(fraction, curMaxSeqLength, generationOpt);
-	else
-	    // for AR network
+    if (m_waveNetMemSaveFlag != NETWORK_WAVENET_SAVE_NO){
+	// special networks with memmory save modes on (WaveNet/NSF ...)
+
+	if (!m_normflowLayers.empty())
+	    throw std::runtime_error("Error computeForwardPassGen: unsupported normflow waveMem");
+
+	if (m_vaeLayer >= 0)
+	    throw std::runtime_error("Error computeForwardPassGen: unsupported VAE in waveMem");
+	
+	// NSF
+	if (m_waveNetMemSaveFlag == NETWORK_WAVENET_SAVE_MA &&
+	    m_feedBackHiddenLayers.empty() && m_feedBackLayers.empty()){
+	    this->__computeGenPass_LayerByLayer_mem(fraction, curMaxSeqLength, generationOpt);
+	}
+
+	// WaveNet
+	if (m_waveNetMemSaveFlag == NETWORK_WAVENET_SAVE_AR &&
+	    m_feedBackHiddenLayers.empty() && (!m_feedBackLayers.empty())){
 	    this->__computeGenPass_StepByStep_AR(fraction, curMaxSeqLength, generationOpt);
+	}
+
+	// NSF with Feedback conditional module
+	if (m_waveNetMemSaveFlag == NETWORK_WAVENET_SAVE_MA &&
+	    (!m_feedBackHiddenLayers.empty()) && m_feedBackLayers.empty()){
+	    this-> __computeGenPass_special_NSF_FBH(fraction, curMaxSeqLength, generationOpt);
+	}
+	
     }else{
-	// for RNN with feedback among hidden layers
-	this->loadSequences(fraction);
-	this->__computeGenPass_StepByStep_RNN_FBH(fraction, curMaxSeqLength, generationOpt);
+	// common models
+
+	if(m_feedBackHiddenLayers.empty() && m_feedBackLayers.empty() && m_normflowLayers.empty()){
+	    // for normal network
+	    this->__computeGenPass_LayerByLayer(fraction, curMaxSeqLength, generationOpt);
+	    
+	}else if((!m_normflowLayers.empty()) &&
+		 m_feedBackHiddenLayers.empty() && m_feedBackLayers.empty()){
+	    // for normal network with normalizing flow
+	    this->__computeGenPass_NormFlow(fraction, curMaxSeqLength, generationOpt);
+	    
+	}else if ((!m_feedBackLayers.empty()) &&
+		  m_feedBackHiddenLayers.empty() && m_normflowLayers.empty()){
+	    // for models with feedback links (from target layer to hidden layers)
+	    if (m_vaeLayer >= 0 && config.vaeEncoderOutputLayer()>0)
+		// for VAE network
+		this->__computeGenPass_VAE(fraction, curMaxSeqLength, generationOpt);
+	    else
+		// for AR network
+		this->__computeGenPass_StepByStep_AR(fraction, curMaxSeqLength, generationOpt);
+	    
+	}else if ((!m_feedBackHiddenLayers.empty()) &&
+		  m_feedBackLayers.empty() && m_normflowLayers.empty()){
+	    // for RNN with feedback among hidden layers
+	    this->__computeGenPass_StepByStep_RNN_FBH(fraction, curMaxSeqLength, generationOpt);
+	    
+	}else{
+	    throw std::runtime_error("Error computeForwardPassGen: unsupported model");
+	}
     }
+    
     
 }
 

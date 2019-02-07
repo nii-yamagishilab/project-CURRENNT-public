@@ -186,7 +186,11 @@ private:
     //  step by step (for all types of RNN with feedback in hidden layers)
     void __computeGenPass_StepByStep_RNN_FBH(const data_sets::DataSetFraction &fraction,
 					     const int curMaxSeqLength, const real_t generationOpt);
-    
+
+    //  special mode for NSF with FBH
+    void __computeGenPass_special_NSF_FBH(const data_sets::DataSetFraction &fraction,
+					  const int curMaxSeqLength, const real_t generationOpt);
+
 public:
     /**
      * Creates the neural network from the process configuration
