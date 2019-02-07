@@ -117,7 +117,8 @@ private:
     std::vector<int> m_signalGenLayerId;
     std::vector<int> m_featTransNetRange;
     std::vector<int> m_feedBackHiddenLayers;
-
+    std::vector<int> m_feedBackHiddenLayersTimeResos;
+    
     int m_firstFeedBackLayer;
     int m_middlePostOutputLayer;
     int m_featMatchLayer;

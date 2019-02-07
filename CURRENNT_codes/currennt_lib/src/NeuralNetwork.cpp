@@ -684,6 +684,7 @@ void NeuralNetwork<TDevice>::__InitializeNetworkLayerIdx(const helpers::JsonDocu
 	m_distillingLayers.clear();
 	m_featTransNetRange.clear();
 	m_feedBackHiddenLayers.clear();
+	m_feedBackHiddenLayersTimeResos.clear();
 	
 	m_firstFeedBackLayer    = -1;     // Idx of the first feedback layer
 	m_middlePostOutputLayer = -1;     // Idx of the PostOutputLayer inside the network
@@ -1217,10 +1218,40 @@ void NeuralNetwork<TDevice>::__LinkNetworkLayers()
 	
 	// Link the feedback hidden layers
 	if (m_feedBackHiddenLayers.size()){
+	    // link the target layers
 	    for (size_t i = 0; i < m_feedBackHiddenLayers.size(); i++)
 		for (size_t j = 0; j < m_totalNumLayers; j++)
 		    m_layers[m_feedBackHiddenLayers[i]]->linkTargetLayer(*(m_layers[j].get()));
+	    
+	    // get the time resolutions
+	    int counter = 0;
+	    int timeResolution = -1;
+	    for (size_t i = 0; i < m_feedBackHiddenLayers.size(); i++){
+
+		// decide the layer range of the feedback block
+		int feedback_layer_idx = m_feedBackHiddenLayers[i];
+		int target_layer_idx = m_layers[m_feedBackHiddenLayers[i]]->returnTargetLayerID();
+		if (target_layer_idx < feedback_layer_idx ||
+		    target_layer_idx > m_totalNumLayers)
+		    throw std::runtime_error("feedback_hidden target layer not linked");
+
+		timeResolution = -1;
+		counter = 0;
+		BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
+		    if (counter >= feedback_layer_idx && counter <= target_layer_idx)
+			if (timeResolution < 0)
+			    timeResolution = layer->getResolution();
+			else if (timeResolution != layer->getResolution())
+			    throw std::runtime_error("Error: multi-resolutions in feedback block");
+		    counter++;
+		}
+		if (timeResolution < 0)
+		    throw std::runtime_error("Error: time resos negative");
+		m_feedBackHiddenLayersTimeResos.push_back(timeResolution);
+	    }	
 	}
+	
+	
 	
 	// Check for normalization flow
 	if (!m_normflowLayers.empty()){
@@ -1896,13 +1927,13 @@ void NeuralNetwork<TDevice>::__computeForward_StepByStep(const int curMaxSeqLeng
 
     int feedback_layer_idx = m_feedBackHiddenLayers[0];
     int feedback_target_layer_idx = m_layers[m_feedBackHiddenLayers[0]]->returnTargetLayerID();
-
+    int timeResolution = m_feedBackHiddenLayersTimeResos[0];
+    
     if (feedback_target_layer_idx < feedback_layer_idx ||
 	feedback_target_layer_idx > m_totalNumLayers)
 	throw std::runtime_error("feedback_hidden target layer not linked");
 
     int counter = 0;
-
     // before feedback layer, simple layer-by-layer propagation
     BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
 	if (counter == feedback_layer_idx)
@@ -1910,16 +1941,21 @@ void NeuralNetwork<TDevice>::__computeForward_StepByStep(const int curMaxSeqLeng
 	layer->computeForwardPass(m_trainingState);
 	counter++;
     }
-
-    // between feedback range, step by step, layer by layer
-    for (int timeStep = 0; timeStep < curMaxSeqLength; timeStep++){
+	
+    // inside a feedback block, step by step, layer by layer
+    for (int timeStep = 0;
+	 timeStep < misFuncs::getResoLength(curMaxSeqLength, timeResolution, 1);
+	 timeStep++){
+	
 	counter = 0;
-	// propagte the natural data
+
 	BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
 	    if (counter > feedback_target_layer_idx)
 		break;
-	    if (counter >= feedback_layer_idx && counter <= feedback_target_layer_idx)
+	    if (counter >= feedback_layer_idx && counter <= feedback_target_layer_idx){
+		layer->prepareStepGeneration(timeStep);
 		layer->computeForwardPass(timeStep, m_trainingState);
+	    }
 	    counter++;
 	}
     }
@@ -1931,8 +1967,8 @@ void NeuralNetwork<TDevice>::__computeForward_StepByStep(const int curMaxSeqLeng
 	    layer->computeForwardPass(m_trainingState);
 	counter++;
     }
-    
-    // Done
+
+    return;
 }
 
 template <typename TDevice>
@@ -2604,11 +2640,13 @@ void NeuralNetwork<TDevice>::__computeBackward_StepByStep(const int curMaxSeqLen
     
     int feedback_layer_idx = m_feedBackHiddenLayers[0];
     int feedback_target_layer_idx = m_layers[m_feedBackHiddenLayers[0]]->returnTargetLayerID();
-
+    int timeResolution = m_feedBackHiddenLayersTimeResos[0];
+ 
     if (feedback_target_layer_idx < feedback_layer_idx ||
 	feedback_target_layer_idx > m_totalNumLayers)
 	throw std::runtime_error("feedback_hidden target layer not linked");
 
+    // After the feedback block, propagate backwards layer by layer
     int counter = m_totalNumLayers-1;
     BOOST_REVERSE_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
 	if (counter == feedback_target_layer_idx)
@@ -2617,9 +2655,13 @@ void NeuralNetwork<TDevice>::__computeBackward_StepByStep(const int curMaxSeqLen
 	counter--;
     }
 
-    for (int timeStep = curMaxSeqLength-1; timeStep >= 0; timeStep--){
+    // Within the feedback block, step by step, layer by layer
+    for (int timeStep = misFuncs::getResoLength(curMaxSeqLength, timeResolution, 1) - 1;
+	 timeStep >= 0;
+	 timeStep--){
+	
 	counter = m_totalNumLayers-1;
-	// propagte the natural data
+
 	BOOST_REVERSE_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
 	    if (counter < feedback_layer_idx)
 		break;
@@ -2629,6 +2671,7 @@ void NeuralNetwork<TDevice>::__computeBackward_StepByStep(const int curMaxSeqLen
 	}
     }
 
+    // Before the feedback block
     counter = m_totalNumLayers-1;
     BOOST_REVERSE_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
 	if (counter < feedback_layer_idx)
@@ -2636,7 +2679,7 @@ void NeuralNetwork<TDevice>::__computeBackward_StepByStep(const int curMaxSeqLen
 	counter--;
     }
     
-    // Done
+    return;
 }
 
 
