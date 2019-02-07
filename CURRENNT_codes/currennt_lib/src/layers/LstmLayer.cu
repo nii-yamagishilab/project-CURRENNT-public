@@ -663,6 +663,10 @@ namespace {
         int    biasWeightsOffset;
         int    internalWeightsOffset;
         int    peepholeWeightsOffset;
+	
+	bool   flagIniStep;
+	bool   flagLastStep;
+	
         real_t bias;
 
         const real_t *plOutputs;
@@ -811,11 +815,12 @@ namespace {
                     offOutputsInc = effLayerSize;
 
                     if (isBwStateWeight) {
-                        offOutputs += timestepDistance;
+			if (!flagLastStep)
+			    offOutputs += timestepDistance;
                         skipLastPattern = true;
-                    }
-                    else {
-                        offOutputs -= timestepDistance;
+                    }else {
+			if (!flagIniStep)
+			    offOutputs -= timestepDistance;
                         skipFirstPattern = true;
                     }
                 }}
@@ -843,11 +848,12 @@ namespace {
                     }
                     else {
                         if (isBwStateWeight) {
-                            timeShift       = timestepDistance;
+			    if (!flagLastStep)
+				timeShift  = timestepDistance;
                             skipLastPattern = true;
-                        }
-                        else {
-                            timeShift        = -timestepDistance;
+                        }else {
+			    if (!flagIniStep)
+				timeShift  = -timestepDistance;
                             skipFirstPattern = true;
                         }
                     }
@@ -876,6 +882,18 @@ namespace {
             const real_t *offDeltas =
 		&niagDeltasLut[weightTypeY + (isBwStateWeight ? 4 : 0)][tgtBlockIdx];
 
+	    /*
+	      For online case, we should not shift the pointer by one step.
+	      Without shifting, the pointer has already points to the expected address of data.
+	      It is shifted here mainly for convenience.
+	      
+	      Without shifting:
+	       1. For forward direction: from t = 1 : T
+	       2. For backward direction: from t = 0 : T-1 
+
+	      With shifting
+	       both forward/backward: from t = 0 : T-1
+
             if (skipFirstPattern) {
                 offOutputs += parallelSequences * offOutputsInc;
                 offDeltas  += parallelSequences * effLayerSize;
@@ -884,7 +902,13 @@ namespace {
             int numPatterns = patternsCount;
             if (skipFirstPattern || skipLastPattern)
                 numPatterns -= parallelSequences;
+	    */
 
+	    // For online case, we escape the initial step t = 0
+	    int numPatterns = patternsCount;
+	    if ((skipFirstPattern && flagIniStep) || (skipLastPattern && flagLastStep))
+		numPatterns -= parallelSequences;
+	    
             real_t wu = weight_grad[weightIdx];
             for (int i = 0; i < numPatterns; ++i) {
                 wu += (offOutputs ? *offOutputs : bias) * *offDeltas;
@@ -2361,7 +2385,11 @@ namespace layers {
     template <typename TDevice>
     void LstmLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
     {
-	// absolute time
+	// Absolute time (with parallel mode into consideration)
+	// Note: LstmLayer mainly uses timeStep and treats a parallel block as one time step
+	//       int cols = this->parallelSequences()
+	//       However, for previous layer's output, effTimeS should be used to define
+	//       one parallel block
 	int effTimeS = timeStep     * this->parallelSequences();
 	int effTimeE = (timeStep+1) * this->parallelSequences();
 
@@ -2535,14 +2563,17 @@ namespace layers {
 					this->size() * fn.effLayerSize * 4);
             fn.bias                  = this->bias();
 
+	    fn.flagIniStep           = (timeStep == 0);
+	    fn.flagLastStep          = (timeStep >= this->curMaxSeqLength());
+	    
 	    // 
-            fn.plOutputs   = (helpers::getRawPointer(this->precedingLayer().outputs()) +
-			      this->precedingLayer().size() * effTimeS);
-            fn.fwOutputs   = (helpers::getRawPointer(m_fw.tmpOutputs) + 
-			      els * effTimeS);
+            fn.plOutputs      = (helpers::getRawPointer(this->precedingLayer().outputs()) +
+				 this->precedingLayer().size() * effTimeS);
+            fn.fwOutputs      = (helpers::getRawPointer(m_fw.tmpOutputs) + els * effTimeS);
             fn.bwOutputs      = (helpers::getRawPointer(m_bw.tmpOutputs) + els * effTimeS);
             fn.fwCellStates   = (helpers::getRawPointer(m_fw.cellStates) + els * effTimeS);
             fn.bwCellStates   = (helpers::getRawPointer(m_bw.cellStates) + els * effTimeS);
+	    
             fn.fwNiDeltas     = (helpers::getRawPointer(m_fw.niDeltas) + els * effTimeS);
             fn.bwNiDeltas     = (helpers::getRawPointer(m_bw.niDeltas) + els * effTimeS);
 	    fn.fwIgDeltas     = (helpers::getRawPointer(m_fw.igDeltas) + els * effTimeS);
