@@ -2547,6 +2547,10 @@ namespace layers {
 
         // compute the weight updates
         {{
+	    // Remember to reset the gradients
+	    if (timeStep == this->curMaxSeqLength() - 1)
+		thrust::fill(this->_weightUpdates().begin(), this->_weightUpdates().end(), 0.0);
+		
             internal::ComputeWeightUpdateFn_online fn;
             fn.layerSize             = this->size();
             fn.effLayerSize          = this->size() / (m_isBidirectional ? 2 : 1);
@@ -2563,8 +2567,8 @@ namespace layers {
 					this->size() * fn.effLayerSize * 4);
             fn.bias                  = this->bias();
 
-	    fn.flagIniStep           = (timeStep == 0);
-	    fn.flagLastStep          = (timeStep >= this->curMaxSeqLength());
+	    fn.flagIniStep           = (timeStep <= 0);
+	    fn.flagLastStep          = (timeStep >= this->curMaxSeqLength() - 1);
 	    
 	    // 
             fn.plOutputs      = (helpers::getRawPointer(this->precedingLayer().outputs()) +
