@@ -281,6 +281,21 @@ namespace layers{
 		     this->outputs().begin() + effTimeE * this->size(), 
 		     0.0);
 
+	// initialize the gradients
+	if (timeStep == 0 && this->flagTrainingMode()){
+	    if (this->getSaveMemoryFlag())
+		throw std::runtime_error("Memory save mode should not be used in training");
+	    thrust::fill(this->outputErrors().begin(), 
+			 (this->outputErrors().begin() + 
+			  this->curMaxSeqLength() * this->parallelSequences() * this->size()),
+			 0.0);
+	    thrust::fill(this->outputErrorsFromSkipLayer().begin(),
+			 (this->outputErrorsFromSkipLayer().begin() + 
+			  this->curMaxSeqLength() * this->parallelSequences() * this->size()),
+			 0.0);
+	}
+
+	
 	{{
 	    internal::CopyPartSkipCat fn;
 	    fn.target   = helpers::getRawPointer(this->outputs());

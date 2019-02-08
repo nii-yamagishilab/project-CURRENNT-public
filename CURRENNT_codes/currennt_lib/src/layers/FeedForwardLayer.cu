@@ -1185,6 +1185,9 @@ namespace layers {
                 plErrorsMatrix.assignProduct(weightsMatrix, false, deltasMatrix, false);
 	}}
 
+	// Remember to reset the gradients
+	if (timeStep == this->curMaxSeqLength() - 1)
+	    thrust::fill(this->_weightUpdates().begin(), this->_weightUpdates().end(), 0.0);
 	
 	// compute the input weight updates
 	{{
@@ -1205,7 +1208,6 @@ namespace layers {
             weightUpdatesMatrix.addProduct(plOutputsMatrix, false, deltasMatrix, true);
 	}}
 
-	    
 	// compute the bias weight updates
 	{{
             internal::ComputeBiasWeightUpdateFn_online fn;

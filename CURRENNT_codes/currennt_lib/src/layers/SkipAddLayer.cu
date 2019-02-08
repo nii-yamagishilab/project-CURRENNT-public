@@ -244,6 +244,21 @@ namespace layers{
 	// shift of the pointer to the data 
 	int shiftIn  = 0; // value to assigned layer
 	int shiftOut = this->outputBufPtrBias(timeStep * this->parallelSequences(), nnState);
+
+
+	// For computeBackwardPass(timeStep), clean the gradients
+	if (timeStep == 0 && this->flagTrainingMode()){
+	    if (this->getSaveMemoryFlag())
+		throw std::runtime_error("Memory save mode should not be used in training");
+	    thrust::fill(this->outputErrors().begin(), 
+			 (this->outputErrors().begin() + 
+			  this->curMaxSeqLength() * this->parallelSequences() * this->size()),
+			 0.0);
+	    thrust::fill(this->outputErrorsFromSkipLayer().begin(),
+			 (this->outputErrorsFromSkipLayer().begin() + 
+			  this->curMaxSeqLength() * this->parallelSequences() * this->size()),
+			 0.0);
+	}
 	
 	if (m_virtualLayer){
 	    // virtual layer, no need to do anything
