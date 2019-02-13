@@ -69,6 +69,7 @@
 #include "layers/FeatExtract.hpp"
 #include "layers/GatedActLayer.hpp"
 #include "layers/FeedBackHiddenLayer.hpp"
+#include "layers/SsePostOutputLayerMultiSource.hpp"
 #include <stdexcept>
 
 
@@ -194,7 +195,7 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
 	     layerType == "wf"                        || layerType == "binary_classification" ||
 	     layerType == "multiclass_classification" || layerType == "mdn" || 
 	     layerType == "kld"                       || layerType == "dft" ||
-	     layerType == "featsse") {
+	     layerType == "featsse"                   || layerType == "sse_multi") {
         //layers::TrainableLayer<TDevice>* precedingTrainableLayer = 
 	// dynamic_cast<layers::TrainableLayer<TDevice>*>(precedingLayer);
         //if (!precedingTrainableLayer)
@@ -239,7 +240,10 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
 	    return new SsePostOutputLayerForFeatTrans<TDevice>(layerChild,
 							       *precedingLayer, maxSeqLength,
 							       layerID);
-	
+	else if (layerType == "sse_multi")
+	    return new SsePostOutputMultiLayer<TDevice>(layerChild,
+							*precedingLayer, maxSeqLength,
+							layerID);	
         else // if (layerType == "multiclass_classification")
     	    return new MulticlassClassificationLayer<TDevice>(layerChild,
 							      *precedingLayer, maxSeqLength,

@@ -113,7 +113,8 @@ Configuration::Configuration(int argc, const char *argv[])
     else
         ms_instance = this;
 
-    std::cout << "ver:2018/10/24" << std::endl;
+    //std::cout << "ver:2018/10/24" << std::endl;
+    std::cout << "ver:2019/02/04" << std::endl;
     
     std::string optionsFile;
     std::string optimizerString;

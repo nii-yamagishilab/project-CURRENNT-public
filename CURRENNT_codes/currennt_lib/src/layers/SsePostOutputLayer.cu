@@ -270,7 +270,7 @@ namespace layers {
     template <typename TDevice>
     void SsePostOutputLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
     {
-	if (timeStep == this->curMaxSeqLength())
+	if (timeStep == this->curMaxSeqLength()-1)
 	    this->computeBackwardPass(nnState);
     }
 
