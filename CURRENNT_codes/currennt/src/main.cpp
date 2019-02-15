@@ -1033,7 +1033,7 @@ void saveNetwork(const NeuralNetwork<TDevice> &nn, const std::string &filename,
 		 const real_t nnlr, const real_t welr)
 {
 
-    if (nnlr > 0){
+    if (nnlr >= 0){
 	rapidjson::Document jsonDoc;
 	jsonDoc.SetObject();
 	nn.exportLayers (&jsonDoc);

@@ -1663,6 +1663,19 @@ void NeuralNetwork<TDevice>::restoreTarget(const data_sets::DataSetFraction &fra
     }
 }
 
+
+template <typename TDevice>
+bool NeuralNetwork<TDevice>::__stopBackPropagation(const int layerID, const int runningMode)
+{
+    if (runningMode == NETWORKRUNNING_MODE_STOPLR0){
+	layers::TrainableLayer<TDevice> *trainableLayer = 
+	    dynamic_cast<layers::TrainableLayer<TDevice>*>(m_layers[layerID].get());
+	if (trainableLayer && misFuncs::closeToZero(trainableLayer->learningRate()))
+	    return true;
+    }
+    return false;
+}
+
 template <typename TDevice>
 void NeuralNetwork<TDevice>::__computeForward_LayerByLayer(const int curMaxSeqLength,
 							   const real_t uttCnt)
@@ -2798,7 +2811,9 @@ void NeuralNetwork<TDevice>::__computeBackward_StepByStep(const int curMaxSeqLen
     int feedback_layer_idx = m_feedBackHiddenLayers[0];
     int feedback_target_layer_idx = m_layers[m_feedBackHiddenLayers[0]]->returnTargetLayerID();
     int timeResolution = m_feedBackHiddenLayersTimeResos[0];
- 
+
+    const Configuration &config = Configuration::instance();
+    
     if (feedback_target_layer_idx < feedback_layer_idx ||
 	feedback_target_layer_idx > m_totalNumLayers)
 	throw std::runtime_error("feedback_hidden target layer not linked");
@@ -2808,6 +2823,10 @@ void NeuralNetwork<TDevice>::__computeBackward_StepByStep(const int curMaxSeqLen
     BOOST_REVERSE_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
 	if (counter == feedback_target_layer_idx)
 	    break;
+
+	if (this->__stopBackPropagation(counter, config.runningMode()))
+	    return;
+	
 	layer->computeBackwardPass(m_trainingState);
 	counter--;
     }
@@ -2831,8 +2850,11 @@ void NeuralNetwork<TDevice>::__computeBackward_StepByStep(const int curMaxSeqLen
     // Before the feedback block
     counter = m_totalNumLayers-1;
     BOOST_REVERSE_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
-	if (counter < feedback_layer_idx)
+	if (counter < feedback_layer_idx){
+	    if (this->__stopBackPropagation(counter, config.runningMode()))
+		return;
 	    layer->computeBackwardPass(m_trainingState);
+	}
 	counter--;
     }
     

@@ -78,4 +78,7 @@ In Optimizer.cu, the last epoch will restore the best weights
 
 20190206
 #1 lstm and rnn layers use swap,
-#  this will not work is swap in the future will change the pointers
+#  this will not work is if swap will change the pointers in the future version
+
+20190215
+#1. runnningMode is not implemented for computeBackwardStepbyStep
