@@ -128,13 +128,15 @@ namespace {
 
     struct AveMeanStd
     {
+	real_t  learningRate;
 	real_t *meanStd;
 	real_t *meanStdBuf;
 	real_t  cnt;
 	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
 	{
 	    int dimIdx = t.get<1>();
-	    meanStdBuf[dimIdx] += (meanStd[dimIdx] - meanStdBuf[dimIdx]) / cnt;
+	    if (learningRate > 0.00001)
+		meanStdBuf[dimIdx] += (meanStd[dimIdx] - meanStdBuf[dimIdx]) / cnt;
 	}
     };
     
@@ -475,6 +477,7 @@ namespace layers{
 	   // Step4. accumulate the mean and std, for generation stage
 	   if (this->flagTrainingMode()){
 	       internal::AveMeanStd fn5;
+	       fn5.learningRate = this->learningRate();
 	       fn5.meanStd    = helpers::getRawPointer(m_stats);
 	       fn5.meanStdBuf = helpers::getRawPointer(this->weights()) + this->size() * 2;
 	       fn5.cnt        = m_batchCnt;

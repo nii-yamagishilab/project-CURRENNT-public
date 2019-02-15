@@ -247,12 +247,14 @@ namespace {
 
     struct AveMeanStd
     {
+	real_t  learningRate;
 	real_t *meanStdBuf;
 	real_t  cnt;
 	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
 	{
 	    int dimIdx = t.get<1>();
-	    meanStdBuf[dimIdx] += (t.get<0>() - meanStdBuf[dimIdx]) / cnt;
+	    if (learningRate > 0.00001)
+		meanStdBuf[dimIdx] += (t.get<0>() - meanStdBuf[dimIdx]) / cnt;
 	}
     };
     
@@ -626,6 +628,7 @@ namespace layers {
 	       //  online average into weight buffer
 	       if (this->flagTrainingMode() && nnState == NN_STATE_GAN_NOGAN_TRAIN){
 		   internal::AveMeanStd fn5;
+		   fn5.learningRate = this->learningRate();
 		   fn5.meanStdBuf = (helpers::getRawPointer(this->weights()) +
 				     transMatrixWeightNum + this->size() * 2);
 		   fn5.cnt        = m_batchCnt;
