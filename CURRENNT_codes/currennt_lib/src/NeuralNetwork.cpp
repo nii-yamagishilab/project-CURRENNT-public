@@ -633,6 +633,33 @@ namespace {
 	    return orignal_maxSeqLength;
     }
 
+    // whether a layer's memory can be optimized for an AR model
+    bool flagLayerCanBeOptimizedAR(const int layerID,
+				   const int totalNumLayers,
+				   std::vector<int> &feedBackLayers,
+				   std::vector<int> &vaeLayers)
+    {
+	if (vaeLayers.size() == 0){
+	    // normal WaveNetMode
+	    if (feedBackLayers.size() < 1)
+		throw std::runtime_error("Impossible error: WaveNet has no feedback loop");
+	    
+	    if (layerID < (totalNumLayers - 2) && layerID > feedBackLayers[0])
+		return true;
+	    else
+		return false;
+	}else{
+	    // WaveNet with VAE
+	    // Assume the last feedback is used for WaveNet, while others are for VAE encoder
+	    
+	    if (layerID < (totalNumLayers - 2) && layerID > feedBackLayers.back())
+		return true;
+	    else
+		return false;
+	}
+    }
+    
+    // whether a layer's memory can be optimized for a moving average model (non-AR model)
     bool flagLayerCanBeOptimizedMA(const int layerID,
 				   const int sourceExcitationLayerID,
 				   const int totalNumLayers,
@@ -657,8 +684,7 @@ namespace {
 
 template <typename TDevice>
 void NeuralNetwork<TDevice>::__InitializeNetworkLayerIdx(const helpers::JsonDocument &jsonDoc)
-{
-    // Initialize the network layer indices
+{    
     try{
 	
 	const Configuration &config = Configuration::instance();
@@ -676,6 +702,7 @@ void NeuralNetwork<TDevice>::__InitializeNetworkLayerIdx(const helpers::JsonDocu
             weightsSection = helpers::JsonValue(&(*jsonDoc)["weights"]);
         }
 	
+	/* ------- Initialization ------- */
 	// all types of layer pointer/counter	
 	m_signalGenLayerId.clear();
 	m_normflowLayers.clear();
@@ -690,14 +717,17 @@ void NeuralNetwork<TDevice>::__InitializeNetworkLayerIdx(const helpers::JsonDocu
 	m_middlePostOutputLayer = -1;     // Idx of the PostOutputLayer inside the network
 	m_featMatchLayer        = -1;     // Idx of the featMatching layer (for GAN)
 	m_vaeLayer              = -1;     // Idx of the VAE interface layer
-	m_waveNetMemSaveFlag    = NETWORK_WAVENET_SAVE_NO;
+
+	m_vaeNetworkType = VAENETWORKTYPE_0;
 	
 	m_trainingEpoch         = -1;     // initialize the training epoch counter
 	m_trainingFrac          = -1;     // initialize the training data counter
 	m_trainingState         = -1;     // initialize the training state of the network
 
 	m_wavNetCoreFirstIdx    = -1;     // Idx of the first waveNet core module (for waveNet)
-	m_dftLayerIdx           = -1;
+	m_dftLayerIdx           = -1;     // index of DFT error layer
+
+	m_waveNetMemSaveFlag    = NETWORK_WAVENET_SAVE_NO;
 	
 	// get a total number of layers
 	m_totalNumLayers = 0;
@@ -705,7 +735,7 @@ void NeuralNetwork<TDevice>::__InitializeNetworkLayerIdx(const helpers::JsonDocu
 	     layerChild != layersSection.End(); ++layerChild)
 	    m_totalNumLayers++;
 	
-	/* ----- processing loop ----- */	
+	/* -------- processing loop -------- */	
 	// preloop to determine type o fnetwork
 	int counter = 0;
         for (rapidjson::Value::ValueIterator layerChild = layersSection.Begin(); 
@@ -729,7 +759,7 @@ void NeuralNetwork<TDevice>::__InitializeNetworkLayerIdx(const helpers::JsonDocu
 		m_middlePostOutputLayer = counter;
 		
 	    }else if (layerType == "featmatch"){
-		// for GAN
+		// for GAN feature matching layer
 		m_featMatchLayer = counter;
 		
 	    }else if (layerType == "vae" || layerType == "vqlayer"){
@@ -748,28 +778,38 @@ void NeuralNetwork<TDevice>::__InitializeNetworkLayerIdx(const helpers::JsonDocu
 		    m_waveNetMemSaveFlag = NETWORK_WAVENET_SAVE_AR;
 		
 	    }else if (layerType == "normflow"){
+		// normalizing flow: transformation layers
 		m_normflowLayers.push_back(counter);
 		
 	    }else if (layerType == "signalgen"){
+		// signal generation layers
 		m_signalGenLayerId.push_back(counter);
 		
 	    }else if (layerType == "distilling"){
+		// distilling layers (not maintained)
 		m_distillingLayers.push_back(counter);
 		if (!config.trainingMode() && config.waveNetMemSaveFlag() && m_wavNetCoreFirstIdx)
 		    m_waveNetMemSaveFlag = NETWORK_WAVENET_SAVE_MA;
+		
 	    }else if (layerType == "dft"){
+		// DFT training errors layers
 		m_dftLayerIdx = counter;
 		if (!config.trainingMode() && config.waveNetMemSaveFlag())
 		    m_waveNetMemSaveFlag = NETWORK_WAVENET_SAVE_MA;
+		
 	    }else if (layerType == "feattrans" || layerType == "featsse"){
 		// spot the start of feature extraction network
 		m_featTransNetRange.push_back(counter);
+		
 	    }else if (layerType == "feedback_hidden"){
+		// feedback layers that takes the output of hidden layers
 		m_feedBackHiddenLayers.push_back(counter);
+		
 	    }else{
 		// do nothing
 	    }   
 	}
+	
     }catch (const std::exception &e) {
         throw std::runtime_error(std::string("Invalid network file: ") + e.what());
     }
@@ -803,6 +843,7 @@ void NeuralNetwork<TDevice>::__CreateNetworkLayers(const helpers::JsonDocument &
             weightsSection = helpers::JsonValue(&(*jsonDoc)["weights"]);
         }
 
+	/* ----- creating layers ------ */
         for (rapidjson::Value::ValueIterator layerChild = layersSection.Begin(); 
 	     layerChild != layersSection.End();
 	     ++layerChild, counter++){
@@ -832,7 +873,6 @@ void NeuralNetwork<TDevice>::__CreateNetworkLayers(const helpers::JsonDocument &
 		
 		if(!internal::skipLayerTypes(layerType)){
 		    // Normal layers
-		    
 		    if (m_layers.empty())
 			layer = LayerFactory<TDevice>::createLayer(
 				layerType, &*layerChild, weightsSection,
@@ -842,17 +882,14 @@ void NeuralNetwork<TDevice>::__CreateNetworkLayers(const helpers::JsonDocument &
 			layer = LayerFactory<TDevice>::createLayer(
 				layerType, &*layerChild, weightsSection,
 				parallelSequences, tmp_maxSeqLength, counter,
-				m_layers.back().get());
-		
+				m_layers.back().get());		
 		}else{
 		    // skip layers
 		    
 		    if (m_layers.empty())
 			throw std::runtime_error("Skip layers cannot be the first layer");
 
-		    // SkipLayers: all the layers that link to the current skip layer
-		    //  here, it includes the last skip layer and the previous normal 
-		    //  layer connected to this skip layer
+		    // vector to store previous layers that can be linked to this skip layer
 		    std::vector<layers::Layer<TDevice>*> SkipLayers;
 		    
 		    // for skipadd layer:
@@ -887,10 +924,10 @@ void NeuralNetwork<TDevice>::__CreateNetworkLayers(const helpers::JsonDocument &
 			}
 		    }
 
-		    // A skiplayer can take the previous layer as input source.
-		    // Note, this layer may be a normal layer or a skip layer. 
+		    // Also put the previous layer inside the buffer
+		    // Note: previous layer may have been inserted in the above code block
+		    //  but it does not matter
 		    SkipLayers.push_back(m_layers.back().get());
-		    // I should check whether the previous layer is still a skip layer
 
 		    // Add this skip layer based on previous skip layers
 		    if (internal::skipParaLayerTypes(layerType)){
@@ -942,7 +979,9 @@ void NeuralNetwork<TDevice>::__CreateNetworkLayers(const helpers::JsonDocument &
 		    if (m_waveNetMemSaveFlag == NETWORK_WAVENET_SAVE_AR){
 			// Save the memory for AR WaveNet
 			// only save the memory for layers between the feedback and output layer
-			if (counter < (m_totalNumLayers - 2) && counter > m_firstFeedBackLayer){
+			if (internal::flagLayerCanBeOptimizedAR(counter, m_totalNumLayers,
+								m_feedBackLayers,
+								this->m_vaeLayers)){
 			    // don't save memory if we want to see its output at every time step
 			    if (counter != Configuration::instance().outputFromWhichLayer())
 				layer->reduceOutputBuffer();
@@ -2544,6 +2583,147 @@ void NeuralNetwork<TDevice>::__computeGenPass_StepByStep_AR(
 }
 
 template <typename TDevice>
+void NeuralNetwork<TDevice>::__computeGenPass_VAEwithAR(
+				  const data_sets::DataSetFraction &fraction,
+				  const int curMaxSeqLength, 
+				  const real_t generationOpt)
+{
+    
+    // Note: this method is exclusively used by VAE + AR model where the AR model only
+    //      has one feedback link
+
+    this->loadSequences(fraction);
+    const Configuration &config = Configuration::instance();
+    
+    layers::MDNLayer<TDevice> *olm;
+    
+    {	
+	// Prepare the random seed
+	static boost::mt19937 *gen = NULL;
+	if (!gen) {
+	    gen = new boost::mt19937;
+	    gen->seed(config.randomSeed()+98); // any random number
+	}
+	boost::random::uniform_real_distribution<real_t> dist(0, 1);
+
+	
+	int scheduleSampOpt = config.scheduleSampOpt();
+	int scheduleSampPara= config.scheduleSampPara();
+	printf("SSAMPOpt: %d, SSAMPPara: %d\n", scheduleSampOpt, scheduleSampPara);
+	
+	real_t sampThreshold = 0.0;
+	int    methodCode    = 0;
+	int    cnt           = 0;
+
+	// assume the input to the encoder is stored in the targetLayer->output()
+	this->postOutputLayer().retrieveFeedBackData();
+	
+	// assume the last feedback layer is the feedback link in VAE+AR model
+	// do forward propagation until the Feedback look of AR model
+	cnt = 0;
+	BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
+	    if (cnt == m_feedBackLayers.back()) break; 
+	    layer->computeForwardPass(m_trainingState);
+	    cnt++;
+	}
+	    
+	
+	// Parameter for genreation
+	switch (scheduleSampOpt){
+
+	// Case 0: use probability vector for feedback
+	//         1. native training approach
+	//         2. schedule sampling (soft-feedback training)
+	case NN_FEEDBACK_GROUND_TRUTH:
+	case NN_FEEDBACK_SC_SOFT:
+	    // always uses the soft vector (default option)
+	    sampThreshold  = 1;
+	    methodCode     = NN_FEEDBACK_GROUND_TRUTH;
+	    break;
+
+	// Case 1: use one hot vector
+	case NN_FEEDBACK_SC_MAXONEHOT:
+	    if (scheduleSampPara > 0){
+		sampThreshold = 1;
+		methodCode = NN_FEEDBACK_GROUND_TRUTH;
+	    }else{
+		sampThreshold = (-1.0 * (real_t)scheduleSampPara / 100.0);
+		methodCode = NN_FEEDBACK_SC_MAXONEHOT;
+	    }
+	    // use the one-hot best
+	    break;
+	    
+	// Case 2: dropout
+	case NN_FEEDBACK_DROPOUT_1N:
+	    methodCode = NN_FEEDBACK_DROPOUT_1N;
+	    sampThreshold = ((real_t)scheduleSampPara)/100;
+	    break;					    
+	case NN_FEEDBACK_DROPOUT_ZERO:
+	    methodCode = NN_FEEDBACK_DROPOUT_ZERO;
+	    sampThreshold = ((real_t)scheduleSampPara)/100;
+	    break;
+	    
+	// Case 3: beam search
+	case NN_FEEDBACK_BEAMSEARCH:
+	    methodCode = NN_FEEDBACK_SC_MAXONEHOT;
+	    break;
+	}
+
+
+	//Generation
+	// Normal generation (Greedy)
+	if (scheduleSampOpt != NN_FEEDBACK_BEAMSEARCH){
+	    
+	    int feedBackFrom = m_feedBackLayers.back();
+	    
+	    for (int timeStep = 0, cnt = 0; timeStep < curMaxSeqLength; timeStep ++, cnt = 0){
+		
+		BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
+		    if (cnt >= feedBackFrom){
+
+			if (timeStep % (layer->getResolution()) == 0){
+			    // prepare the matrix (for rnn, lstm)
+			    layer->prepareStepGeneration(timeStep/layer->getResolution());
+			    // compute for 1 frame			
+			    layer->computeForwardPass(timeStep/layer->getResolution(),
+						      m_trainingState);
+			}
+		    }
+		    cnt++;
+		}
+		
+		// Generate the output from MDN
+		if (timeStep % (this->postOutputLayer().getResolution()) == 0){
+		    int tmpOutputLayerReso = this->postOutputLayer().getResolution();
+		    
+		    olm = outMDNLayer();
+		    if (olm != NULL) olm->getOutput(timeStep/olm->getResolution(), generationOpt);
+		
+		    // Feedback the data
+		    if (dist(*gen) < sampThreshold){
+			// default case: feedback prob vec
+			this->postOutputLayer().retrieveFeedBackData(timeStep/tmpOutputLayerReso,
+								     NN_FEEDBACK_GROUND_TRUTH);
+		    }else{
+			// special method: use one-hot or dropout
+			this->postOutputLayer().retrieveFeedBackData(timeStep/tmpOutputLayerReso,
+								     methodCode);
+			// just display the timeStep a few times
+			if (timeStep % 500 == 0)
+			    std::cout << timeStep << " " << std::flush;
+		    }
+		}
+	    }
+	    
+	}else{
+	    throw std::runtime_error("Beam search disabled for VAE+AR model");
+	}
+	return;
+    }
+}
+
+
+template <typename TDevice>
 void NeuralNetwork<TDevice>::__computeGenPass_StepByStep_RNN_FBH(
 					const data_sets::DataSetFraction &fraction,
 					const int curMaxSeqLength, 
@@ -2687,25 +2867,36 @@ void NeuralNetwork<TDevice>::computeForwardPassGen(const data_sets::DataSetFract
 	if (!m_normflowLayers.empty())
 	    throw std::runtime_error("Error computeForwardPassGen: unsupported normflow waveMem");
 
-	if (m_vaeLayer >= 0)
-	    throw std::runtime_error("Error computeForwardPassGen: unsupported VAE in waveMem");
+	// VAE with other models
+	if (m_vaeLayer >= 0){
+	    if (m_waveNetMemSaveFlag == NETWORK_WAVENET_SAVE_AR){
+		// VAE + AR (WaveNet model)
+		this->__computeGenPass_VAEwithAR(fraction, curMaxSeqLength, generationOpt);
+	    }else{
+		throw std::runtime_error("Error computeForwardPassGen: unsupported VAE + waveMem");
+	    }
+	    return;
+	}
 	
 	// NSF
 	if (m_waveNetMemSaveFlag == NETWORK_WAVENET_SAVE_MA &&
 	    m_feedBackHiddenLayers.empty() && m_feedBackLayers.empty()){
 	    this->__computeGenPass_LayerByLayer_mem(fraction, curMaxSeqLength, generationOpt);
+	    return;
 	}
 
 	// WaveNet
 	if (m_waveNetMemSaveFlag == NETWORK_WAVENET_SAVE_AR &&
 	    m_feedBackHiddenLayers.empty() && (!m_feedBackLayers.empty())){
 	    this->__computeGenPass_StepByStep_AR(fraction, curMaxSeqLength, generationOpt);
+	    return;
 	}
 
 	// NSF with Feedback conditional module
 	if (m_waveNetMemSaveFlag == NETWORK_WAVENET_SAVE_MA &&
 	    (!m_feedBackHiddenLayers.empty()) && m_feedBackLayers.empty()){
-	    this-> __computeGenPass_special_NSF_FBH(fraction, curMaxSeqLength, generationOpt);
+	    this->__computeGenPass_special_NSF_FBH(fraction, curMaxSeqLength, generationOpt);
+	    return;
 	}
 	
     }else{
@@ -2714,12 +2905,12 @@ void NeuralNetwork<TDevice>::computeForwardPassGen(const data_sets::DataSetFract
 	if(m_feedBackHiddenLayers.empty() && m_feedBackLayers.empty() && m_normflowLayers.empty()){
 	    // for normal network
 	    this->__computeGenPass_LayerByLayer(fraction, curMaxSeqLength, generationOpt);
-	    
+	    return;
 	}else if((!m_normflowLayers.empty()) &&
 		 m_feedBackHiddenLayers.empty() && m_feedBackLayers.empty()){
 	    // for normal network with normalizing flow
 	    this->__computeGenPass_NormFlow(fraction, curMaxSeqLength, generationOpt);
-	    
+	    return;
 	}else if ((!m_feedBackLayers.empty()) &&
 		  m_feedBackHiddenLayers.empty() && m_normflowLayers.empty()){
 	    // for models with feedback links (from target layer to hidden layers)
@@ -2729,18 +2920,18 @@ void NeuralNetwork<TDevice>::computeForwardPassGen(const data_sets::DataSetFract
 	    else
 		// for AR network
 		this->__computeGenPass_StepByStep_AR(fraction, curMaxSeqLength, generationOpt);
-	    
+	    return;
 	}else if ((!m_feedBackHiddenLayers.empty()) &&
 		  m_feedBackLayers.empty() && m_normflowLayers.empty()){
 	    // for RNN with feedback among hidden layers
 	    this->__computeGenPass_StepByStep_RNN_FBH(fraction, curMaxSeqLength, generationOpt);
-	    
+	    return;
 	}else{
 	    throw std::runtime_error("Error computeForwardPassGen: unsupported model");
 	}
     }
     
-    
+    // Done
 }
 
 

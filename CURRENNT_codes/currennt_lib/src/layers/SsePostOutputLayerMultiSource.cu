@@ -210,6 +210,16 @@ namespace layers {
 	    }
 	}
     }
+
+    template <typename TDevice>
+    void SsePostOutputMultiLayer<TDevice>::exportLayer(const helpers::JsonValue &layersArray,
+					 const helpers::JsonAllocator &allocator) const
+    {
+	PostOutputLayer<TDevice>::exportLayer(layersArray, allocator);
+	(*layersArray)[layersArray->Size() - 1].AddMember("sourceLayers", m_sourceLayersStr.c_str(),
+							  allocator);
+	
+    }
     
     // explicit template instantiations
     template class SsePostOutputMultiLayer<Cpu>;

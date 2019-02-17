@@ -81,4 +81,6 @@ In Optimizer.cu, the last epoch will restore the best weights
 #  this will not work is if swap will change the pointers in the future version
 
 20190215
-#1. runnningMode is not implemented for computeBackwardStepbyStep
+#1. runnningMode is not implemented for computeBackwardStepbyStep -> solved
+
+#2. dependLayerIDs() should be checked for each layer

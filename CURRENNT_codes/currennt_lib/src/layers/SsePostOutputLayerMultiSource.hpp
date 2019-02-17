@@ -91,6 +91,10 @@ namespace layers {
          */
         virtual void computeBackwardPass(const int timeStep, const int nnState);
 
+	// output the layer configuration
+	virtual void exportLayer(const helpers::JsonValue &layersArray,
+				 const helpers::JsonAllocator &allocator) const;
+
 	/*
 	 * @ linkTargetLayer
 	 */

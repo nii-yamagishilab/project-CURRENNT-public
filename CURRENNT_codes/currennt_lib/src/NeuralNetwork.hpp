@@ -106,19 +106,32 @@ class NeuralNetwork
     typedef typename Cpu::real_vector cpu_real_vector;
 
 private:
+    // vector of layer pointer
     std::vector<boost::shared_ptr<layers::Layer<TDevice> > > m_layers;
-    
+
+    // vector of skip layers pointers
     std::vector<layers::Layer<TDevice>*> m_skipAddLayers;
+
+    // vector of feedback layer index
     std::vector<int> m_feedBackLayers;
+    // vector of vae or vqvae layer index
     std::vector<int> m_vaeLayers;
+    // vector of normflow layer index
     std::vector<int> m_normflowLayers;
-    std::vector<int> m_tmpLayerIdx;
+    // vector of distilling layer index
     std::vector<int> m_distillingLayers;
+    // vector of signalgen layer index 
     std::vector<int> m_signalGenLayerId;
+    // vector of featureTransform (feattrans featsse) layer index
     std::vector<int> m_featTransNetRange;
+    // vector of feedback_hidden layer index
     std::vector<int> m_feedBackHiddenLayers;
+    // vector of feedback_hidden layer time resolutions
     std::vector<int> m_feedBackHiddenLayersTimeResos;
-    
+
+    // vector of temporary layer index used in AR dependency building
+    std::vector<int> m_tmpLayerIdx;
+
     int m_firstFeedBackLayer;
     int m_middlePostOutputLayer;
     int m_featMatchLayer;
@@ -180,6 +193,9 @@ private:
     void __computeGenPass_VAE(const data_sets::DataSetFraction &fraction,
 			      const int curMaxSeqLength, const real_t generationOpt);
 
+    void __computeGenPass_VAEwithAR(const data_sets::DataSetFraction &fraction,
+				    const int curMaxSeqLength, const real_t generationOpt);
+    
     //  step by step (for all types of AR model)
     void __computeGenPass_StepByStep_AR(const data_sets::DataSetFraction &fraction,
 					const int curMaxSeqLength, const real_t generationOpt);
