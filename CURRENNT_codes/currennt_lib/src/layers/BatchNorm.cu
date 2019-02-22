@@ -135,7 +135,11 @@ namespace {
 	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
 	{
 	    int dimIdx = t.get<1>();
-	    if (learningRate > 0.00001)
+	    
+	    // if learning rate is close to 0, don't update the mean/std
+	    if (learningRate < 0.00001 && learningRate > -0.00001)
+		return;
+	    else
 		meanStdBuf[dimIdx] += (meanStd[dimIdx] - meanStdBuf[dimIdx]) / cnt;
 	}
     };

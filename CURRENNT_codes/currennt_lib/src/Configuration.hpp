@@ -209,6 +209,8 @@ private:
     /* Add 20171007 */
     std::string m_resolutions;
 
+    int         m_ARmodelSpecialGenMode;
+    
     /**/
     int         m_vaeEncoderOutputLayer;
     std::string m_vaeCodeInputDir;
@@ -791,6 +793,8 @@ public:
     const int& dataCheckerIdx() const;
 
     const int& batchnorm_genmode() const;
+
+    const int& ARmodelSpecialGenMode() const;
 };
 
 

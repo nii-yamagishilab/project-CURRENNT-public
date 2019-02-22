@@ -195,7 +195,15 @@ private:
 
     void __computeGenPass_VAEwithAR(const data_sets::DataSetFraction &fraction,
 				    const int curMaxSeqLength, const real_t generationOpt);
-    
+
+    void __computeGenPass_VAEwithMA(const data_sets::DataSetFraction &fraction,
+				    const int curMaxSeqLength, const real_t generationOpt);
+
+    // for auto-encoder network
+    void __computeGenPass_AE(const data_sets::DataSetFraction &fraction,
+			     const int curMaxSeqLength, const real_t generationOpt);
+
+
     //  step by step (for all types of AR model)
     void __computeGenPass_StepByStep_AR(const data_sets::DataSetFraction &fraction,
 					const int curMaxSeqLength, const real_t generationOpt);

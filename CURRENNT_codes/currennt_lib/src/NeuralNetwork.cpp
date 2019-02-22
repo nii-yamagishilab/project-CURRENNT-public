@@ -2581,6 +2581,27 @@ void NeuralNetwork<TDevice>::__computeGenPass_StepByStep_AR(
 	return;
     }
 }
+template <typename TDevice>
+void NeuralNetwork<TDevice>::__computeGenPass_VAEwithMA(
+				  const data_sets::DataSetFraction &fraction,
+				  const int curMaxSeqLength, 
+				  const real_t generationOpt)
+{
+    this->postOutputLayer().loadSequences(fraction, m_trainingState);
+    this->postOutputLayer().retrieveFeedBackData();
+    this->__computeGenPass_LayerByLayer_mem(fraction, curMaxSeqLength, generationOpt);
+}
+
+template <typename TDevice>
+void NeuralNetwork<TDevice>::__computeGenPass_AE(
+				  const data_sets::DataSetFraction &fraction,
+				  const int curMaxSeqLength, 
+				  const real_t generationOpt)
+{
+    this->postOutputLayer().loadSequences(fraction, m_trainingState);
+    this->postOutputLayer().retrieveFeedBackData();
+    this->__computeGenPass_LayerByLayer(fraction, curMaxSeqLength, generationOpt);
+}
 
 template <typename TDevice>
 void NeuralNetwork<TDevice>::__computeGenPass_VAEwithAR(
@@ -2873,15 +2894,9 @@ void NeuralNetwork<TDevice>::computeForwardPassGen(const data_sets::DataSetFract
 		// VAE + AR (WaveNet model)
 		this->__computeGenPass_VAEwithAR(fraction, curMaxSeqLength, generationOpt);
 	    }else{
-		throw std::runtime_error("Error computeForwardPassGen: unsupported VAE + waveMem");
+		// VAR + MA (NSF model)
+		this->__computeGenPass_VAEwithMA(fraction, curMaxSeqLength, generationOpt);
 	    }
-	    return;
-	}
-	
-	// NSF
-	if (m_waveNetMemSaveFlag == NETWORK_WAVENET_SAVE_MA &&
-	    m_feedBackHiddenLayers.empty() && m_feedBackLayers.empty()){
-	    this->__computeGenPass_LayerByLayer_mem(fraction, curMaxSeqLength, generationOpt);
 	    return;
 	}
 
@@ -2891,13 +2906,26 @@ void NeuralNetwork<TDevice>::computeForwardPassGen(const data_sets::DataSetFract
 	    this->__computeGenPass_StepByStep_AR(fraction, curMaxSeqLength, generationOpt);
 	    return;
 	}
-
-	// NSF with Feedback conditional module
-	if (m_waveNetMemSaveFlag == NETWORK_WAVENET_SAVE_MA &&
-	    (!m_feedBackHiddenLayers.empty()) && m_feedBackLayers.empty()){
-	    this->__computeGenPass_special_NSF_FBH(fraction, curMaxSeqLength, generationOpt);
-	    return;
+	
+	// NSF
+	if (m_waveNetMemSaveFlag == NETWORK_WAVENET_SAVE_MA){
+	    // normal NSF without any feedback feedback_hidden
+	    if (m_feedBackHiddenLayers.empty() && m_feedBackLayers.empty()){
+		this->__computeGenPass_LayerByLayer_mem(fraction, curMaxSeqLength, generationOpt);
+		return;
+	    }
+	    // NSF with feedback hidden link (maybe in acoustic model part)
+	    if ((!m_feedBackHiddenLayers.empty()) && m_feedBackLayers.empty()){
+		this->__computeGenPass_special_NSF_FBH(fraction, curMaxSeqLength, generationOpt);
+		return;
+	    }
+	    // NSF with feedback link (maybe for NSF + VAE / AE)
+	    if (m_feedBackHiddenLayers.empty() && (!m_feedBackLayers.empty())){
+		this->__computeGenPass_VAEwithMA(fraction, curMaxSeqLength, generationOpt);
+	    }
 	}
+
+
 	
     }else{
 	// common models
@@ -2913,14 +2941,23 @@ void NeuralNetwork<TDevice>::computeForwardPassGen(const data_sets::DataSetFract
 	    return;
 	}else if ((!m_feedBackLayers.empty()) &&
 		  m_feedBackHiddenLayers.empty() && m_normflowLayers.empty()){
-	    // for models with feedback links (from target layer to hidden layers)
-	    if (m_vaeLayer >= 0 && config.vaeEncoderOutputLayer()>0)
-		// for VAE network
-		this->__computeGenPass_VAE(fraction, curMaxSeqLength, generationOpt);
-	    else
-		// for AR network
-		this->__computeGenPass_StepByStep_AR(fraction, curMaxSeqLength, generationOpt);
-	    return;
+
+	    if (config.ARmodelSpecialGenMode() == 1){
+		// use AR model as encoding -> decoding model (the data to be encoded/decoded
+		// are saved in target->outputs())
+		this->__computeGenPass_AE(fraction, curMaxSeqLength, generationOpt);
+		return;
+	    }else{
+		// for models with feedback links (from target layer to hidden layers)
+		if (m_vaeLayer >= 0 && config.vaeEncoderOutputLayer()>0)
+		    // for VAE network
+		    this->__computeGenPass_VAE(fraction, curMaxSeqLength, generationOpt);
+		else
+		    // for AR network
+		    this->__computeGenPass_StepByStep_AR(fraction, curMaxSeqLength, generationOpt);
+		return;
+	    }
+	    
 	}else if ((!m_feedBackHiddenLayers.empty()) &&
 		  m_feedBackLayers.empty() && m_normflowLayers.empty()){
 	    // for RNN with feedback among hidden layers

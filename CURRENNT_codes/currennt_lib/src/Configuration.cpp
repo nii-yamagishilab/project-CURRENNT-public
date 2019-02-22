@@ -230,6 +230,9 @@ Configuration::Configuration(int argc, const char *argv[])
 	("vaeInputCodeType",
 	 po::value(&m_vaePutVqIndex)->default_value(2),
 	 std::string("Type of input data to vqLayer? 0: code vector; 1: prob; 2: index").c_str())
+	("ARmodelSpecialGenMode",
+	 po::value(&m_ARmodelSpecialGenMode)->default_value(0),
+	 std::string("Use AR model as encoding-decoding model (1); default not (0)").c_str())
 	("waveNetMemSave",
 	 po::value(&m_waveNetSaveMemFlag)->default_value(1),
 	 std::string("Use memory-save mode for WaveNet in generation? (default yes)").c_str())
@@ -1639,4 +1642,8 @@ const real_t& Configuration::f0dataMean_signalgen() const{
 
 const real_t& Configuration::f0dataStd_signalgen() const{
     return m_f0dataStd_signalgen;
+}
+
+const int& Configuration::ARmodelSpecialGenMode() const{
+    return m_ARmodelSpecialGenMode;
 }
