@@ -91,6 +91,7 @@ def createMdnConfig(mdnConfigFile, MDNType, MDNTargetDim, ARDynamic=None, tieVar
 
 
 def modifyNetworkFile(inputNetwork, inputSize, outputSize, mdnconfig, outputPath, mdnPath):
+
     with open(inputNetwork, 'r') as filePtr:
         networkRaw = json.load(filePtr)
 

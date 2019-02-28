@@ -348,7 +348,7 @@ def list_file_name_in_dir(fileDir):
     """ list_file_name_in_dir(fileDir):
         return the list of file names without extension
     """                                                   
-    return [x.split('.')[0] for x in os.listdir(fileDir) if not x.startswith('.')] 
+    return [os.path.splitext(x)[0] for x in os.listdir(fileDir) if not x.startswith('.')] 
     
     
 def qdump(variable, file_name):

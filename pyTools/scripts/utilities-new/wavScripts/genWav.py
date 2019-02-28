@@ -21,9 +21,9 @@ except IndexError:
 fileList = py_rw.read_txt_list(dirPath + '/gen.scp')
 for fileName in fileList:
     fileName = fileName.rstrip('\n')
-    nameHtk  = dirPath + os.path.sep + os.path.basename(fileName).rstrip('.htk') + '.htk'
-    nameRaw  = dirPath + os.path.sep + os.path.basename(fileName).rstrip('.htk') + '.raw'
-    nameWav  = dirPath + os.path.sep + os.path.basename(fileName).rstrip('.htk') + '.wav'
+    nameHtk  = dirPath + os.path.sep + os.path.splitext(os.path.basename(fileName))[0] + '.htk'
+    nameRaw  = dirPath + os.path.sep + os.path.splitext(os.path.basename(fileName))[0] + '.raw'
+    nameWav  = dirPath + os.path.sep + os.path.splitext(os.path.basename(fileName))[0] + '.wav'
     print(nameRaw, nameWav)
     data = py_rw.read_htk(nameHtk, 'f4', 'b')
     if trimLength < data.shape[0]:

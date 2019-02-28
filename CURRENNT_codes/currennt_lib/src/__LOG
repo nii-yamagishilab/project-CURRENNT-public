@@ -84,3 +84,8 @@ In Optimizer.cu, the last epoch will restore the best weights
 #1. runnningMode is not implemented for computeBackwardStepbyStep -> solved
 
 #2. dependLayerIDs() should be checked for each layer
+
+
+20190222
+#1. Pay attention to the batchnorm in generation mode: the default is used for MA model
+and it will uses the test utterance's mean/std
