@@ -2437,7 +2437,10 @@ void NeuralNetwork<TDevice>::__computeGenPass_StepByStep_AR(
 			// special method: use one-hot or dropout
 			this->postOutputLayer().retrieveFeedBackData(timeStep/tmpOutputLayerReso,
 								     methodCode);
-			printf("%d ", timeStep);
+			// just display the timeStep a few times
+			if (timeStep % 500 == 0)
+			    std::cout << timeStep << " " << std::flush;
+			//printf("%d ", timeStep);
 		    }
 		}
 	    }
