@@ -7,6 +7,9 @@ from scipy import io
 import numpy as np
 import time
 
+import warnings
+warnings.filterwarnings("error")
+
 try:
     from binaryTools import readwriteC2 as py_rw
 except ImportError:
@@ -50,28 +53,34 @@ def getMeanStd(fileScp, fileDim, stdFloor=0.00001, f0Feature=0):
             # parallel algorithm
             # https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
             dataCount = data.shape[0]
-            if len(data.shape) == 1:
-                meanNew = data.mean()
-                stdNew = data.var()
-            else:
-                meanNew = data.mean(axis=0)
-                stdNew = data.var(axis=0)
-                
-            deltaMean = meanNew - meanBuf
-            meanBuf = meanBuf + deltaMean * (float(dataCount) / (timeStep + dataCount))
-            
-            if timeStep == 0:
+
+            try:
                 if len(data.shape) == 1:
-                    stdBuf[0] = stdNew
+                    meanNew = data.mean()
+                    stdNew = data.var()
                 else:
-                    stdBuf = stdNew
-            else:
-                stdBuf = (stdBuf * (float(timeStep) / (timeStep + dataCount)) +
-                          stdNew * (float(dataCount)/ (timeStep + dataCount)) +
-                          deltaMean * deltaMean  / (float(dataCount)/timeStep +
-                                                    float(timeStep)/dataCount + 2.0))
+                    meanNew = data.mean(axis=0)
+                    stdNew = data.var(axis=0)
+
+                deltaMean = meanNew - meanBuf
+                meanBuf = meanBuf + deltaMean * (float(dataCount) / (timeStep + dataCount))
             
-            timeStep += data.shape[0]
+                if timeStep == 0:
+                    if len(data.shape) == 1:
+                        stdBuf[0] = stdNew
+                    else:
+                        stdBuf = stdNew
+                else:
+                    stdBuf = (stdBuf * (float(timeStep) / (timeStep + dataCount)) +
+                              stdNew * (float(dataCount)/ (timeStep + dataCount)) +
+                              deltaMean * deltaMean  / (float(dataCount)/timeStep +
+                                                        float(timeStep)/dataCount + 2.0))
+                    
+                timeStep += data.shape[0]
+            except RuntimeWarning:
+                print("\t%s has ill data. Please consider remove it" % (fileName))
+                
+            
     sys.stdout.write('\n')
     stdBuf = np.sqrt(stdBuf)
 

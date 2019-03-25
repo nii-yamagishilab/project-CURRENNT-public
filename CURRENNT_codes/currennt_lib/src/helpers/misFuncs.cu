@@ -45,6 +45,11 @@
 /* ***** Functions for string process ***** */
 namespace misFuncs {
     
+std::string& GDBStringWrapper(const char* s)
+{
+    return *(new std::string(s));
+}
+    
 void ParseStrOpt(const std::string stringOpt, std::vector<std::string> &optVec,
 		 const std::string para){
     std::vector<std::string> tempArgs;
@@ -237,6 +242,57 @@ void PrintVecBinD(Gpu::int_vector *temp){
     }
 }
 
+void PrintVecBinDTo(Gpu::real_vector *temp, std::string output_path){
+    std::string filePath(output_path);
+    std::ofstream ofs(filePath.c_str(), std::ofstream::binary);
+    if (!ofs.good()){
+	std::cout << "Fail to open " << filePath << std::endl;
+	return;
+    }else{
+	Cpu::real_vector tempBuf = *temp;
+	std::vector<real_t> tempVec(tempBuf.begin(), tempBuf.end());
+	for(int i=0; i<tempVec.size(); i++){
+	    ofs.write((char *)&(tempVec[i]), sizeof(real_t));
+	}
+	ofs.close();
+	std::cout << "Save to " << filePath << std::endl;
+    }
+}
+
+void PrintVecBinDTo(Gpu::complex_vector *temp, std::string output_path){
+    std::string filePath(output_path);
+    std::ofstream ofs(filePath.c_str(), std::ofstream::binary);
+    if (!ofs.good()){
+	std::cout << "Fail to open " << filePath << std::endl;
+	return;
+    }else{
+	Cpu::complex_vector tempBuf = *temp;
+	std::vector<complex_t> tempVec(tempBuf.begin(), tempBuf.end());
+	for(int i=0; i<tempVec.size(); i++){
+	    ofs.write((char *)&(tempVec[i].x), sizeof(real_t));
+	    ofs.write((char *)&(tempVec[i].y), sizeof(real_t));
+	}
+	ofs.close();
+	std::cout << "Save to " << filePath << std::endl;
+    }
+}
+
+void PrintVecBinDTo(Gpu::int_vector *temp, std::string output_path){
+    std::string filePath(output_path);
+    std::ofstream ofs(filePath.c_str(), std::ofstream::binary);
+    if (!ofs.good()){
+	std::cout << "Fail to open " << filePath << std::endl;
+	return;
+    }else{
+	Cpu::real_vector tempBuf = *temp;
+	std::vector<real_t> tempVec(tempBuf.begin(), tempBuf.end());
+	for(int i=0; i<tempVec.size(); i++){
+	    ofs.write((char *)&(tempVec[i]), sizeof(real_t));
+	}
+	ofs.close();
+	std::cout << "Save to " << filePath << std::endl;
+    }
+}
 void PrintVecBinH(Cpu::real_vector &temp){
     std::string filePath("./temp.bin");
     std::ofstream ofs(filePath.c_str(), std::ofstream::binary);

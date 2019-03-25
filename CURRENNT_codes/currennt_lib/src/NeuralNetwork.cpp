@@ -589,6 +589,7 @@ namespace {
 		layerType == "skipini"           ||
 		layerType == "skipcat"           ||
 		layerType == "skipweightadd"     ||
+		layerType == "weighted_merge"    ||
 		layerType == "skippara_logistic" ||
 		layerType == "skippara_relu"     || 
 		layerType == "skippara_tanh"     ||
@@ -604,6 +605,7 @@ namespace {
 		layerType == "skipini"           ||
 		layerType == "skipcat"           ||
 		layerType == "skipweightadd"     ||
+		layerType == "weighted_merge"    ||
 		layerType == "normflow"          ||
 		layerType == "structTrans"       ||
 		layerType == "distilling"        ||

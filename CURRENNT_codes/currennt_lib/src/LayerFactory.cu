@@ -65,6 +65,7 @@
 #include "layers/SkipWeightAddLayer.hpp"
 #include "layers/FilteringLayer.hpp"
 #include "layers/SkipForFeatTransform.hpp"
+#include "layers/SkipMergeDim.hpp"
 #include "layers/SsePostOutputLayerForFeatTransform.hpp"
 #include "layers/FeatExtract.hpp"
 #include "layers/GatedActLayer.hpp"
@@ -277,6 +278,9 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createSkipNonParaLayer(
     }else if (layerType == "skipweightadd"){
 	return new SkipWeightAddLayer<TDevice>(layerChild, weightsSection,
 					       precedingLayers, maxSeqLength, layerID);
+    }else if (layerType == "weighted_merge"){
+	return new SkipMergeDim<TDevice>(layerChild, weightsSection,
+					 precedingLayers, maxSeqLength, layerID);
     }else if (layerType == "normflow"){
 	return new NormFlowLayer<TDevice>(layerChild, weightsSection,
 					  precedingLayers, maxSeqLength, layerID);

@@ -36,30 +36,35 @@
 
 
 namespace misFuncs{
-/* ***** Functions for string process ***** */
-void   ParseStrOpt(const std::string stringOpt, std::vector<std::string> &optVec,
-		   const std::string para="_");
-void   ParseIntOpt(const std::string stringOpt,   Cpu::int_vector &optVec);
-void   ParseFloatOpt(const std::string stringOpt, Cpu::real_vector &optVec);
-
-/* ***** Functions for vector process ***** */
-int    SumCpuIntVec(Cpu::int_vector &temp);
-int    MaxCpuIntVec(Cpu::int_vector &temp);
-void   PrintVecBinH(Cpu::real_vector &temp);
-void   PrintVecBinH(Cpu::complex_vector &temp);
-void   PrintVecBinH(Cpu::int_vector &temp);
-void   PrintVecBinD(Gpu::real_vector &temp);
-void   PrintVecBinD(Gpu::int_vector &temp);
-void   PrintVecBinD(Gpu::complex_vector &temp);
-void   PrintVecBinD(Gpu::real_vector *temp);
-void   PrintVecBinD(Gpu::int_vector *temp);
-void   PrintVecBinD(Gpu::complex_vector *temp);
-void   AppendVecBin(Gpu::real_vector &temp);
-void   AppendVecBin(Gpu::int_vector &temp);
-void   AppendVecBin(Cpu::real_vector &temp);
-void   AppendVecBin(Cpu::int_vector &temp);
-
-
+    /* ***** Functions for string process ***** */
+    void   ParseStrOpt(const std::string stringOpt, std::vector<std::string> &optVec,
+		       const std::string para="_");
+    void   ParseIntOpt(const std::string stringOpt,   Cpu::int_vector &optVec);
+    void   ParseFloatOpt(const std::string stringOpt, Cpu::real_vector &optVec);
+    
+    /* ***** Functions for vector process ***** */
+    int    SumCpuIntVec(Cpu::int_vector &temp);
+    int    MaxCpuIntVec(Cpu::int_vector &temp);
+    void   PrintVecBinH(Cpu::real_vector &temp);
+    void   PrintVecBinH(Cpu::complex_vector &temp);
+    void   PrintVecBinH(Cpu::int_vector &temp);
+    void   PrintVecBinD(Gpu::real_vector &temp);
+    void   PrintVecBinD(Gpu::int_vector &temp);
+    void   PrintVecBinD(Gpu::complex_vector &temp);
+    void   PrintVecBinD(Gpu::real_vector *temp);
+    void   PrintVecBinD(Gpu::int_vector *temp);
+    void   PrintVecBinD(Gpu::complex_vector *temp);
+    void   PrintVecBinDTo(Gpu::real_vector *temp, std::string output_path);
+    void   PrintVecBinDTo(Gpu::int_vector *temp, std::string output_path);
+    void   PrintVecBinDTo(Gpu::complex_vector *temp, std::string output_path);
+    void   AppendVecBin(Gpu::real_vector &temp);
+    void   AppendVecBin(Gpu::int_vector &temp);
+    void   AppendVecBin(Cpu::real_vector &temp);
+    void   AppendVecBin(Cpu::int_vector &temp);
+    
+    std::string& GDBStringWrapper(const char* s);
+	
+    
 /* ***** Functions for training process ***** */
 int    flagUpdateDiscriminator(const int epoch, const int frac);
 

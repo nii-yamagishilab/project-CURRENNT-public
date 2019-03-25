@@ -698,14 +698,6 @@ int trainerMain(const Configuration &config)
                     // write one output file per sequence
                     for (int psIdx = 0; psIdx < (int)outputs.size(); ++psIdx) {
                         if (outputs[psIdx].size() > 0) {
-                            // replace_extension does not work in all Boost versions ...
-                            //std::string seqTag = frac->seqInfo(psIdx).seqTag;
-                            /*size_t dot_pos = seqTag.find_last_of('.');
-                            if (dot_pos != std::string::npos && dot_pos > 0) {
-                                seqTag = seqTag.substr(0, dot_pos);
-                            }*/
-                            //seqTag += ".htk";
-                            //std::cout << seqTag << std::endl;
 			    
 			    std::string seqTagSuf;
 			    if (htkoutput) {seqTagSuf = ".htk";} else{seqTagSuf = ".bin";}
@@ -716,6 +708,7 @@ int trainerMain(const Configuration &config)
 				seqPath.relative_path().parent_path();
                             boost::filesystem::create_directories(oPath);
                             boost::filesystem::path filepath = oPath / filename;
+			    
                             std::ofstream file(filepath.string().c_str(), 
 					       std::ofstream::out | std::ios::binary);
 

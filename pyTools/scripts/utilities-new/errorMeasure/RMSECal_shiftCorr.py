@@ -84,8 +84,11 @@ def RMSECalcore(file1, file2, dim):
                 
         else:
             print('Only for F0 data')
-            
-        if v_cover > max_v_cover:
+
+        # We can select the shift point by number of coverage
+        #if v_cover > max_v_cover:
+        #  or by max Corr
+        if corr[0] > max_corr:
             max_corr = corr[0]
             max_corr_buf = corr
             min_rmse_buf = pow2
@@ -134,7 +137,7 @@ def RMSECal(scp1, dim, g_resolu, g_escape):
                     #F0:
                     errorSum[fileNM,0] = np.sqrt(errorSum[fileNM,0]/voiceFrame)
                     errorSum[fileNM,1] = errorSum[fileNM,1]/frame
-                    print(file1, errorSum[fileNM,1], corr[0])
+                    #print(file1, errorSum[fileNM,1], corr[0])
                 else:
                     errorSum[fileNM,:] = np.sqrt(errorSum[fileNM,:]/frame)
                 

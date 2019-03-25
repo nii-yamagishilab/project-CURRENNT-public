@@ -2,18 +2,12 @@
 
 LEV=26
 
-DATA_DIR=$1
-TEMP=$2
+file_name=$1
+SCRIPT_DIR=$2
+TEMP=$3
 
-SCRIPT_DIR=/work/smg/wang/GIT/TEAM/project-CURRENNT-public/pyTools/scripts/utilities-new/wavScripts
-
-cd ${DATA_DIR}
-ls ./ | grep wav | grep -v "norm.wav" | parallel sh ${SCRIPT_DIR}/sub_normRMSE.sh {} ${SCRIPT_DIR} ${TEMP}
-
-exit
-
-for file_name in `ls ./ | grep wav`
-do
+if [ -e ${file_name} ];
+then
     echo ${file_name}
     basename=`basename ${file_name} .wav`
     INPUT=${file_name}
@@ -21,7 +15,7 @@ do
 
     SOX=sox
     SV56=/work/smg/wang/TOOL/bin/sv56demo
-    SCALE=/work/smg/wang/GIT/TEAM/project-CURRENNT-public/pyTools/scripts/utilities-new/wavScripts/03_scale.py
+    SCALE=${SCRIPT_DIR}/03_scale.py
     
     RAWORIG=${OUTPUT}.raw
     RAWNORM=${OUTPUT}.raw.norm
@@ -63,5 +57,5 @@ do
     then
 	rm ${INPUT}
     fi
-done
+fi
 
