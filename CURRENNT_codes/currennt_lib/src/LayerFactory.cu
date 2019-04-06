@@ -71,6 +71,7 @@
 #include "layers/GatedActLayer.hpp"
 #include "layers/FeedBackHiddenLayer.hpp"
 #include "layers/SsePostOutputLayerMultiSource.hpp"
+#include "layers/SincFilterLayer.hpp"
 #include <stdexcept>
 
 
@@ -181,6 +182,9 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
     else if (layerType == "feedback_hidden")
     	return new FeedBackHiddenLayer<TDevice>(layerChild, weightsSection,
 						*precedingLayer, maxSeqLength, layerID);
+    else if (layerType == "sinc_filter")
+    	return new SincFilterLayer<TDevice>(layerChild, weightsSection,
+					    *precedingLayer, maxSeqLength, layerID);
     
     /*
     // not implemented yet
