@@ -48,6 +48,7 @@ namespace layers {
 	typedef typename TDevice::pattype_vector pattype_vector;
 	
 	int m_num_tap;                      // number of taps
+	int m_initSmooth;                   // 
 	
 	real_vector m_lp_coeff;             // filter coefficients of low-pass
 	real_vector m_hp_coeff;             // filter coefficients of high-pass

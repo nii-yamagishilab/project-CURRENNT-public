@@ -81,6 +81,7 @@ namespace {
 	int        filterShareAcrossDim;
 	int        layerSize;
 	int        parallel;
+	int        initSmooth;
 	
 	real_t     *inputData;
 	real_t     *filterCoeffs;
@@ -116,8 +117,15 @@ namespace {
 		    filterCoeff = filterCoeffs[dimIdx * filterLength + idx];
 		
 		if ((BlockIdx - idx) >= 0){
-		    tmp += (inputData[((BlockIdx - idx) * parallel + BlockInIdx) * layerSize + dimIdx]
+		    // when there is data in the previous idx-th step
+		    tmp += (inputData[((BlockIdx-idx)*parallel + BlockInIdx)*layerSize + dimIdx]
 			    * filterCoeff);
+		}else if (initSmooth){
+		    // If there is no data (the begining of the sequence)
+		    //   we can use the first value 
+		    tmp += (inputData[BlockInIdx * layerSize + dimIdx] * filterCoeff);
+		}else{
+		    // do nothing
 		}
 	    }
 	    t.get<0>() = tmp;
@@ -133,6 +141,7 @@ namespace {
 	int        layerSize;
 	int        maxLength;
 	int        parallel;
+	
 	real_t     *inputErrors;
 	real_t     *filterCoeffs;
 	const char *patTypes;   
@@ -188,6 +197,7 @@ namespace {
 	int        inputLayerSize;
 	int        filterNum;
 	int        parallel;
+	int        initSmooth;
 	
 	real_t     *inputData;
 	real_t     *filterCoeffs;
@@ -242,6 +252,10 @@ namespace {
 		if ((BlockIdx - idx) >= 0){
 		    tmp += (inputData[((BlockIdx-idx)*parallel+BlockInIdx)*inputLayerSize+dimIdx]
 			    * filterCoeff);
+		}else if (initSmooth){
+		    tmp += (inputData[BlockInIdx * inputLayerSize + dimIdx] * filterCoeff);
+		}else{
+		    // nothing
 		}
 	    }
 	    t.get<0>() = tmp;
@@ -380,7 +394,9 @@ namespace layers {
 			       ((*layerChild)["filterCoeffs"].GetString()) : "");
 	m_filter_length = ((layerChild->HasMember("filterLength")) ? 
 			       ((*layerChild)["filterLength"].GetInt()) : 0);
-
+	m_filter_initial_keep = ((layerChild->HasMember("initialCondSmooth")) ? 
+			       ((*layerChild)["initialCondSmooth"].GetInt()) : 0);
+	
 	if (this->size() == this->precedingLayer().size()){
 	    // only 1 group of filter
 	    m_filter_mode = FILTERING_LAYER_MODE_NONE_SELECTIVE;
@@ -471,6 +487,7 @@ namespace layers {
 	    fn1.filterCoeffs  = helpers::getRawPointer(this->m_filter_coeffs);
 	    fn1.inputData = helpers::getRawPointer(this->precedingLayer().outputs());
 	    fn1.patTypes  = helpers::getRawPointer(this->patTypes());
+	    fn1.initSmooth  = this->m_filter_initial_keep;
 	    
 	    int n = timeLength * this->size();
 	    thrust::for_each(
@@ -491,7 +508,7 @@ namespace layers {
 	    fn1.filterNum       = m_filter_num;
 	    fn1.filterLength    = m_filter_length;
 	    fn1.parallel        = this->parallelSequences();
-	    
+	    fn1.initSmooth      = this->m_filter_initial_keep;	    
 	    fn1.filterShareAcrossDim = this->m_filter_across_dim;
 	    
 	    fn1.filterCoeffs  = helpers::getRawPointer(this->m_filter_coeffs);
@@ -596,6 +613,10 @@ namespace layers {
 							  allocator);
 	(*layersArray)[layersArray->Size() - 1].AddMember("filterCoeffs", m_filter_coeffs_str.c_str(),
 							  allocator);
+	if (m_filter_initial_keep)
+	    (*layersArray)[layersArray->Size() - 1].AddMember("initialCondSmooth",
+							      m_filter_initial_keep,
+							      allocator);
 	
     }
 

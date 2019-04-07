@@ -59,6 +59,8 @@ namespace {
 
 	int         output_dim;
 	int         parallel;
+	int         initSmooth;
+	
 	const char *patTypes;	
 	
 	int         filterLength;
@@ -101,6 +103,11 @@ namespace {
 		    tmp += (input[((BlockIdx - idx) * parallel + BlockInIdx) * input_dim + dimIdx
 				      + input_dim_shift]
 			    * filterCoeff);
+		}else if (initSmooth){
+		    tmp += (input[BlockInIdx * input_dim + dimIdx + input_dim_shift]
+			    * filterCoeff);
+		}else{
+		    // nothing
 		}
 	    }
 	    t.get<0>() = tmp;
@@ -392,6 +399,9 @@ namespace layers {
 		     (static_cast<int>((*layerChild)["filterLength"].GetInt())) :
 		     SINCFILTER_DEFAULT_FILTERL_ENGTH);
 	
+	m_initSmooth = ((layerChild->HasMember("initialCondSmooth")) ? 
+			((*layerChild)["initialCondSmooth"].GetInt()) : 0);
+
 	if (m_num_tap % 2 == 0)
 	    m_num_tap = m_num_tap / 2 * 2 + 1; 
 	    
@@ -501,7 +511,8 @@ namespace layers {
 	    fn1.input_dim    = this->precedingLayer().size();
 	    fn1.input        = helpers::getRawPointer(this->precedingLayer().outputs());
 	    fn1.filterLength = m_num_tap;
-
+	    fn1.initSmooth   = m_initSmooth;
+	    
 	    int n = timeLength * this->size();
 	    
 	    // low-pass filtering part
@@ -658,6 +669,10 @@ namespace layers {
     {
         TrainableLayer<TDevice>::exportLayer(layersArray, allocator);
 	(*layersArray)[layersArray->Size() - 1].AddMember("filterLength", m_num_tap, allocator);
+
+	if (m_initSmooth)
+	    (*layersArray)[layersArray->Size() - 1].AddMember("initialCondSmooth", m_initSmooth,
+							      allocator);
     }
 
 

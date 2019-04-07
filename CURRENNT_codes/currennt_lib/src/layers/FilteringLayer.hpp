@@ -50,6 +50,8 @@ namespace layers{
 	int             m_filter_across_dim;   // whether share the single filter for each feat dim?
 	int             m_filter_length;       // length of each filter
 	
+	int             m_filter_initial_keep; // whether to keep the initial value
+	
 	std::string     m_filter_coeffs_str;   // input string of filter coeffs
 	real_vector     m_filter_coeffs;       // buffer to store coeffs
 	cpu_real_vector m_filter_coeffs_H;     
