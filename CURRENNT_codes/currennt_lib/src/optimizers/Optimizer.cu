@@ -126,6 +126,8 @@ namespace optimizers {
 	    error    += errorTemp1;
 	    secError += errorTemp2;
 
+	    // Delete this part. Now we use mdn-softmax for classification
+	    /*
 	    // calculate the classification error if any of the layers used
             if (dynamic_cast<layers::BinaryClassificationLayer<TDevice>*>(
 			&m_neuralNetwork.postOutputLayer()))
@@ -135,7 +137,8 @@ namespace optimizers {
 			&m_neuralNetwork.postOutputLayer()))
                 classError -= (real_t)static_cast<layers::MulticlassClassificationLayer<TDevice>&>(
 			m_neuralNetwork.postOutputLayer()).countCorrectClassifications();
-            
+	    */
+	    
 	    // backward computation and parameter updateing
             if (calcWeightUpdates) {
 		

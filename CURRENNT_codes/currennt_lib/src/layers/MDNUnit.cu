@@ -2571,7 +2571,7 @@ namespace {
 	}
     };
 
-
+    /*
     struct SimpleDetectWaveform
     {
         int     paradim;
@@ -2605,6 +2605,7 @@ namespace {
 	    }	    
         }
     };
+    */
     
     struct SamplingSoftmax
     {

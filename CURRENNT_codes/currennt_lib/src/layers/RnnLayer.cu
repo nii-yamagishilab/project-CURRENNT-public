@@ -212,6 +212,7 @@ namespace {
         }
     };
 
+    /*
     struct CreateH2HClockRnn{
 	int     featDim;                  // both row and col
 	int     bandNum;
@@ -237,7 +238,7 @@ namespace {
 		*(targetMatrix+idx) = (rows==cols)?(1.0):0.0;
 	    }
 	}
-    };
+    };*/
     
     struct CleanUnitDeltasClockRnn{
 	const bool   *skipCRNN;     // whether this step should be skipped

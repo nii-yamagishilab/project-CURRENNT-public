@@ -144,7 +144,8 @@ namespace {
 	}
     };
     
-    
+
+    /*
     struct ComputeBatchMeanStd
     {
 	int layerSize;
@@ -203,7 +204,7 @@ namespace {
 						   meanStdBuf[dimIdx + layerSize]) / batchCnt;
 	    }
 	}
-    }; 
+	};  */
     
 
 
@@ -241,7 +242,7 @@ namespace {
     };
 
 
-    
+    /*
     struct ComputeBatchGradient_alphabeta
     {
 	int     layerSize;
@@ -279,7 +280,7 @@ namespace {
 	    grad[dimIdx + 3*layerSize] = 0;
 	    
 	}
-    };
+	}; */
     
     
     struct ComputeBatchGradient_output
