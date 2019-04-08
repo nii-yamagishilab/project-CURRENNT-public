@@ -195,7 +195,7 @@ namespace {
 	    real_t freq = w_buf[timeIdx * w_buf_dim + w_buf_shift];
 
 	    // filter range [-half_length, half_length]
-	    int half_length = (filter_length - 1) / 2; 
+	    int    half_length = (filter_length - 1) / 2; 
 
 	    
 	    int    tap_idx;  // index of filter \in [-half_length, half_length]
@@ -291,66 +291,66 @@ namespace {
 	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
 	{
 	    int timeIdx = t.get<1>();
-
+	    
 	    int BlockIdx   = timeIdx / parallel;     // time index (considering parallel mode)
 	    int BlockInIdx = timeIdx % parallel;     // index within a parallel block
-
+	    
 	    // cut-off frequency
 	    real_t freq = w_buf[timeIdx * w_buf_dim + w_buf_shift];
-
+	    
 	    // half length of the filter
 	    int half_length = (filter_length - 1) / 2;
-
+	    
 	    // scaling factor (see function freqToFilters)
-	    int scale_lp = scale_buf[timeIdx * 2 + 0];  // scaling factor, lp
-	    int scale_hp = scale_buf[timeIdx * 2 + 1];  // scaling factor, hp
-
+	    real_t scale_lp = scale_buf[timeIdx * 2 + 0];  // scaling factor, lp
+	    real_t scale_hp = scale_buf[timeIdx * 2 + 1];  // scaling factor, hp
+	    
 	    // void time step
 	    if (patTypes[timeIdx] == PATTYPE_NONE){
 		w_grad_buf[timeIdx * w_buf_dim + w_buf_shift] = 0.0;
 		return;
 	    }		
-
+	    
 	    //
 	    real_t grad = 0;          // grad w.r.t. w
-	    real_t lp_sub_grad = 0;   // intermediate buffer
-	    real_t hp_sub_grad = 0;   // intermediate buffer
 	    real_t grad_lp_w = 0;     // \partial_h^{lp} / \partial_w
 	    real_t grad_hp_w = 0;     // \partial_h^{hp} / \partial_w
-
+	    
 	    real_t lp_coef_val = 0;   // value of lp filter coefficient
 	    real_t hp_coef_val = 0;   // value of hp filter coefficient
 	    
 	    real_t tmp_value;
 	    int    tap_idx;
 
+
 	    // \partial_E / \partial_w_t = \partial_E / \partial_o_t *
 	    //    (  \sum_m=0^{filter_length} o^{lp}_[t-m] * \partial_h^{lp}_m,t / \partial_w_t
 	    //     + \sum_m=0^{filter_length} o^{hp}_[t-m] * \partial_h^{hp}_m,t / \partial_w_t )
 	    // 
+
+	    // intermediate gradients
+	    real_t lp_sub_grad = 0;  
+	    real_t hp_sub_grad = 0;  
+	    for (int buf_idx_2 = 0; buf_idx_2 < filter_length; buf_idx_2++){
+		tap_idx = buf_idx_2 - half_length;
+		    
+		// cos(pi w n) * hamming(n)
+		tmp_value = cos(PI_DEFINITION * freq * tap_idx) *
+		    (0.54 + 0.46 * cos(2.0 * PI_DEFINITION * tap_idx / filter_length));
+		    
+		lp_sub_grad += tmp_value;
+		if (tap_idx % 2 ==0)
+		    hp_sub_grad += tmp_value;
+		else
+		    hp_sub_grad -= tmp_value;	
+	    }
+		
 	    for (int buf_idx = 0; buf_idx < filter_length; buf_idx++){
 
 		// drop the time index, ^{lp},^{hp}
 		// \partial_h_m/ \partial_w = 
 		//  sum_{n}\partial_h_m/\partial_h_n^{unscaled} * \partial_h_n^{unscaled}/\partial_w
 		
-		lp_sub_grad = 0;
-		hp_sub_grad = 0;
-		for (int buf_idx_2 = 0; buf_idx_2 < filter_length; buf_idx_2++){
-		    tap_idx = buf_idx_2 - half_length;
-
-		    // cos(pi w n) * hamming(n)
-		    tmp_value = cos(PI_DEFINITION * freq * tap_idx) *
-			(0.54 + 0.46 * cos(2.0 * PI_DEFINITION * tap_idx / filter_length));
-		    
-		    lp_sub_grad += tmp_value;
-		    if (tap_idx % 2 ==0)
-			hp_sub_grad += tmp_value;
-		    else
-			hp_sub_grad -= tmp_value;
-			
-		}
-
 		// \partial_h^{lp} / \partial_w
 		// \partial_h^{hp} / \partial_w
 		tap_idx = buf_idx - half_length;
@@ -367,7 +367,6 @@ namespace {
 		    grad += lp_sig_out[(BlockIdx - buf_idx) * parallel + BlockInIdx] * grad_lp_w;
 		    grad += hp_sig_out[(BlockIdx - buf_idx) * parallel + BlockInIdx] * grad_hp_w;
 		}
-		
 	    }
 	    w_grad_buf[timeIdx * w_buf_dim + w_buf_shift] = grad * t.get<0>();
 	    
