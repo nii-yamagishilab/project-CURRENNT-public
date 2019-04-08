@@ -643,10 +643,10 @@ namespace layers {
 	    
 	    thrust::for_each(
                thrust::make_zip_iterator(
-		  thrust::make_tuple(this->outputs().begin(),
+		  thrust::make_tuple(this->outputErrors().begin(),
 				     thrust::counting_iterator<int>(0))),
 	       thrust::make_zip_iterator(
-		  thrust::make_tuple(this->outputs().begin()      + timeLength,
+		  thrust::make_tuple(this->outputErrors().begin()      + timeLength,
 				     thrust::counting_iterator<int>(0) + timeLength)),
 	       fn3);
 	    
