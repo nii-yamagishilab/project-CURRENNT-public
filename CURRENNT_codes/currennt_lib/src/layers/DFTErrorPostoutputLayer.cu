@@ -52,12 +52,14 @@
 #define DFTERRORPOST_HNM_MODEL_2 2
 
 // to be integrated with signalgen F0 U/V
-#define DFTERRORUV 10
+#define DFTERRORUV       10
 #define DFTERRORUVSEARCH 2
-#define DFTERROR_PI 3.141215
+#define DFTERROR_PI      3.141215
 
 #define DFTMODEFORMULTIDIMSIGNAL_NONE    0
 #define DFTMODEFORMULTIDIMSIGNAL_CONCATE 1
+
+#define DFTPREEMPHASISCOEFF 0.94
 
 namespace internal{
 namespace{
@@ -246,6 +248,34 @@ namespace{
         }
     };
 
+    struct preemphasis
+    {
+	
+	real_t *sourceData;
+	int     parallel;
+	
+        const char *patTypes;
+
+        __host__ __device__ void operator() (const thrust::tuple<real_t&, int> &values) const
+        {
+            // unpack the tuple
+            int timeIdx      = values.get<1>();
+	    int blockIdx     = values.get<1>() / parallel;
+	    int blockIntIdx  = values.get<1>() % parallel;
+
+            if (patTypes[timeIdx] == PATTYPE_NONE){
+		// dummy data point
+		values.get<0>() = 0.0;
+	    }else{
+		if ((blockIdx - 1)>=0)
+		    values.get<0>() = sourceData[timeIdx] -
+			DFTPREEMPHASISCOEFF * sourceData[(blockIdx-1) * parallel + blockIntIdx];
+		else
+		    values.get<0>() = sourceData[timeIdx];
+	    }
+        }
+    };
+
     
 }
 }
@@ -322,6 +352,9 @@ namespace layers{
 	m_modeMultiDimSignal = (layerChild->HasMember("multiDimSignalMode") ? 
 				static_cast<int>((*layerChild)["multiDimSignalMode"].GetInt()) :
 				DFTMODEFORMULTIDIMSIGNAL_NONE);
+
+	m_preEmphasis = (layerChild->HasMember("preEmphasisNaturalWav") ? 
+			 static_cast<int>((*layerChild)["preEmphasisNaturalWav"].GetInt()) : 0);
 
 	int maxSeqLength = this->__vMaxSeqLength();
 	
@@ -496,7 +529,11 @@ namespace layers{
 	}else{
 	    m_modeChangeDataBuf.clear();
 	}
-	
+
+	if (m_preEmphasis){
+	    printf("\n\tNatural waveform will be pre-emphasis before evaluating.");
+	    printf("\n\tRemember to de-emphasis the generated waveform");
+	}
     }
 
     
@@ -518,7 +555,29 @@ namespace layers{
 	
 	int timeLength = this->__vCurMaxSeqLength();
 	
+	if (m_preEmphasis){
+	    // pre-emphasis the natural waveform before evaluating
+	    {
+		internal::preemphasis fn1;
+		fn1.sourceData = helpers::getRawPointer(this->outputs());
+		fn1.parallel   = this->parallelSequences();
+		fn1.patTypes   = helpers::getRawPointer(this->patTypes());
 
+		// use the buffer of outputErrors to store results
+		thrust::for_each(
+		   thrust::make_zip_iterator(
+			thrust::make_tuple(this->outputErrors().begin(),
+					   thrust::counting_iterator<int>(0))),
+		   thrust::make_zip_iterator(
+			thrust::make_tuple(this->outputErrors().begin()            + timeLength,
+					   thrust::counting_iterator<int>(0)  + timeLength)),
+		   fn1);
+		this->outputs() = this->outputErrors();
+		thrust::fill(this->outputErrors().begin(), this->outputErrors().end(), 0.0);
+	    }
+	}
+
+	
 	if (m_modeMultiDimSignal == DFTMODEFORMULTIDIMSIGNAL_CONCATE){
 	    // If the output of previous layer is multi-dimensional signal,
 	    // convert the N * T input data matrix into a 1-dim signal of length NT.
@@ -1125,6 +1184,9 @@ namespace layers{
 
 	if (m_specDisType != FFTMAT_SPECTYPE_MSE)
 	    (*layersArray)[layersArray->Size() - 1].AddMember("specDisType", m_specDisType,
+							      allocator);
+	if (m_preEmphasis)
+	    (*layersArray)[layersArray->Size() - 1].AddMember("preEmphasisNaturalWav", m_preEmphasis,
 							      allocator);
 	
 	if (m_gamma > 0.0){

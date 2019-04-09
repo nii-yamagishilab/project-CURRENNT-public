@@ -51,6 +51,8 @@ namespace layers {
 	real_t             m_gamma;             // Weight for DFT amplitude 
 	real_t             m_zeta;              // Weight for DFT phase
 
+	int                m_preEmphasis;       // Whether preEmphasis the natural speech?
+	
 	int                m_specDisType;       // Type of spectral amplitude distance
 	
 	// Short time STFT part (configurable))
