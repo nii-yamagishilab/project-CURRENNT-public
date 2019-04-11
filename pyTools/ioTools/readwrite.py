@@ -120,7 +120,7 @@ def read_htk(filename, format='f4', end='l'):
         format = '='+format
     """    
     if 'f' in format:
-        sample_ize = head_info['SampleSize'][0]/4
+        sample_ize = int(head_info['SampleSize'][0]/4)
     else:
         print("Error in read_htk: input should be float32")
         return False

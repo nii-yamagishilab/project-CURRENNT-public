@@ -267,6 +267,11 @@ namespace{
 		// dummy data point
 		values.get<0>() = 0.0;
 	    }else{
+		// o[n] = s[n] - 0.94 * s[n-1]
+		// o[n]: values.get<0>()
+		// s[n]: sourceData[timeIdx]
+		// s[n-1]: sourceData[(blockIdx-1) * parallel + blockIntIdx];
+		
 		if ((blockIdx - 1)>=0)
 		    values.get<0>() = sourceData[timeIdx] -
 			DFTPREEMPHASISCOEFF * sourceData[(blockIdx-1) * parallel + blockIntIdx];
@@ -276,6 +281,30 @@ namespace{
         }
     };
 
+    struct deemphasis
+    {
+	
+	real_t     *sourceData;
+	int         parallel;
+	int         maxWaveLength;
+        const char *patTypes;
+
+        __host__ __device__ void operator() (const thrust::tuple<real_t&, int> &values) const
+        {
+	    // de-emphasis is autoregressive, cannot be parallelized
+	    // but can be parallelized cross different waveforms in the batch
+	    
+	    int blockIdx = values.get<1>();
+	    for (int timeIdx = 0; timeIdx < maxWaveLength; timeIdx++){
+		if (timeIdx > 0 && patTypes[timeIdx * parallel + blockIdx] != PATTYPE_NONE){
+		    sourceData[timeIdx * parallel + blockIdx] =
+			sourceData[timeIdx * parallel + blockIdx] +
+			DFTPREEMPHASISCOEFF * sourceData[(timeIdx - 1) * parallel + blockIdx];
+		}
+		
+	    }
+        }
+    };
     
 }
 }
@@ -335,7 +364,9 @@ namespace layers{
     template <typename TDevice>
     void DFTPostoutputLayer<TDevice>::__loadOpts(const helpers::JsonValue &layerChild)
     {
-	// basic configuration
+
+	// Training criterion E =
+	//    m_beta * waveform_MSE + m_gamma * spectral_amplitude_dis + m_zeta * phase_dis
 	m_beta          = (layerChild->HasMember("beta") ? 
 			   static_cast<real_t>((*layerChild)["beta"].GetDouble()) : 0.0);
 
@@ -344,18 +375,29 @@ namespace layers{
 
 	m_zeta         = (layerChild->HasMember("zeta") ? 
 			  static_cast<real_t>((*layerChild)["zeta"].GetDouble()) : 0.0);
-	
+
+	// Type of spectral amplitude distance (see ../helpers/FFTMat.hpp):
+	//  FFTMAT_SPECTYPE_MSE: MSE of log-spectra
+	//  FFTMAT_SPECTYPE_KLD: KLD of spectra
 	m_specDisType   = (layerChild->HasMember("specDisType") ? 
 			   static_cast<real_t>((*layerChild)["specDisType"].GetInt()) :
 			   FFTMAT_SPECTYPE_MSE);
-	
+
+	// Reserved option
+	//  if the target signal is multi-dimensional, we can convert the multi-dimensional
+	//  signal into one-dimensional signal as a waveform, then calcualte FFT distance
 	m_modeMultiDimSignal = (layerChild->HasMember("multiDimSignalMode") ? 
 				static_cast<int>((*layerChild)["multiDimSignalMode"].GetInt()) :
 				DFTMODEFORMULTIDIMSIGNAL_NONE);
 
+	// Reserved option
+	//  If the natural waveform has to be pre-emphasized, we can use this option to
+	//  do pre-emphasis, rather than preparing new training data
+	//  Generated waveform will be de-emphasized in function computeForward()
 	m_preEmphasis = (layerChild->HasMember("preEmphasisNaturalWav") ? 
 			 static_cast<int>((*layerChild)["preEmphasisNaturalWav"].GetInt()) : 0);
 
+	// Maximum length of the waveforms in the training/test set
 	int maxSeqLength = this->__vMaxSeqLength();
 	
 	
@@ -497,9 +539,10 @@ namespace layers{
 	    m_fftDiffDataPhase3.clear();   
 	}
 
+	// Reserved option for a special training strategy on h-NSF.
+	//  not used anymore
 	m_hnm_flag   = (layerChild->HasMember("hnmMode") ? 
 			static_cast<int>((*layerChild)["hnmMode"].GetInt()) : 0);
-
 	if (m_hnm_flag > 0){
 	    m_noiseTrain_epoch = (layerChild->HasMember("noisePartTrainEpochNum") ? 
 		static_cast<int>((*layerChild)["noisePartTrainEpochNum"].GetInt()) : 15);
@@ -523,17 +566,15 @@ namespace layers{
 		m_f0DataS = config.f0dataStd_signalgen();
 	    printf("\n\tDFT errir layers receives F0 mean-%f std-%f", m_f0DataM, m_f0DataS);
 	}
-
-	if (m_modeMultiDimSignal != DFTMODEFORMULTIDIMSIGNAL_NONE){
+	
+	if (m_modeMultiDimSignal != DFTMODEFORMULTIDIMSIGNAL_NONE)
 	    m_modeChangeDataBuf = this->outputs();
-	}else{
+	else
 	    m_modeChangeDataBuf.clear();
-	}
-
-	if (m_preEmphasis){
+	
+	if (m_preEmphasis)
 	    printf("\n\tNatural waveform will be pre-emphasis before evaluating.");
-	    printf("\n\tRemember to de-emphasis the generated waveform");
-	}
+    
     }
 
     
@@ -547,17 +588,47 @@ namespace layers{
     template <typename TDevice>
     void DFTPostoutputLayer<TDevice>::computeForwardPass(const int nnState)
     {
+	// Checking 
 	if (this->getSaveMemoryFlag())
 	    throw std::runtime_error("Memory save mode should be turned off");
 
-	if (!this->flagTrainingMode())
-	    return;
-	
+	// Length of the currennt waveform (or maximum length in the batch)
 	int timeLength = this->__vCurMaxSeqLength();
+		
 	
-	if (m_preEmphasis){
-	    // pre-emphasis the natural waveform before evaluating
-	    {
+	if (!this->flagTrainingMode()){
+	    // Testing mode
+
+	    // De-emphasis on the generated waveform
+	    if (m_preEmphasis){
+		{
+		internal::deemphasis fn1;
+		fn1.sourceData = helpers::getRawPointer(this->precedingLayer().outputs());
+		fn1.parallel   = this->parallelSequences();
+		fn1.patTypes   = helpers::getRawPointer(this->patTypes());
+		fn1.maxWaveLength = timeLength;
+		
+		// use the buffer of outputErrors to store results
+		thrust::for_each(
+		   thrust::make_zip_iterator(
+			thrust::make_tuple(
+				this->outputs().begin(),
+				thrust::counting_iterator<int>(0))),
+		   thrust::make_zip_iterator(
+			thrust::make_tuple(
+				this->outputs().begin() + this->parallelSequences(),
+				thrust::counting_iterator<int>(0)  + this->parallelSequences())),
+		   fn1);
+		}
+	    }
+	    return;
+	}else{
+	    // Training mode
+	    
+	    // If preemphasis is necessary
+	    if (m_preEmphasis){
+		// pre-emphasis the natural waveform before evaluating
+		{
 		internal::preemphasis fn1;
 		fn1.sourceData = helpers::getRawPointer(this->outputs());
 		fn1.parallel   = this->parallelSequences();
@@ -574,15 +645,15 @@ namespace layers{
 		   fn1);
 		this->outputs() = this->outputErrors();
 		thrust::fill(this->outputErrors().begin(), this->outputErrors().end(), 0.0);
+		}
 	    }
-	}
 
-	
-	if (m_modeMultiDimSignal == DFTMODEFORMULTIDIMSIGNAL_CONCATE){
-	    // If the output of previous layer is multi-dimensional signal,
-	    // convert the N * T input data matrix into a 1-dim signal of length NT.
+	    // If target is multi-dimensional signal
+	    if (m_modeMultiDimSignal == DFTMODEFORMULTIDIMSIGNAL_CONCATE){
+		// If the output of previous layer is multi-dimensional signal,
+		// convert the N * T input data matrix into a 1-dim signal of length NT.
 
-	    // convert target data
+		// convert target data
 		{
 		    internal::multiDimSignaltoOneDim fn1;
 		    fn1.sourceData  = helpers::getRawPointer(this->outputs());
@@ -625,18 +696,18 @@ namespace layers{
 		      fn1);
 		}
 		m_modeChangeDataBuf.swap(this->precedingLayer().outputs());
-	}
+	    }
 	
 	
-	// for HNM special training mode
-	if (m_hnm_flag == DFTERRORPOST_HNM_MODEL_1 || m_hnm_flag == DFTERRORPOST_HNM_MODEL_2){
-	    // if this layer is valid for HNM special mode
-	    if (m_noiseOutputLayer && m_f0InputLayer &&
-		this->getCurrTrainingEpoch() < m_noiseTrain_epoch &&
-		nnState == NN_STATE_GAN_NOGAN_TRAIN) {
+	    // for HNM special training mode (not used anymore)
+	    if (m_hnm_flag == DFTERRORPOST_HNM_MODEL_1 || m_hnm_flag == DFTERRORPOST_HNM_MODEL_2){
+		// if this layer is valid for HNM special mode
+		if (m_noiseOutputLayer && m_f0InputLayer &&
+		    this->getCurrTrainingEpoch() < m_noiseTrain_epoch &&
+		    nnState == NN_STATE_GAN_NOGAN_TRAIN) {
 		
-		// remove the voiced part in target waveforms based on U/V infor
-		{
+		    // remove the voiced part in target waveforms based on U/V infor
+		    {
 		    internal::TimeDomainRemoveWaveformVoiced fn1;
 		    fn1.f0TimeResolution = m_f0InputLayer->getResolution();
 		    fn1.f0InputLayerDim  = m_f0InputLayer->size();
@@ -656,24 +727,24 @@ namespace layers{
 			 this->outputs().begin() + timeLength * this->__vSize(),
 			 thrust::counting_iterator<int>(0)+timeLength*this->__vSize())),
 		      fn1);
-		}
+		    }
 		
-		// copy the noise output as the generated waveforms
-		//  (in order to calculate the error on the unvoiced regions only)
-		thrust::copy(m_noiseOutputLayer->outputs().begin(),
-			     m_noiseOutputLayer->outputs().end(),
-			     this->precedingLayer().outputs().begin());
+		    // copy the noise output as the generated waveforms
+		    //  (in order to calculate the error on the unvoiced regions only)
+		    thrust::copy(m_noiseOutputLayer->outputs().begin(),
+				 m_noiseOutputLayer->outputs().end(),
+				 this->precedingLayer().outputs().begin());
+		}
 	    }
-	}
 	
-	// Compute waveform MSE if necessary 
-	if (m_beta > 0.0){
+	    // Compute waveform MSE if necessary 
+	    if (m_beta > 0.0){
 	    
-	    internal::ComputeMseWaveform fn;
-	    fn.layerSize = this->__vSize();
-	    fn.patTypes  = helpers::getRawPointer(this->patTypes());
+		internal::ComputeMseWaveform fn;
+		fn.layerSize = this->__vSize();
+		fn.patTypes  = helpers::getRawPointer(this->patTypes());
 
-	    m_mseError =
+		m_mseError =
 		(real_t)thrust::transform_reduce(
 		   thrust::make_zip_iterator(
 		      thrust::make_tuple(
@@ -686,48 +757,48 @@ namespace layers{
 			 this->precedingLayer().outputs().begin() + timeLength*this->__vSize(),
 			 thrust::counting_iterator<int>(0) + timeLength * this->__vSize())),
 		   fn, (real_t)0, thrust::plus<real_t>()) / timeLength;	
-	}else{
-	    m_mseError = 0.0;
-	}
+	    }else{
+		m_mseError = 0.0;
+	    }
 
 	
-	// Compute DFT amplitute and phase distance if necessary
-	if (m_gamma > 0.0 || m_zeta > 0.0){
+	    // Compute DFT amplitute and phase distance if necessary
+	    if (m_gamma > 0.0 || m_zeta > 0.0){
    
-	    // FFT 1
-	    // step0. build the data structure
-	    helpers::FFTMat<TDevice> sourceSig(
+		// FFT 1
+		// step0. build the data structure
+		helpers::FFTMat<TDevice> sourceSig(
 			&this->_actualOutputs(), &this->m_fftSourceFramed,
 			&this->m_fftSourceSigFFT,
 			m_frameLength, m_frameShift, m_windowType, m_fftLength, m_fftBinsNum,
 			m_frameNum, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 
-	    helpers::FFTMat<TDevice> targetSig(
+		helpers::FFTMat<TDevice> targetSig(
 			&this->_targets(), &this->m_fftTargetFramed,
 			&this->m_fftTargetSigFFT,
 			m_frameLength, m_frameShift, m_windowType, m_fftLength, m_fftBinsNum,
 			m_frameNum, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 
-	    helpers::FFTMat<TDevice> fftDiffSig(
+		helpers::FFTMat<TDevice> fftDiffSig(
 			&this->m_fftDiffData, &this->m_fftDiffFramed,
 			&this->m_fftDiffSigFFT,
 			m_frameLength, m_frameShift, m_windowType, m_fftLength, m_fftBinsNum,
 			m_frameNum, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 		
-	    // step1. framing and windowing
-	    sourceSig.frameSignal();
-	    targetSig.frameSignal();
+		// step1. framing and windowing
+		sourceSig.frameSignal();
+		targetSig.frameSignal();
 		
-	    // step2. fft
-	    sourceSig.FFT();
-	    targetSig.FFT();
+		// step2. fft
+		sourceSig.FFT();
+		targetSig.FFT();
 
-	    /* When phase and amplitude use the same FFTMats
-	    // -- phase part
-	    if (m_zeta > 0.0){
+		/* When phase and amplitude use the same FFTMats
+		// -- phase part
+		if (m_zeta > 0.0){
 		// calculate phase distortion
 		m_phaseError = sourceSig.specPhaseDistance(targetSig, fftDiffSig);
 		// compute complex-valued grad vector
@@ -738,256 +809,259 @@ namespace layers{
 		fftDiffSig.collectGrad(m_zeta);
 		// copy the gradients to the phase grad buffer
 		m_fftDiffDataPhase = m_fftDiffData;
-	    }else{
+		}else{
 		m_phaseError = 0;
-	    }
-	    */
+		}
+		*/
 		
-	    // -- amplitude part
-	    m_specError = sourceSig.specAmpDistance(targetSig, fftDiffSig);
-	    // compute complex-valued grad vector
-	    fftDiffSig.specAmpGrad(sourceSig, targetSig);
-	    // inverse DFT
-	    fftDiffSig.iFFT();
-	    // de-framing/windowing
-	    fftDiffSig.collectGrad(m_gamma);
-	    // Gradients should be in m_fftDiffData		    
+		// -- amplitude part
+		m_specError = sourceSig.specAmpDistance(targetSig, fftDiffSig);
+		// compute complex-valued grad vector
+		fftDiffSig.specAmpGrad(sourceSig, targetSig);
+		// inverse DFT
+		fftDiffSig.iFFT();
+		// de-framing/windowing
+		fftDiffSig.collectGrad(m_gamma);
+		// Gradients should be in m_fftDiffData		    
 
 	    
-	    // -- phase part
-	    if (m_zeta > 0.0){
-		// FFT 1
-		// step0. build the data structure
-		helpers::FFTMat<TDevice> sourceSigPhase(
+		// -- phase part
+		if (m_zeta > 0.0){
+		    // FFT 1
+		    // step0. build the data structure
+		    helpers::FFTMat<TDevice> sourceSigPhase(
 			&this->_actualOutputs(), &this->m_fftSourceFramed,
 			&this->m_fftSourceSigFFT,
 			m_frameLength, m_frameShift, m_windowTypePhase, m_fftLength, m_fftBinsNum,
 			m_frameNum, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 
-		helpers::FFTMat<TDevice> targetSigPhase(
+		    helpers::FFTMat<TDevice> targetSigPhase(
 			&this->_targets(), &this->m_fftTargetFramed,
 			&this->m_fftTargetSigFFT,
 			m_frameLength, m_frameShift, m_windowTypePhase, m_fftLength, m_fftBinsNum,
 			m_frameNum, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 
-		helpers::FFTMat<TDevice> fftDiffSigPhase(
+		    helpers::FFTMat<TDevice> fftDiffSigPhase(
 			&this->m_fftDiffDataPhase, &this->m_fftDiffFramed,
 			&this->m_fftDiffSigFFT,
 			m_frameLength, m_frameShift, m_windowTypePhase, m_fftLength, m_fftBinsNum,
 			m_frameNum, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 		
-		// step1. framing and windowing
-		sourceSigPhase.frameSignal();
-		targetSigPhase.frameSignal();
+		    // step1. framing and windowing
+		    sourceSigPhase.frameSignal();
+		    targetSigPhase.frameSignal();
 		
-		// step2. fft
-		sourceSigPhase.FFT();
-		targetSigPhase.FFT();
+		    // step2. fft
+		    sourceSigPhase.FFT();
+		    targetSigPhase.FFT();
 
-		// calculate phase distortion
-		m_phaseError = sourceSigPhase.specPhaseDistance(targetSigPhase, fftDiffSigPhase);
-		// compute complex-valued grad vector
-		fftDiffSigPhase.specPhaseGrad(sourceSigPhase, targetSigPhase);
-		// inverse DFT
-		fftDiffSigPhase.iFFT();
-		// de-framing/windowing, grad will be in m_fftDiffDataPhase
-		fftDiffSigPhase.collectGrad(m_zeta);
-	    }else{
-		m_phaseError = 0;
-	    }
+		    // calculate phase distortion
+		    m_phaseError = sourceSigPhase.specPhaseDistance(targetSigPhase,
+								    fftDiffSigPhase);
+		    // compute complex-valued grad vector
+		    fftDiffSigPhase.specPhaseGrad(sourceSigPhase, targetSigPhase);
+		    // inverse DFT
+		    fftDiffSigPhase.iFFT();
+		    // de-framing/windowing, grad will be in m_fftDiffDataPhase
+		    fftDiffSigPhase.collectGrad(m_zeta);
+		}else{
+		    m_phaseError = 0;
+		}
 		    
 		
-	    // FFT 2
-	    if (m_fftLength2){
-		helpers::FFTMat<TDevice> sourceSig2(
+		// FFT 2
+		if (m_fftLength2){
+		    helpers::FFTMat<TDevice> sourceSig2(
 			&this->_actualOutputs(), &this->m_fftSourceFramed2,
 			&this->m_fftSourceSigFFT2,
 			m_frameLength2, m_frameShift2, m_windowType2, m_fftLength2, m_fftBinsNum2,
 			m_frameNum2, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 
-		helpers::FFTMat<TDevice> targetSig2(
+		    helpers::FFTMat<TDevice> targetSig2(
 			&this->_targets(), &this->m_fftTargetFramed2,
 			&this->m_fftTargetSigFFT2,
 			m_frameLength2, m_frameShift2, m_windowType2, m_fftLength2, m_fftBinsNum2,
 			m_frameNum2, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 		    
-		helpers::FFTMat<TDevice> fftDiffSig2(
+		    helpers::FFTMat<TDevice> fftDiffSig2(
 			&this->m_fftDiffData2, &this->m_fftDiffFramed2,
 			&this->m_fftDiffSigFFT2,
 			m_frameLength2, m_frameShift2, m_windowType2, m_fftLength2, m_fftBinsNum2,
 			m_frameNum2, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 		
-		sourceSig2.frameSignal();
-		targetSig2.frameSignal();
-		sourceSig2.FFT();
-		targetSig2.FFT();
+		    sourceSig2.frameSignal();
+		    targetSig2.frameSignal();
+		    sourceSig2.FFT();
+		    targetSig2.FFT();
 
-		/*
-		// -- phase part
-		if (m_zeta > 0.0){
+		    /*
+		    // -- phase part
+		    if (m_zeta > 0.0){
 		    m_phaseError2 = sourceSig2.specPhaseDistance(targetSig2, fftDiffSig2);
 		    fftDiffSig2.specPhaseGrad(sourceSig2, targetSig2);
 		    fftDiffSig2.iFFT();
 		    fftDiffSig2.collectGrad(m_zeta);
 		    m_fftDiffDataPhase2 = m_fftDiffData2;
-		}else{
+		    }else{
 		    m_phaseError2 = 0;
-		}*/
+		    }*/
 		    
-		m_specError2 = sourceSig2.specAmpDistance(targetSig2, fftDiffSig2);
-		fftDiffSig2.specAmpGrad(sourceSig2, targetSig2);
-		fftDiffSig2.iFFT();
-		fftDiffSig2.collectGrad(m_gamma);
+		    m_specError2 = sourceSig2.specAmpDistance(targetSig2, fftDiffSig2);
+		    fftDiffSig2.specAmpGrad(sourceSig2, targetSig2);
+		    fftDiffSig2.iFFT();
+		    fftDiffSig2.collectGrad(m_gamma);
 
-		if (m_zeta > 0.0){
-		    helpers::FFTMat<TDevice> sourceSigPhase2(
-			&this->_actualOutputs(), &this->m_fftSourceFramed2,
-			&this->m_fftSourceSigFFT2,
-			m_frameLength2, m_frameShift2, m_windowTypePhase2,
-			m_fftLength2, m_fftBinsNum2,
-			m_frameNum2, this->__vMaxSeqLength(), timeLength,
-			m_specDisType);
+		    if (m_zeta > 0.0){
+			helpers::FFTMat<TDevice> sourceSigPhase2(
+			  &this->_actualOutputs(), &this->m_fftSourceFramed2,
+			  &this->m_fftSourceSigFFT2,
+			  m_frameLength2, m_frameShift2, m_windowTypePhase2,
+			  m_fftLength2, m_fftBinsNum2,
+			  m_frameNum2, this->__vMaxSeqLength(), timeLength,
+			  m_specDisType);
 
-		    helpers::FFTMat<TDevice> targetSigPhase2(
-			&this->_targets(), &this->m_fftTargetFramed2,
-			&this->m_fftTargetSigFFT2,
-			m_frameLength2, m_frameShift2, m_windowTypePhase2,
-			m_fftLength2, m_fftBinsNum2,
-			m_frameNum2, this->__vMaxSeqLength(), timeLength,
-			m_specDisType);
+			helpers::FFTMat<TDevice> targetSigPhase2(
+			  &this->_targets(), &this->m_fftTargetFramed2,
+			  &this->m_fftTargetSigFFT2,
+			  m_frameLength2, m_frameShift2, m_windowTypePhase2,
+			  m_fftLength2, m_fftBinsNum2,
+			  m_frameNum2, this->__vMaxSeqLength(), timeLength,
+			  m_specDisType);
 		    
-		    helpers::FFTMat<TDevice> fftDiffSigPhase2(
-			&this->m_fftDiffDataPhase2, &this->m_fftDiffFramed2,
-			&this->m_fftDiffSigFFT2,
-			m_frameLength2, m_frameShift2, m_windowTypePhase2,
-			m_fftLength2, m_fftBinsNum2,
-			m_frameNum2, this->__vMaxSeqLength(), timeLength,
-			m_specDisType);
+			helpers::FFTMat<TDevice> fftDiffSigPhase2(
+			  &this->m_fftDiffDataPhase2, &this->m_fftDiffFramed2,
+			  &this->m_fftDiffSigFFT2,
+			  m_frameLength2, m_frameShift2, m_windowTypePhase2,
+			  m_fftLength2, m_fftBinsNum2,
+			  m_frameNum2, this->__vMaxSeqLength(), timeLength,
+			  m_specDisType);
 		
-		    sourceSigPhase2.frameSignal();
-		    targetSigPhase2.frameSignal();
-		    sourceSigPhase2.FFT();
-		    targetSigPhase2.FFT();
+			sourceSigPhase2.frameSignal();
+			targetSigPhase2.frameSignal();
+			sourceSigPhase2.FFT();
+			targetSigPhase2.FFT();
 
-		    m_phaseError2 = sourceSigPhase2.specPhaseDistance(targetSigPhase2,
-								      fftDiffSigPhase2);
-		    fftDiffSigPhase2.specPhaseGrad(sourceSigPhase2, targetSigPhase2);
-		    fftDiffSigPhase2.iFFT();
-		    fftDiffSigPhase2.collectGrad(m_zeta);
+			m_phaseError2 = sourceSigPhase2.specPhaseDistance(targetSigPhase2,
+									  fftDiffSigPhase2);
+			fftDiffSigPhase2.specPhaseGrad(sourceSigPhase2, targetSigPhase2);
+			fftDiffSigPhase2.iFFT();
+			fftDiffSigPhase2.collectGrad(m_zeta);
+		    }else{
+			m_phaseError2 = 0;
+		    }
 		}else{
-		    m_phaseError2 = 0;
+		    m_specError2 = 0.0;
+		    m_phaseError2 = 0.0;
 		}
-	    }else{
-		m_specError2 = 0.0;
-		m_phaseError2 = 0.0;
-	    }
 
-	    // FFT 3
-	    if (m_fftLength3){
+		// FFT 3
+		if (m_fftLength3){
 		
-		helpers::FFTMat<TDevice> sourceSig3(
+		    helpers::FFTMat<TDevice> sourceSig3(
 			&this->_actualOutputs(), &this->m_fftSourceFramed3,
 			&this->m_fftSourceSigFFT3,
 			m_frameLength3, m_frameShift3, m_windowType3, m_fftLength3, m_fftBinsNum3,
 			m_frameNum3, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 
-		helpers::FFTMat<TDevice> targetSig3(
+		    helpers::FFTMat<TDevice> targetSig3(
 			&this->_targets(), &this->m_fftTargetFramed3,
 			&this->m_fftTargetSigFFT3,
 			m_frameLength3, m_frameShift3, m_windowType3, m_fftLength3, m_fftBinsNum3,
 			m_frameNum3, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 		    
-		helpers::FFTMat<TDevice> fftDiffSig3(
+		    helpers::FFTMat<TDevice> fftDiffSig3(
 			&this->m_fftDiffData3, &this->m_fftDiffFramed3,
 			&this->m_fftDiffSigFFT3,
 			m_frameLength3, m_frameShift3, m_windowType3, m_fftLength3, m_fftBinsNum3,
 			m_frameNum3, this->__vMaxSeqLength(), timeLength,
 			m_specDisType);
 		    
-		sourceSig3.frameSignal();
-		targetSig3.frameSignal();
-		sourceSig3.FFT();
-		targetSig3.FFT();
+		    sourceSig3.frameSignal();
+		    targetSig3.frameSignal();
+		    sourceSig3.FFT();
+		    targetSig3.FFT();
 
-		/*
-		// -- phase part
-		if (m_zeta > 0.0){
+		    /*
+		    // -- phase part
+		    if (m_zeta > 0.0){
 		    m_phaseError3 = sourceSig3.specPhaseDistance(targetSig3, fftDiffSig3);
 		    fftDiffSig3.specPhaseGrad(sourceSig3, targetSig3);
 		    fftDiffSig3.iFFT();
 		    fftDiffSig3.collectGrad(m_zeta);
 		    m_fftDiffDataPhase3 = m_fftDiffData3;
-		}else{
+		    }else{
 		    m_phaseError3 = 0;
 		    }*/
 		    
-		m_specError3 = sourceSig3.specAmpDistance(targetSig3, fftDiffSig3);
-		fftDiffSig3.specAmpGrad(sourceSig3, targetSig3);
-		fftDiffSig3.iFFT();
-		fftDiffSig3.collectGrad(m_gamma);
+		    m_specError3 = sourceSig3.specAmpDistance(targetSig3, fftDiffSig3);
+		    fftDiffSig3.specAmpGrad(sourceSig3, targetSig3);
+		    fftDiffSig3.iFFT();
+		    fftDiffSig3.collectGrad(m_gamma);
 
 		
-		if (m_zeta > 0.0){
-		    helpers::FFTMat<TDevice> sourceSigPhase3(
-			&this->_actualOutputs(), &this->m_fftSourceFramed3,
-			&this->m_fftSourceSigFFT3,
-			m_frameLength3, m_frameShift3, m_windowTypePhase3,
-			m_fftLength3, m_fftBinsNum3,
-			m_frameNum3, this->__vMaxSeqLength(), timeLength,
-			m_specDisType);
+		    if (m_zeta > 0.0){
+			helpers::FFTMat<TDevice> sourceSigPhase3(
+			  &this->_actualOutputs(), &this->m_fftSourceFramed3,
+			  &this->m_fftSourceSigFFT3,
+			  m_frameLength3, m_frameShift3, m_windowTypePhase3,
+			  m_fftLength3, m_fftBinsNum3,
+			  m_frameNum3, this->__vMaxSeqLength(), timeLength,
+			  m_specDisType);
 
-		    helpers::FFTMat<TDevice> targetSigPhase3(
-			&this->_targets(), &this->m_fftTargetFramed3,
-			&this->m_fftTargetSigFFT3,
-			m_frameLength3, m_frameShift3, m_windowTypePhase3,
-			m_fftLength3, m_fftBinsNum3,
-			m_frameNum3, this->__vMaxSeqLength(), timeLength,
-			m_specDisType);
+			helpers::FFTMat<TDevice> targetSigPhase3(
+			  &this->_targets(), &this->m_fftTargetFramed3,
+			  &this->m_fftTargetSigFFT3,
+			  m_frameLength3, m_frameShift3, m_windowTypePhase3,
+			  m_fftLength3, m_fftBinsNum3,
+			  m_frameNum3, this->__vMaxSeqLength(), timeLength,
+			  m_specDisType);
 		    
-		    helpers::FFTMat<TDevice> fftDiffSigPhase3(
-			&this->m_fftDiffDataPhase3, &this->m_fftDiffFramed3,
-			&this->m_fftDiffSigFFT3,
-			m_frameLength3, m_frameShift3, m_windowTypePhase3,
-			m_fftLength3, m_fftBinsNum3,
-			m_frameNum3, this->__vMaxSeqLength(), timeLength,
-			m_specDisType);
+			helpers::FFTMat<TDevice> fftDiffSigPhase3(
+			  &this->m_fftDiffDataPhase3, &this->m_fftDiffFramed3,
+			  &this->m_fftDiffSigFFT3,
+			  m_frameLength3, m_frameShift3, m_windowTypePhase3,
+			  m_fftLength3, m_fftBinsNum3,
+			  m_frameNum3, this->__vMaxSeqLength(), timeLength,
+			  m_specDisType);
 		    
-		    sourceSigPhase3.frameSignal();
-		    targetSigPhase3.frameSignal();
-		    sourceSigPhase3.FFT();
-		    targetSigPhase3.FFT();
+			sourceSigPhase3.frameSignal();
+			targetSigPhase3.frameSignal();
+			sourceSigPhase3.FFT();
+			targetSigPhase3.FFT();
 
-		    m_phaseError3 = sourceSigPhase3.specPhaseDistance(targetSigPhase3,
+			m_phaseError3 = sourceSigPhase3.specPhaseDistance(targetSigPhase3,
 								      fftDiffSigPhase3);
-		    fftDiffSigPhase3.specPhaseGrad(sourceSigPhase3, targetSigPhase3);
-		    fftDiffSigPhase3.iFFT();
-		    fftDiffSigPhase3.collectGrad(m_zeta);
+			fftDiffSigPhase3.specPhaseGrad(sourceSigPhase3, targetSigPhase3);
+			fftDiffSigPhase3.iFFT();
+			fftDiffSigPhase3.collectGrad(m_zeta);
 
+		    }else{
+			m_phaseError3 = 0;
+		    }
 		}else{
-		    m_phaseError3 = 0;
+		    m_specError3 = 0.0;
+		    m_phaseError3 = 0.0;
 		}
 	    }else{
+		m_specError = 0.0;
+		m_phaseError = 0.0;
+		m_specError2 = 0.0;
+		m_phaseError2 = 0.0;
 		m_specError3 = 0.0;
 		m_phaseError3 = 0.0;
 	    }
-	}else{
-	    m_specError = 0.0;
-	    m_phaseError = 0.0;
-	    m_specError2 = 0.0;
-	    m_phaseError2 = 0.0;
-	    m_specError3 = 0.0;
-	    m_phaseError3 = 0.0;
+	    // Done
+	    return;
 	}
 	// Done
-	
     }
 
     template <typename TDevice>

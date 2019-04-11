@@ -43,20 +43,23 @@ namespace layers{
 	typedef typename TDevice::int_vector      int_vector;
 	typedef typename TDevice::pattype_vector  pattype_vector;
 	typedef typename Cpu::int_vector          cpu_int_vector;
-
+	
+    private:
+	void __loadOpts(const helpers::JsonValue &layerChild);
+	void __showOpts();
+	
     public:
-	int             m_filter_mode;
-	int             m_filter_num;
+	int             m_filter_mode;         // mode of the filter layer
+	int             m_filter_num;          // how many filters we use?
 	int             m_filter_across_dim;   // whether share the single filter for each feat dim?
 	int             m_filter_length;       // length of each filter
 	
 	int             m_filter_initial_keep; // whether to keep the initial value
+	int             m_filter_noncausal;    // whether the filer is non-causal
 	
 	std::string     m_filter_coeffs_str;   // input string of filter coeffs
 	real_vector     m_filter_coeffs;       // buffer to store coeffs
 	cpu_real_vector m_filter_coeffs_H;     
-
-	
 	
 	FilteringLayer(
 	    const helpers::JsonValue &layerChild,

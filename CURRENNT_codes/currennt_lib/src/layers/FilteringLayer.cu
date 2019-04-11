@@ -77,11 +77,13 @@ namespace {
     // Use one group of filters, do filtering
     struct causalFilteringForward_none_selective
     {
-	int        filterLength;
-	int        filterShareAcrossDim;
-	int        layerSize;
-	int        parallel;
+	int        filterLength;             // length of filter
+	int        filterShareAcrossDim;     // whether the filter is shared across data dimension
+	int        layerSize;                // layer size
+	int        parallel;                 
 	int        initSmooth;
+	int        noncausal;
+	int        maxLength;
 	
 	real_t     *inputData;
 	real_t     *filterCoeffs;
@@ -105,9 +107,18 @@ namespace {
 
 	    // accumulate and update
 	    real_t tmp = 0.0;
-	    real_t filterCoeff;
-	    for (int idx = 0 ; idx < filterLength; idx++){
+	    real_t filterCoeff;  
+	    
+	    int    filter_idx_shift = 0;
+	    int    data_time_idx;  // the relative time step index
+	    int    data_mem_idx;   // the absolute time step in memory buffer
 
+	    // for noncausal filter, shift the time index
+	    if (noncausal)
+		filter_idx_shift = filterLength / 2;
+	    
+	    for (int idx = 0 ; idx < filterLength; idx++){
+		    
 		// get the filter coefficient for one step
 		// a_0 + a_1 z^-1 + ... + a_N z^-N
 		// [a_0, a_1, ..., a_N]
@@ -115,21 +126,29 @@ namespace {
 		    filterCoeff = filterCoeffs[idx];
 		else
 		    filterCoeff = filterCoeffs[dimIdx * filterLength + idx];
+
+		// time index (of parallel block)
+		data_time_idx = BlockIdx - idx + filter_idx_shift;
+		// time index (abosolute time step in memory buffer)
+		data_mem_idx = data_time_idx * parallel + BlockInIdx;
 		
-		if ((BlockIdx - idx) >= 0){
-		    // when there is data in the previous idx-th step
-		    tmp += (inputData[((BlockIdx-idx)*parallel + BlockInIdx)*layerSize + dimIdx]
-			    * filterCoeff);
+		if (data_time_idx >= 0 && data_mem_idx < maxLength &&
+		    patTypes[data_mem_idx] != PATTYPE_NONE){
+		    // when this time step is [0, max_length) and valid
+		    tmp += inputData[data_mem_idx * layerSize + dimIdx] * filterCoeff;
+		    
 		}else if (initSmooth){
-		    // If there is no data (the begining of the sequence)
-		    //   we can use the first value 
-		    tmp += (inputData[BlockInIdx * layerSize + dimIdx] * filterCoeff);
+		    // If there is no data at the begining: use the first time step
+		    // If there is no data at the end: use the current time step
+		    if (data_time_idx < 0)
+			tmp += (inputData[BlockInIdx * layerSize + dimIdx] * filterCoeff);
+		    else
+			tmp += (inputData[timeIdx * layerSize + dimIdx] * filterCoeff);
 		}else{
 		    // do nothing
 		}
 	    }
 	    t.get<0>() = tmp;
-	    
 	}
     };
     
@@ -138,9 +157,11 @@ namespace {
     {
 	int        filterLength;
 	int        filterShareAcrossDim;
+	
 	int        layerSize;
 	int        maxLength;
 	int        parallel;
+	int        noncausal;
 	
 	real_t     *inputErrors;
 	real_t     *filterCoeffs;
@@ -149,13 +170,13 @@ namespace {
 	// From 1 : T (of the previous layer)
 	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
 	{
+	    
 	    int outputIdx  = t.get<1>();
 	    int dimIdx     = outputIdx % layerSize;  // dimension index
 	    int timeIdx    = outputIdx / layerSize;  // time index (regardless of parallel)
 	    
 	    int BlockIdx   = timeIdx / parallel;     // time index (considering parallel mode)
 	    int BlockInIdx = timeIdx % parallel;     // index within a parallel block
-
 
 	    if (patTypes[timeIdx] == PATTYPE_NONE){
 		t.get<0>() = 0;
@@ -165,6 +186,14 @@ namespace {
 	    // accumulate and update
 	    real_t tmp = 0.0;
 	    real_t filterCoeff;
+	    
+	    int    filter_idx_shift = 0;
+	    int    data_time_idx;  // the relative time step index
+	    int    data_mem_idx;   // the absolute time step in memory buffer
+
+	    if (noncausal)
+		filter_idx_shift = filterLength / 2;
+
 	    for (int idx = 0 ; idx < filterLength; idx++){
 
 		// get the filter coefficient for one step
@@ -174,11 +203,15 @@ namespace {
 		    filterCoeff = filterCoeffs[idx];
 		else
 		    filterCoeff = filterCoeffs[dimIdx * filterLength + idx];
-		
-		if (((BlockIdx + idx) * parallel + BlockInIdx) < maxLength &&
-		    patTypes[((BlockIdx + idx) * parallel + BlockInIdx)] != PATTYPE_NONE){
-		    tmp += (inputErrors[((BlockIdx+idx)*parallel+BlockInIdx) * layerSize + dimIdx]
-			    * filterCoeff);
+
+		data_time_idx = BlockIdx + idx - filter_idx_shift;
+		data_mem_idx = data_time_idx * parallel + BlockInIdx;
+
+		if (data_mem_idx < maxLength && patTypes[data_mem_idx] != PATTYPE_NONE &&
+		    data_time_idx >= 0){
+		    tmp += inputErrors[data_mem_idx * layerSize + dimIdx] * filterCoeff;
+		}else{
+		    // Just ignore the gradients for the two-ends;
 		}
 	    }
 	    t.get<0>() = tmp;
@@ -198,6 +231,9 @@ namespace {
 	int        filterNum;
 	int        parallel;
 	int        initSmooth;
+
+	int        maxLength;
+	int        noncausal;
 	
 	real_t     *inputData;
 	real_t     *filterCoeffs;
@@ -220,8 +256,15 @@ namespace {
 
 	    // accumulate and update
 	    real_t tmp = 0.0;
-	    real_t filterCoeff = 0.0;
-	    real_t filterWeight= 0.0;
+	    real_t filterCoeff  = 0.0;
+	    real_t filterWeight = 0.0;
+	    
+	    int    filter_idx_shift = 0;
+	    int    data_time_idx;  // the relative time step index
+	    int    data_mem_idx;   // the absolute time step in memory buffer
+	    
+	    if (noncausal)
+		filter_idx_shift = filterLength / 2;
 	    
 	    for (int idx = 0 ; idx < filterLength; idx++){
 
@@ -248,14 +291,24 @@ namespace {
 						     filterLength + idx] * filterWeight);
 		}
 		
-		// filtering
-		if ((BlockIdx - idx) >= 0){
-		    tmp += (inputData[((BlockIdx-idx)*parallel+BlockInIdx)*inputLayerSize+dimIdx]
-			    * filterCoeff);
+		data_time_idx = BlockIdx - idx + filter_idx_shift;
+		data_mem_idx = data_time_idx * parallel + BlockInIdx;
+		
+		if (data_time_idx >= 0 && data_mem_idx < maxLength &&
+		    patTypes[data_mem_idx] != PATTYPE_NONE){
+		    
+		    // when this time step is [0, max_length) and valid
+		    tmp += inputData[data_mem_idx * inputLayerSize + dimIdx] * filterCoeff;
+		    
 		}else if (initSmooth){
-		    tmp += (inputData[BlockInIdx * inputLayerSize + dimIdx] * filterCoeff);
+		    // If there is no data at the begining: use the first time step
+		    // If there is no data at the end: use the current time step
+		    if (data_time_idx < 0)
+			tmp += (inputData[BlockInIdx * inputLayerSize + dimIdx] * filterCoeff);
+		    else
+			tmp += (inputData[timeIdx * inputLayerSize + dimIdx] * filterCoeff);
 		}else{
-		    // nothing
+		    // do nothing
 		}
 	    }
 	    t.get<0>() = tmp;
@@ -272,10 +325,10 @@ namespace {
 	int        outputLayerSize;
 	int        inputLayerSize;
 	int        filterNum;
-
-
+	int        noncausal;
 	int        maxLength;
 	int        parallel;
+	
 	real_t     *inputData;
 	real_t     *inputErrors;
 	real_t     *filterCoeffs;
@@ -301,23 +354,35 @@ namespace {
 	    real_t tmp = 0.0;
 	    real_t filterCoeff  = 0.0;
 	    real_t filterWeight = 0.0;
+	    
+	    int    filter_idx_shift = 0;
+	    int    data_time_idx;  // the relative time step index
+	    int    data_mem_idx;   // the absolute time step in memory buffer
 
+	    if (noncausal)
+		filter_idx_shift = filterLength / 2;
+
+	    
 	    if (dimIdx < (inputLayerSize - filterNum)){
+		
 		// gradients w.r.t input signal
 		for (int idx = 0 ; idx < filterLength; idx++){
-		    
+
+		    data_time_idx = BlockIdx + idx - filter_idx_shift;
+		    data_mem_idx = data_time_idx * parallel + BlockInIdx;
+		
 		    // if the output time step is valid
-		    if (((BlockIdx + idx) * parallel + BlockInIdx) < maxLength &&
-			patTypes[((BlockIdx + idx) * parallel + BlockInIdx)] != PATTYPE_NONE){
+		    if (data_mem_idx < maxLength && patTypes[data_mem_idx] != PATTYPE_NONE &&
+			data_time_idx >= 0){
 
 			filterCoeff = 0.0;
 			
 			for (int filter_idx = 0 ; filter_idx < filterNum; filter_idx++){
 
 			    // weight of that (output) time step 
-			    filterWeight = inputData[((BlockIdx+idx) * parallel + BlockInIdx) *
-						     inputLayerSize +
-						     inputLayerSize-filterNum+filter_idx];
+			    filterWeight = inputData[data_mem_idx * inputLayerSize +
+						     inputLayerSize - filterNum + filter_idx];
+			    
 			    if (filterShareAcrossDim)
 				filterCoeff += (filterCoeffs[filter_idx * filterLength + idx] *
 						filterWeight);
@@ -328,9 +393,7 @@ namespace {
 			}
 		
 			// sum gradient
-			tmp += (inputErrors[((BlockIdx + idx) * parallel + BlockInIdx) *
-					    outputLayerSize + dimIdx]
-				* filterCoeff);
+			tmp += (inputErrors[data_mem_idx * outputLayerSize + dimIdx] * filterCoeff);
 		    }
 		}
 		t.get<0>() = tmp;
@@ -340,31 +403,30 @@ namespace {
 		// gradients w.r.t filter weights
 		int filter_idx = dimIdx - outputLayerSize;
 
-		// gradients w.r.t input signal
 		for (int idx = 0 ; idx < filterLength; idx++){
 
-		    if ((BlockIdx - idx) < 0)
+		    data_time_idx = BlockIdx + idx - filter_idx_shift;
+		    data_mem_idx = data_time_idx * parallel + BlockInIdx;
+
+		    if (data_mem_idx >= maxLength || patTypes[data_mem_idx] == PATTYPE_NONE ||
+			data_time_idx < 0)
 			continue;
 			    
 		    if (filterShareAcrossDim){
 			filterCoeff = filterCoeffs[filter_idx * filterLength + idx];
 			for (int featDimIdx = 0 ; featDimIdx < outputLayerSize; featDimIdx ++){
-			    tmp += (inputData[((BlockIdx - idx) * parallel + BlockInIdx) *
-					      inputLayerSize + featDimIdx]
+			    tmp += (inputData[data_mem_idx * inputLayerSize + featDimIdx]
 				    * filterCoeff
-				    * inputErrors[(BlockIdx * parallel + BlockInIdx) *
-						  outputLayerSize + featDimIdx]);
+				    * inputErrors[timeIdx * outputLayerSize + featDimIdx]);
 			}
 			
 		    }else{
 			for (int featDimIdx = 0 ; featDimIdx < outputLayerSize; featDimIdx ++){
 			    filterCoeff = filterCoeffs[(filter_idx * outputLayerSize + featDimIdx) *
 						       filterLength + idx];
-			    tmp += (inputData[((BlockIdx - idx) * parallel + BlockInIdx) *
-					      inputLayerSize + featDimIdx]
+			    tmp += (inputData[data_mem_idx * inputLayerSize + featDimIdx]
 				    * filterCoeff
-				    * inputErrors[(BlockIdx * parallel + BlockInIdx) *
-						  outputLayerSize + featDimIdx]);
+				    * inputErrors[timeIdx * outputLayerSize + featDimIdx]);
 			}
 		    }
 		}
@@ -388,14 +450,39 @@ namespace layers {
 	: TrainableLayer<TDevice>(layerChild, weightsSection, 0, 0,
 				  precedingLayer, maxSeqLength, layerID)
     {
+	// load the options from network.jsn
+	this->__loadOpts(layerChild);
+	// display the options
+	this->__showOpts();
+	
+	if (this->getResolution() != this->precedingLayer().getResolution())
+	    throw std::runtime_error("Error in filter layer: resolution != previous layer resolu");
+	
+    }
+
+    template <typename TDevice>
+    FilteringLayer<TDevice>::~FilteringLayer()
+    {
+    }
+
+    template <typename TDevice>
+    void FilteringLayer<TDevice>::__loadOpts(const helpers::JsonValue &layerChild)
+    {
+	// load options
 	m_filter_across_dim = ((layerChild->HasMember("shareAcrossDim")) ? 
 			       ((*layerChild)["shareAcrossDim"].GetInt()) : 1);
+	
 	m_filter_coeffs_str = ((layerChild->HasMember("filterCoeffs")) ? 
 			       ((*layerChild)["filterCoeffs"].GetString()) : "");
+	
 	m_filter_length = ((layerChild->HasMember("filterLength")) ? 
 			       ((*layerChild)["filterLength"].GetInt()) : 0);
+	
 	m_filter_initial_keep = ((layerChild->HasMember("initialCondSmooth")) ? 
 			       ((*layerChild)["initialCondSmooth"].GetInt()) : 0);
+	
+	m_filter_noncausal = ((layerChild->HasMember("noncausal")) ? 
+			       ((*layerChild)["noncausal"].GetInt()) : 0);
 	
 	if (this->size() == this->precedingLayer().size()){
 	    // only 1 group of filter
@@ -404,20 +491,17 @@ namespace layers {
 	}else{
 	    // multiplt groups of filters
 	    m_filter_mode = FILTERING_LAYER_MODE_SELECTIVE;
-	    // assume input signal contains the weights of each filter
+	    // assume input data vectors contains the weights of each filter
+	    // thus, input_signal_dim + num_filter = input_vector_dim
 	    m_filter_num = this->precedingLayer().size() - this->size();
 	}
-	
-	
-	if (this->getResolution() != this->precedingLayer().getResolution())
-	    throw std::runtime_error("Error in filter layer: resolution != previous layer resolu");
 	
 	// parse the filter coefficients
 	if (m_filter_coeffs_str.size()){
 	    m_filter_coeffs.clear();
 	    misFuncs::ParseFloatOpt(m_filter_coeffs_str, m_filter_coeffs_H);
 	    m_filter_coeffs = m_filter_coeffs_H;
-
+	    
 	    // check, when shareAcrossDim is False, #coefficients should be N * feature dimension
 	    if (m_filter_across_dim == 0){
 		if (m_filter_coeffs_H.size() % this->size() != 0){
@@ -441,29 +525,42 @@ namespace layers {
 	
 	if (m_filter_length == 0){
 	    m_filter_length = tmp_filter_length;
+	}else if (m_filter_length != tmp_filter_length){
+	    throw std::runtime_error("Error in filtering layer: filter mismatch");
 	}else{
-	    if (m_filter_length != tmp_filter_length)
-		throw std::runtime_error("Error in filtering layer: filter mismatch");
+	    // nothing, the filter_length has been correctly configured
 	}
 
+    }
+    
+    template <typename TDevice>
+    void FilteringLayer<TDevice>::__showOpts()
+    {
+	// show options
 	// print information
 	if (m_filter_mode == FILTERING_LAYER_MODE_NONE_SELECTIVE){
 	    printf(" fixed filter, ");
 	}else{
 	    printf(" soft-weighted %d filters, ", m_filter_num);
 	}
+	
 	if (m_filter_across_dim)
-	    printf(" one filter (length %d) across feature dimension", m_filter_length);
+	    printf(" one filter (length %d) across feature dimension,", m_filter_length);
 	else
-	    printf(" one filter (length %d) for each feature dimension", m_filter_length);
+	    printf(" one filter (length %d) for each feature dimension,", m_filter_length);
+
+	if (m_filter_noncausal)
+	    printf(" noncausal,");
+	else
+	    printf(" causal,");
+
+	if (m_filter_initial_keep)
+	    printf(" boundary smoothed,");
+	else
+	    printf(" boundary not smooth,");
 
     }
-
-    template <typename TDevice>
-    FilteringLayer<TDevice>::~FilteringLayer()
-    {
-    }
-
+    
     template <typename TDevice>
     const std::string& FilteringLayer<TDevice>::type() const
     {
@@ -480,15 +577,18 @@ namespace layers {
 	if (m_filter_mode == FILTERING_LAYER_MODE_NONE_SELECTIVE){
 	    // one group of filters
 	    internal::causalFilteringForward_none_selective fn1;
-	    fn1.filterLength = this->m_filter_length;
-	    fn1.layerSize    = this->size();
-	    fn1.parallel     = this->parallelSequences();
+	    fn1.filterLength         = this->m_filter_length;
+	    fn1.layerSize            = this->size();
+	    fn1.parallel             = this->parallelSequences();
 	    fn1.filterShareAcrossDim = this->m_filter_across_dim;
-	    fn1.filterCoeffs  = helpers::getRawPointer(this->m_filter_coeffs);
-	    fn1.inputData = helpers::getRawPointer(this->precedingLayer().outputs());
-	    fn1.patTypes  = helpers::getRawPointer(this->patTypes());
-	    fn1.initSmooth  = this->m_filter_initial_keep;
-	    
+	    fn1.initSmooth           = this->m_filter_initial_keep;
+	    fn1.noncausal            = this->m_filter_noncausal;
+	    fn1.maxLength            = timeLength;
+
+	    fn1.filterCoeffs         = helpers::getRawPointer(this->m_filter_coeffs);
+	    fn1.inputData            = helpers::getRawPointer(this->precedingLayer().outputs());
+	    fn1.patTypes             = helpers::getRawPointer(this->patTypes());
+
 	    int n = timeLength * this->size();
 	    thrust::for_each(
                thrust::make_zip_iterator(
@@ -503,17 +603,20 @@ namespace layers {
 	    // weighted sum of filters
 	    internal::causalFilteringForward_selective fn1;
 	    fn1.filterLength    = this->m_filter_length;
+	    fn1.filterShareAcrossDim = this->m_filter_across_dim;
+	    
 	    fn1.outputLayerSize = this->size();
 	    fn1.inputLayerSize  = this->precedingLayer().size();
 	    fn1.filterNum       = m_filter_num;
-	    fn1.filterLength    = m_filter_length;
 	    fn1.parallel        = this->parallelSequences();
+	    fn1.maxLength       = timeLength;
+	    
 	    fn1.initSmooth      = this->m_filter_initial_keep;	    
-	    fn1.filterShareAcrossDim = this->m_filter_across_dim;
+	    fn1.noncausal       = this->m_filter_noncausal;
 	    
 	    fn1.filterCoeffs  = helpers::getRawPointer(this->m_filter_coeffs);
-	    fn1.inputData = helpers::getRawPointer(this->precedingLayer().outputs());
-	    fn1.patTypes  = helpers::getRawPointer(this->patTypes());
+	    fn1.inputData     = helpers::getRawPointer(this->precedingLayer().outputs());
+	    fn1.patTypes      = helpers::getRawPointer(this->patTypes());
 	    
 	    int n = timeLength * this->size();
 	    thrust::for_each(
@@ -544,14 +647,16 @@ namespace layers {
 	if (m_filter_mode == FILTERING_LAYER_MODE_NONE_SELECTIVE){    
 	    internal::causalFilteringBackward_none_selective fn1;
 	    fn1.filterLength = this->m_filter_length;
+	    fn1.filterShareAcrossDim = this->m_filter_across_dim;
+	    
 	    fn1.layerSize    = this->size();
 	    fn1.maxLength    = timeLength;
-	    fn1.filterShareAcrossDim = this->m_filter_across_dim;
 	    fn1.parallel     = this->parallelSequences();
-	    
+	    fn1.noncausal    = this->m_filter_noncausal;
+		    
 	    fn1.filterCoeffs  = helpers::getRawPointer(this->m_filter_coeffs);
-	    fn1.inputErrors = helpers::getRawPointer(this->outputErrors());
-	    fn1.patTypes  = helpers::getRawPointer(this->patTypes());
+	    fn1.inputErrors   = helpers::getRawPointer(this->outputErrors());
+	    fn1.patTypes      = helpers::getRawPointer(this->patTypes());
 	    
 	    int n = timeLength * this->size();
 	    thrust::for_each(
@@ -567,13 +672,15 @@ namespace layers {
 	    
 	    internal::causalFilteringBackward_selective fn1;
 	    fn1.filterLength     = this->m_filter_length;
+	    fn1.filterShareAcrossDim = this->m_filter_across_dim;
+	    
 	    fn1.outputLayerSize  = this->size();
 	    fn1.inputLayerSize   = this->precedingLayer().size();
 	    fn1.filterNum        = this->m_filter_num;
 	    fn1.maxLength        = timeLength;
 	    fn1.parallel         = this->parallelSequences();
-
-	    fn1.filterShareAcrossDim = this->m_filter_across_dim;
+	    fn1.noncausal        = this->m_filter_noncausal;
+	    
 
 	    fn1.filterCoeffs     = helpers::getRawPointer(this->m_filter_coeffs);
 	    fn1.inputData        = helpers::getRawPointer(this->precedingLayer().outputs());
@@ -611,13 +718,17 @@ namespace layers {
 	TrainableLayer<TDevice>::exportLayer(layersArray, allocator);
         (*layersArray)[layersArray->Size() - 1].AddMember("shareAcrossDim", m_filter_across_dim,
 							  allocator);
-	(*layersArray)[layersArray->Size() - 1].AddMember("filterCoeffs", m_filter_coeffs_str.c_str(),
+	(*layersArray)[layersArray->Size() - 1].AddMember("filterCoeffs",
+							  m_filter_coeffs_str.c_str(),
 							  allocator);
 	if (m_filter_initial_keep)
 	    (*layersArray)[layersArray->Size() - 1].AddMember("initialCondSmooth",
 							      m_filter_initial_keep,
 							      allocator);
-	
+	if (m_filter_noncausal)
+	    (*layersArray)[layersArray->Size() - 1].AddMember("noncausal",
+							      m_filter_noncausal,
+							      allocator);
     }
 
     template <typename TDevice>
