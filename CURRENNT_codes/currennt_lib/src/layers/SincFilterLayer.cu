@@ -359,8 +359,10 @@ namespace {
 		lp_coef_val = lp_coef[timeIdx * filter_length + buf_idx];
 		hp_coef_val = hp_coef[timeIdx * filter_length + buf_idx];
 		
-		grad_lp_w = tmp_value / scale_lp - lp_coef_val / scale_lp / scale_lp * lp_sub_grad;
-		grad_hp_w = hp_coef_val / scale_hp / scale_hp * hp_sub_grad - tmp_value / scale_hp;
+		//grad_lp_w = tmp_value / scale_lp - lp_coef_val / scale_lp / scale_lp * lp_sub_grad;
+		grad_lp_w = (tmp_value - lp_coef_val * lp_sub_grad) / scale_lp;
+		//grad_hp_w = hp_coef_val / scale_hp / scale_hp * hp_sub_grad - tmp_value / scale_hp;
+		grad_hp_w = (hp_coef_val * hp_sub_grad - tmp_value) / scale_hp;
 
 		// lp part
 		if ((BlockIdx - buf_idx) >= 0){
