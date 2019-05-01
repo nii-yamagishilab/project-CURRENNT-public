@@ -53,6 +53,7 @@ namespace layers {
 	
 	int                m_preEmphasis;       // Whether preEmphasis the natural speech?
 	int                m_specDisType;       // Type of spectral amplitude distance
+	int                m_phaseDisType;      // Type of phase distance
 	
 	// Short time STFT part (configurable))
 	real_t             m_specError;

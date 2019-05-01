@@ -367,10 +367,10 @@ namespace layers{
 
 	// Training criterion E =
 	//    m_beta * waveform_MSE + m_gamma * spectral_amplitude_dis + m_zeta * phase_dis
-	m_beta          = (layerChild->HasMember("beta") ? 
+	m_beta         = (layerChild->HasMember("beta") ? 
 			   static_cast<real_t>((*layerChild)["beta"].GetDouble()) : 0.0);
 
-	m_gamma         = (layerChild->HasMember("gamma") ? 
+	m_gamma        = (layerChild->HasMember("gamma") ? 
 			   static_cast<real_t>((*layerChild)["gamma"].GetDouble()) : 0.0);
 
 	m_zeta         = (layerChild->HasMember("zeta") ? 
@@ -383,6 +383,10 @@ namespace layers{
 			   static_cast<real_t>((*layerChild)["specDisType"].GetInt()) :
 			   FFTMAT_SPECTYPE_MSE);
 
+	m_phaseDisType  = (layerChild->HasMember("phaseDisType") ? 
+			   static_cast<real_t>((*layerChild)["phaseDisType"].GetInt()) :
+			   FFTMAT_PHASETYPE_COS);
+	
 	// Reserved option
 	//  if the target signal is multi-dimensional, we can convert the multi-dimensional
 	//  signal into one-dimensional signal as a waveform, then calcualte FFT distance
@@ -834,21 +838,21 @@ namespace layers{
 			&this->m_fftSourceSigFFT,
 			m_frameLength, m_frameShift, m_windowTypePhase, m_fftLength, m_fftBinsNum,
 			m_frameNum, this->__vMaxSeqLength(), timeLength,
-			m_specDisType);
+			m_phaseDisType);
 
 		    helpers::FFTMat<TDevice> targetSigPhase(
 			&this->_targets(), &this->m_fftTargetFramed,
 			&this->m_fftTargetSigFFT,
 			m_frameLength, m_frameShift, m_windowTypePhase, m_fftLength, m_fftBinsNum,
 			m_frameNum, this->__vMaxSeqLength(), timeLength,
-			m_specDisType);
+			m_phaseDisType);
 
 		    helpers::FFTMat<TDevice> fftDiffSigPhase(
 			&this->m_fftDiffDataPhase, &this->m_fftDiffFramed,
 			&this->m_fftDiffSigFFT,
 			m_frameLength, m_frameShift, m_windowTypePhase, m_fftLength, m_fftBinsNum,
 			m_frameNum, this->__vMaxSeqLength(), timeLength,
-			m_specDisType);
+			m_phaseDisType);
 		
 		    // step1. framing and windowing
 		    sourceSigPhase.frameSignal();
@@ -924,7 +928,7 @@ namespace layers{
 			  m_frameLength2, m_frameShift2, m_windowTypePhase2,
 			  m_fftLength2, m_fftBinsNum2,
 			  m_frameNum2, this->__vMaxSeqLength(), timeLength,
-			  m_specDisType);
+			  m_phaseDisType);
 
 			helpers::FFTMat<TDevice> targetSigPhase2(
 			  &this->_targets(), &this->m_fftTargetFramed2,
@@ -932,7 +936,7 @@ namespace layers{
 			  m_frameLength2, m_frameShift2, m_windowTypePhase2,
 			  m_fftLength2, m_fftBinsNum2,
 			  m_frameNum2, this->__vMaxSeqLength(), timeLength,
-			  m_specDisType);
+			  m_phaseDisType);
 		    
 			helpers::FFTMat<TDevice> fftDiffSigPhase2(
 			  &this->m_fftDiffDataPhase2, &this->m_fftDiffFramed2,
@@ -940,7 +944,7 @@ namespace layers{
 			  m_frameLength2, m_frameShift2, m_windowTypePhase2,
 			  m_fftLength2, m_fftBinsNum2,
 			  m_frameNum2, this->__vMaxSeqLength(), timeLength,
-			  m_specDisType);
+			  m_phaseDisType);
 		
 			sourceSigPhase2.frameSignal();
 			targetSigPhase2.frameSignal();
@@ -1014,7 +1018,7 @@ namespace layers{
 			  m_frameLength3, m_frameShift3, m_windowTypePhase3,
 			  m_fftLength3, m_fftBinsNum3,
 			  m_frameNum3, this->__vMaxSeqLength(), timeLength,
-			  m_specDisType);
+			  m_phaseDisType);
 
 			helpers::FFTMat<TDevice> targetSigPhase3(
 			  &this->_targets(), &this->m_fftTargetFramed3,
@@ -1022,7 +1026,7 @@ namespace layers{
 			  m_frameLength3, m_frameShift3, m_windowTypePhase3,
 			  m_fftLength3, m_fftBinsNum3,
 			  m_frameNum3, this->__vMaxSeqLength(), timeLength,
-			  m_specDisType);
+			  m_phaseDisType);
 		    
 			helpers::FFTMat<TDevice> fftDiffSigPhase3(
 			  &this->m_fftDiffDataPhase3, &this->m_fftDiffFramed3,
@@ -1030,7 +1034,7 @@ namespace layers{
 			  m_frameLength3, m_frameShift3, m_windowTypePhase3,
 			  m_fftLength3, m_fftBinsNum3,
 			  m_frameNum3, this->__vMaxSeqLength(), timeLength,
-			  m_specDisType);
+			  m_phaseDisType);
 		    
 			sourceSigPhase3.frameSignal();
 			targetSigPhase3.frameSignal();
@@ -1259,6 +1263,9 @@ namespace layers{
 	if (m_specDisType != FFTMAT_SPECTYPE_MSE)
 	    (*layersArray)[layersArray->Size() - 1].AddMember("specDisType", m_specDisType,
 							      allocator);
+	if (m_phaseDisType != FFTMAT_PHASETYPE_COS)
+	    (*layersArray)[layersArray->Size() - 1].AddMember("phaseDisType", m_phaseDisType,
+							      allocator);
 	if (m_preEmphasis)
 	    (*layersArray)[layersArray->Size() - 1].AddMember("preEmphasisNaturalWav", m_preEmphasis,
 							      allocator);
@@ -1266,6 +1273,7 @@ namespace layers{
 	if (m_gamma > 0.0){
 	    (*layersArray)[layersArray->Size() - 1].AddMember("gamma", m_gamma, allocator);
 	    (*layersArray)[layersArray->Size() - 1].AddMember("zeta", m_zeta, allocator);
+	    
 	    (*layersArray)[layersArray->Size() - 1].AddMember("fftLength", m_fftLength,
 							      allocator);
 	    (*layersArray)[layersArray->Size() - 1].AddMember("frameLength", m_frameLength,

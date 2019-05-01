@@ -34,6 +34,9 @@
 #define FFTMAT_SPECTYPE_MSE 0
 #define FFTMAT_SPECTYPE_KLD 1
 
+#define FFTMAT_PHASETYPE_COS 0
+#define FFTMAT_PHASETYPE_INTANT 1
+
 #define FFTMAT_WINDOW_HANN 0
 #define FFTMAT_WINDOW_SQUARE 1
 
@@ -61,7 +64,7 @@ namespace helpers {
 	int m_signalBufLength;  // maxSeqLength
 	int m_signalLength;     // curMaxSeqLength
 
-	int m_specDisType;      //
+	int m_disType;      //
 	int m_validFrameNum;    //
 	int m_validDataPointNum;//
 	
@@ -71,7 +74,7 @@ namespace helpers {
 	       int fftLength,   int fftBins,  int batchSize,
 	       int signalBufLength,
 	       int signsignalLength,
-	       int specDisType);
+	       int disType);
 
 	FFTMat(real_vector *framedDAta, complex_vector *fftData,
 	       int fftLength, int fftBins, int batchSize);
