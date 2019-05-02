@@ -111,6 +111,10 @@ namespace layers{
 	real_t          m_freqQF0Lev;
 	real_t          m_freqDataM;       // input F0 data mean
 	real_t          m_freqDataS;       // input F0 data var
+
+	int             m_F02UV;
+	real_t          m_F0DataMean;
+	real_t          m_F0DataStd;
 	
 	OperationLayer(
 	    const helpers::JsonValue &layerChild,

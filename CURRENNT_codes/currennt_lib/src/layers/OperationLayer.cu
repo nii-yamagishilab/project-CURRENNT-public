@@ -713,6 +713,24 @@ namespace {
 	
     };
 
+    
+    // Convert F0 (normaized) into U/V
+    // assume F0 <= 0 is unvoiced
+    struct normF0ToUV
+    {
+	real_t F0mean;
+	real_t F0std;
+	
+	__host__ __device__ void operator() (const thrust::tuple<real_t&, real_t&> &t) const
+	{
+	    if (t.get<0>() > (-1.0 * F0mean / F0std))
+		t.get<1>() = 1.0;
+	    else
+		t.get<1>() = 0.0;
+	}
+	
+    };
+
     // Sine signal generation (moved to FeedForwardLayer.cu)
     struct sinWaveGenerator_accum
     {
@@ -978,6 +996,24 @@ namespace layers{
 	    m_setZeroVec_D.resize(this->precedingLayer().size(), 1.0);
 	}
 
+
+	/* ------ Configuration for F0 -> u/v conversion ----- */
+	m_F02UV = (layerChild->HasMember("F02UV")?
+			 (*layerChild)["F02UV"].GetInt() : 0);
+	if (m_F02UV){
+	    m_F0DataMean = (layerChild->HasMember("frequencyF0Mean")?
+			    (*layerChild)["frequencyF0Mean"].GetDouble() : 0.0);
+	    m_F0DataStd  = (layerChild->HasMember("frequencyF0Std")?
+			    (*layerChild)["frequencyF0Std"].GetDouble() : 1.0);
+	    const Configuration &config = Configuration::instance();
+	    if (config.f0dataMean_signalgen() > 0)
+		m_F0DataMean = config.f0dataMean_signalgen();
+	    if (config.f0dataStd_signalgen() > 0)
+		m_F0DataStd  = config.f0dataStd_signalgen();
+
+	    if (this->size() != 1)
+		throw std::runtime_error("Error: U/V extraction only receives 1d input");
+	}
 	
 	
 	/* ------ Configuration of the output duplication ------ */
@@ -1193,6 +1229,10 @@ namespace layers{
 		throw std::runtime_error("Layer size is unequal to previous one");
 	}
 
+	if (m_F02UV)
+	    printf("\tF02UV using F0 mean and std: %f %f\n", m_F0DataMean, m_F0DataStd);
+	
+	
 	if (this->precedingLayer().getSaveMemoryFlag() &&
 	    (m_lastShot != NN_OPE_LAST_SHOT_TURNOFF || m_changeTimeRes > 0 || m_outDupRate > 1))
 	    throw std::runtime_error("Operator doesn't support memory reduce");  
@@ -1233,6 +1273,16 @@ namespace layers{
 							      allocator);
 	}
 
+	if (m_F02UV){
+	    (*layersArray)[layersArray->Size() - 1].AddMember("F02UV", m_F02UV,
+							      allocator);
+	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyF0Mean", m_F0DataMean,
+							      allocator);
+	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyF0Std", m_F0DataStd,
+							      allocator);
+	}
+	    
+	
 	if (m_freqDim >= 0){
 	    
 	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyDim", m_freqDim,
@@ -1638,6 +1688,23 @@ namespace layers{
 	       fn1);
 	       
 	    
+	}else if (m_F02UV){
+	    // convert the input F0 into U/V
+	    thrust::fill(this->outputErrors().begin(), this->outputErrors().end(), 0.0);
+	    {
+		internal::normF0ToUV fn1;
+		fn1.F0mean = m_F0DataMean;
+		fn1.F0std  = m_F0DataStd;
+		thrust::for_each(
+		  thrust::make_zip_iterator(
+			thrust::make_tuple(this->precedingLayer().outputs().begin(),
+					   this->outputs().begin())),
+		  thrust::make_zip_iterator(
+			thrust::make_tuple(this->precedingLayer().outputs().begin() + timeLength,
+					   this->outputs().begin()                  + timeLength)),
+		  fn1);
+	    }
+	    
 	}else{
 	    // normal mode
 	    if (m_noiseSize > 0){
@@ -1918,6 +1985,20 @@ namespace layers{
 	    
 	    // to be finished
 	    
+	}else if (m_F02UV){
+	    {
+		internal::normF0ToUV fn1;
+		fn1.F0mean = m_F0DataMean;
+		fn1.F0std  = m_F0DataStd;
+		thrust::for_each(
+		  thrust::make_zip_iterator(
+			thrust::make_tuple(this->precedingLayer().outputs().begin() + effTimeStart,
+					   this->outputs().begin() + effTimeStart)),
+		  thrust::make_zip_iterator(
+			thrust::make_tuple(this->precedingLayer().outputs().begin() + effTimeEnd,
+					   this->outputs().begin()                  + effTimeEnd)),
+		  fn1);
+	    }
 	}else{
 	
 	    if (m_noiseSize > 0 && timeStep == 0){
@@ -2212,6 +2293,9 @@ namespace layers{
 	}else if (m_freqDim >= 0){
 	    // do nothing
 	    
+	}else if (m_F02UV){
+	    thrust::fill(this->precedingLayer().outputErrors().begin(),
+			 this->precedingLayer().outputErrors().end(), 0.0);
 	}else{
 	    
 	    if (m_outDupRate > 1){

@@ -852,10 +852,6 @@ namespace helpers {
 	    if (m_validFrameNum <= 2)
 		return;
 
-	    complex_t tmp;
-	    tmp.x = 0;
-	    tmp.y = 0;
-	    thrust::fill((*m_fftData).begin(), (*m_fftData).end(), tmp);
 	    {
 		internal::instantaneousPhaseGrad fn1;
 		fn1.fftBins = m_fftBins;
@@ -875,9 +871,15 @@ namespace helpers {
 					(*m_fftData).end()                - m_fftBins,
 					thrust::counting_iterator<int>(0) +
 					this->m_fftData->size() - m_fftBins)),
-			fn1);
-		
+			fn1);		
 	    }
+	    complex_t tmp;
+	    tmp.x = 0;
+	    tmp.y = 0;
+	    thrust::fill((*m_fftData).begin(), (*m_fftData).begin()+m_fftBins, tmp);
+	    thrust::fill((*m_fftData).begin()+ (m_validFrameNum -1) * m_fftBins,
+			 (*m_fftData).end(), tmp);
+
 	}else{
 	    {
 		internal::PhaseGrad fn1;
