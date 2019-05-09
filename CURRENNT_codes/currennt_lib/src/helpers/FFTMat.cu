@@ -393,7 +393,7 @@ namespace {
 		atan2(target[t.get<3>() - fftBins].y, target[t.get<3>() - fftBins].x) -
 		tar_phase_off_pre;
 
-	    
+	    //return;
 	    t.get<2>().y = t.get<2>().y - t.get<2>().x;
 	    
 	    // (source - target) ^ 2
