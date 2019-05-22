@@ -72,6 +72,7 @@
 #include "layers/FeedBackHiddenLayer.hpp"
 #include "layers/SsePostOutputLayerMultiSource.hpp"
 #include "layers/SincFilterLayer.hpp"
+#include "layers/SelfAttention.hpp"
 #include <stdexcept>
 
 
@@ -185,6 +186,9 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
     else if (layerType == "sinc_filter")
     	return new SincFilterLayer<TDevice>(layerChild, weightsSection,
 					    *precedingLayer, maxSeqLength, layerID);
+    else if (layerType == "self_attention")
+    	return new SelfAttentionLayer<TDevice>(layerChild, weightsSection,
+					       *precedingLayer, maxSeqLength, layerID);
     
     /*
     // not implemented yet
