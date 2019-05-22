@@ -62,7 +62,7 @@
 
 #define NETWORK_WAVENET_SAVE_NO 0         // not save memory in WaveNet
 #define NETWORK_WAVENET_SAVE_AR 1         // save memory for AR WaveNet
-#define NETWORK_WAVENET_SAVE_MA 2         // save memory for MA WaveNet
+#define NETWORK_WAVENET_SAVE_MA 2         // save memory for Non-AR WaveModel
 
 /* ----- Definition for beam-search generation ----- */
 /*   Internal class defined for NeuralNetwork only   */
@@ -667,7 +667,7 @@ namespace {
 				   const int totalNumLayers,
 				   const int layerResolution)
     {
-	// A layer's memory should be NOT released in MA WaveNet when
+	// A layer's memory should be NOT released in Non-AR WaveModel when
 	//  1. this layer resolution is not at the waveform level
 	//  2. this layer is in the condition module
 	//  3. this layer will be the actual output layer
@@ -989,7 +989,7 @@ void NeuralNetwork<TDevice>::__CreateNetworkLayers(const helpers::JsonDocument &
 				layer->reduceOutputBuffer();
 			}
 		    }else if (m_waveNetMemSaveFlag == NETWORK_WAVENET_SAVE_MA){
-			// Save the memory for MA WaveNet
+			// Save the memory for Non-AR WaveModel
 			if (internal::flagLayerCanBeOptimizedMA(
 				counter, m_signalGenLayerId[0], m_totalNumLayers,
 				layer->getResolution()))
@@ -2092,7 +2092,7 @@ void NeuralNetwork<TDevice>::__computeGenPass_LayerByLayer_mem(
     // Make a copy of the network layer dependency
     network_helpers::networkDepMng tmp_networkMng = this->m_networkMng;
 	
-    // mem save generation mode for MA WaveNet
+    // mem save generation mode for Non-AR WaveModel
     int layerID = 0;
     BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
 
