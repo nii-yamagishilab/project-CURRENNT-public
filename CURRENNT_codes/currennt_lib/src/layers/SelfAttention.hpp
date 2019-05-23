@@ -52,7 +52,10 @@ namespace layers {
 	real_vector m_softmax_buf;   // a temporary buffer for softmax
 
 	real_vector m_one_vector;
-	
+
+	real_t      m_align_prior_w;
+
+	void __loadOpts(const helpers::JsonValue &layerChild);
 	void __allocateLocalMem();
 	void __clearLocalMem();
 	

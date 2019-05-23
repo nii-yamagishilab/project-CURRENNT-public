@@ -45,8 +45,10 @@
 #include <thrust/for_each.h>
 #include <thrust/iterator/constant_iterator.h>
 #include <thrust/iterator/counting_iterator.h>
-
+#include <math.h> 
 #include <typeinfo>
+
+#define PI_DEFINITION 3.141592653589793f
 
 namespace internal {
 namespace {
@@ -80,24 +82,30 @@ namespace {
 
     struct CalculateExpFn
     {
-        int layerSize;
-
+        int    layerSize;
+	int    epoch;
+	real_t prior_w;
+	
         const real_t *offsets;
 
         __host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
         {
             // unpack the tuple
             real_t output = t.get<0>();
-            int outputIdx = t.get<1>();
 
             // calculate the pattern index
-            int patIdx = outputIdx / layerSize;
-
+            int outputIdx = t.get<1>() / layerSize;
+	    int inputIdx  = t.get<1>() % layerSize;
+	    
             // check if we can stop the calculation
-            real_t offset = offsets[patIdx];
+            real_t offset = offsets[outputIdx];
 
+	    // prior weight: use Gaussian window * decay_factor * relative_amplitude
+	    real_t prior = helpers::safeExp(-1.0 * (outputIdx-inputIdx) * (outputIdx-inputIdx)/5.0) * 
+		powf(prior_w, epoch) * fabsf(offset);
+		
             // calculate the exponent
-            real_t x = helpers::safeExp(output - offset);
+	    real_t x = helpers::safeExp(output - offset + prior);
 
             // store the result
             t.get<0>() = x;
@@ -219,13 +227,25 @@ namespace layers {
 				  3, 0, precedingLayer, maxSeqLength, layerID)
     {
 	if (this->parallelSequences() > 1)
-	    throw std::runtime_error("Self-attention not implemented for parallel_seq > 1");	
+	    throw std::runtime_error("Self-attention not implemented for parallel_seq > 1");
+	this->__loadOpts(layerChild);
 	this->__allocateLocalMem();
     }
 
     template <typename TDevice>
     SelfAttentionLayer<TDevice>::~SelfAttentionLayer()
     {
+    }
+
+    template <typename TDevice>
+    void SelfAttentionLayer<TDevice>::__loadOpts(const helpers::JsonValue &layerChild)
+    {
+	// 
+	m_align_prior_w = (layerChild->HasMember("alignPriorWeight")?
+			   static_cast<real_t>((*layerChild)["alignPriorWeight"].GetDouble()) :
+			   0.99);
+	
+
     }
 
     template <typename TDevice>
@@ -284,36 +304,42 @@ namespace layers {
 	
 	
 	{{
-	    // step1. compute W_v x -> V, W_q x -> Q, W_k x -> K
-
-
+	    // step1. compute Key, Query, Value
+		
+	    // x: input sequence of vectors
 	    helpers::Matrix<TDevice> mat_pre_o(&this->precedingLayer().outputs(), 
 					       this->precedingLayer().size(), 
 					       frame_num_total);
-	    // W_v x
+
+	    // Value 
+	    // mat_w_v: transformation matrix W_v
+	    //  note: mat_w_v has dimension [input_size, output_size]
 	    helpers::Matrix<TDevice> mat_w_v(&this->weights(),                  
 					     this->precedingLayer().size(), this->size());
-
+	    // mat_v: W_v^T * x
             helpers::Matrix<TDevice> mat_v(&m_mat_v, this->size(), frame_num_total);
             mat_v.assignProduct(mat_w_v, true, mat_pre_o, false);
 
-	    // W_q x
+	    // Query
+	    // mat_w_q: transformation matrix W_q
 	    helpers::Matrix<TDevice> mat_w_q(&this->weights(),                  
 					     this->precedingLayer().size(), this->size(),
 					     tmp_mat_size * 1);
-
+	    // mat_q: W_q^T * x
             helpers::Matrix<TDevice> mat_q(&m_mat_q, this->size(), frame_num_total);
             mat_q.assignProduct(mat_w_q, true, mat_pre_o, false);
-	    // scale W_q
+	    
+	    // scale W_q / sequence_length
 	    thrust::transform(m_mat_q.begin(), m_mat_q.end(), 
-			      thrust::make_constant_iterator(1.0/frame_num_total),
+			      thrust::make_constant_iterator(sqrt(1.0/frame_num_total)),
 			      m_mat_q.begin(), thrust::multiplies<real_t>());
 
-	    // W_k x
+	    // Key
+	    // mat_w_k: transformation matrix W_k
 	    helpers::Matrix<TDevice> mat_w_k(&this->weights(),                  
 					     this->precedingLayer().size(), this->size(),
 					     tmp_mat_size * 2);
-
+	    // mat_k: W_k ^ T * x
             helpers::Matrix<TDevice> mat_k(&m_mat_k, this->size(), frame_num_total);
             mat_k.assignProduct(mat_w_k, true, mat_pre_o, false);
 
@@ -327,8 +353,7 @@ namespace layers {
 		mat_align.assignProduct(mat_q, true, mat_k, false);
 
 		
-		// softmax over each time step
-		// 1. calculate the offset to center the activations for safer exponentiation
+		// 1. calculate the offset to center the activations for safe exponentiation
 		{{
 		    internal::CalculateOffsetFn fn;
 		    fn.layerSize = frame_num_total;
@@ -341,12 +366,14 @@ namespace layers {
 			fn);
 		}}
 
-		// 2. calculate the exponent
+		// 2. calculate the exponent exp(align_ij - offset + prior)
 		{{
 		    internal::CalculateExpFn fn;
 		    fn.layerSize = frame_num_total;
 		    fn.offsets   = helpers::getRawPointer(m_softmax_buf);
-
+		    fn.prior_w   = m_align_prior_w;
+		    fn.epoch     = this->getCurrTrainingEpoch();
+			
 		    int n = frame_num_total * frame_num_total;
 
 		    thrust::for_each(
@@ -359,7 +386,7 @@ namespace layers {
 		     fn);
 		}}
 
-		// 3. sum up all outputs for each pattern
+		// 3. sum up all outputs for each pattern \sum_i exp(align_ij - offset)
 		{{
 	        helpers::Matrix<TDevice> mat_one(&m_one_vector, 1, frame_num_total);
 	    	helpers::Matrix<TDevice> mat_sum(&m_softmax_buf, 1, frame_num_total);
@@ -367,7 +394,7 @@ namespace layers {
 		mat_sum.assignProduct(mat_one, false, mat_align, false);
 		}}
 
-		// 4. normalize the outputs
+		// 4. normalize the outputs exp(align_ij - offset) / \sum_i exp(align_ij - offset)
 		{{
 		    internal::NormalizeOutputsFn fn;
 		    fn.layerSize = frame_num_total;
@@ -419,13 +446,18 @@ namespace layers {
 
 	// step1. gradient w.r.t Q^T K
 	{{
-	    // gradient w.r.t softmax(Q^T, K)
+	    // gradient w.r.t alignment matrix
+	    //  mat_v:          V = W_v^T * x
+	    //  mat_grad_o:     \partial_E / \partial_o
+	    //  mat_grad_align: V^T * \partial_E / \partial_o
 	    helpers::Matrix<TDevice> mat_v   (&m_mat_v, this->size(), frame_num_total);
 	    helpers::Matrix<TDevice> mat_grad_o(&this->outputErrors(),this->size(),frame_num_total);
 	    helpers::Matrix<TDevice> mat_grad_align(&m_align_grad, frame_num_total, frame_num_total);
 	    mat_grad_align.assignProduct(mat_v, true, mat_grad_o, false);
 
-	    // calculate the error offset for each pattern
+
+	    // gradient w.r.t Q^T*K (gradient propagated through softmax)
+	    //  calculate the error offset for each pattern \sum_k [grad_align_kj * align_kj]
 	    {{
             internal::CalculateErrorOffsetFn fn;
             fn.layerSize    = frame_num_total;
@@ -438,9 +470,9 @@ namespace layers {
                 m_softmax_buf.begin(),
                 fn);
 	    }}
-	    
-
-	    // calculate the errors
+	    // calculate gradient w.r.t Q^T * K
+	    //  \partial_E / \partial [Q^T*K]_ij =
+	    //     align_ij * (grad_align_ij - \sum_k [grad_align_kj * align_kj] )
 	    {{
             internal::CalculateErrorsFn fn;
             fn.layerSize    = frame_num_total;
@@ -460,68 +492,107 @@ namespace layers {
                 fn);
 	    }}
 	}}
-	
+
+	// clean the gradient buffer
 	thrust::fill(this->_weightUpdates().begin(), this->_weightUpdates().end(), 0.0);
 	
 	// step2. gradient w.r.t W_v, x for W_v
 	{{
-	    // \partial_E / \partial_o * Align^T
+	    // gradient w.r.t v
+	    //   \parital_E / \partial_v = \partial_E / \partial_o * align^T
+	    // gradient w.r.t W_v
+	    //   \partial_E / \partial W_v = [\partial_E / \partial_v * x^T]^T
+	    //                             = x * [\partial_E / \partial_v]^T
+	    //                             = x * align * [\partial_E / \partial_o] ^ T
+	    // gradient w.r.t x that propagated through v = W_v ^ T * x
+	    //   \partial_E / \partial_x = W_v * \partial_E / \partial_v
+	    //
+	      
+	    // \partial_E / \partial_v = \partial_E / \partial_o * align^T
+	    //   mat_grad_o: \partial_E / \partial_o
+	    //   mat_align:  align
+	    //   mat_grad_buf:  \partial_E / \partial_v
 	    helpers::Matrix<TDevice> mat_grad_o(&this->outputErrors(),this->size(),frame_num_total);
 	    helpers::Matrix<TDevice> mat_align (&m_align, frame_num_total, frame_num_total);
 	    helpers::Matrix<TDevice> mat_grad_buf(&m_grad_buf, this->size(), frame_num_total);
 	    mat_grad_buf.assignProduct(mat_grad_o, false, mat_align, true);
 
+
+	    // \partial_E / \partial W_v = x * [\partial_E / \partial_v] ^ T
+	    //    mat_x: x
+	    //    mat_grad_w_v = \partial_E / \partial W_v
 	    helpers::Matrix<TDevice> mat_x(&this->precedingLayer().outputs(),
 					   this->precedingLayer().size(),frame_num_total);
 	    helpers::Matrix<TDevice> mat_grad_w_v (&this->_weightUpdates(),
 						   this->precedingLayer().size(), this->size());
 	    mat_grad_w_v.assignProduct(mat_x, false, mat_grad_buf, true);
 
+	    // \partial_E / \partial_x = W_v * \partial_E / \partial_v 
+	    //    mat_w_v:    W_v
+	    //    mat_grad_x: \partial_E / \partial_x
 	    helpers::Matrix<TDevice> mat_w_v(&this->weights(),                  
 					     this->precedingLayer().size(), this->size());
 	    helpers::Matrix<TDevice> mat_grad_x (&this->precedingLayer().outputErrors(),
 						   this->precedingLayer().size(), frame_num_total);
 	    mat_grad_x.assignProduct(mat_w_v, false, mat_grad_buf, false);
 
-
-	    // gradient w.r.t W_q, x for W_q
+	    // gradoemt w.r.t q
+	    //  \partial_E / \partial_q = [\partial_E / \partial_[Q^T*K] * K^T] ^ T
+	    //                          = l * [\partial_E / \partial_[Q^T*K]]^T
+	    // gradient w.r.t W_q
+	    //  \partial_E / \partial_w_q = x * \partial_E / \partial_q ^ T
+	    //  
+	    // gradient w.r.t x from q
+	    //  \partial_E / \partial_x = w_q * \partial_E / \partial_q
 	    
-	    // \partial_E / \partial_{Q}  = mat_K * [\partial_E / \partial_{Q^T}{K}]^T
+	    // \partial_E / \partial_q
+	    //   mat_align_grad: \partial_E / \partial_[Q^T*K]
+	    //   mat_k:          k
+	    //   mat_grad_buf:   \partial_E / \partial_q
 	    helpers::Matrix<TDevice> mat_align_grad(&m_align_grad, frame_num_total, frame_num_total);
 	    helpers::Matrix<TDevice> mat_k   (&m_mat_k, this->size(), frame_num_total);
 	    mat_grad_buf.assignProduct(mat_k, false, mat_align_grad, true);
 	    thrust::transform(m_grad_buf.begin(), m_grad_buf.end(), 
-			      thrust::make_constant_iterator(1.0/frame_num_total),
+			      thrust::make_constant_iterator(sqrt(1.0/frame_num_total)),
 			      m_grad_buf.begin(), thrust::multiplies<real_t>());
 
-	    // \partial_E / \partial_W^Q
+	    // \partial_E / \partial_w_q
 	    helpers::Matrix<TDevice> mat_grad_w_q (&this->_weightUpdates(),
 						   this->precedingLayer().size(), this->size(),
 						   tmp_mat_size * 1);
 	    mat_grad_w_q.assignProduct(mat_x, false, mat_grad_buf, true);
 
-	    // \partial_E / \partial_Q * \partial_Q / \partial_x
-	    
+	    // \partial_E / \partial_x
+	    //   mat_w_q: w_q
 	    helpers::Matrix<TDevice> mat_w_q(&this->weights(),                  
 					     this->precedingLayer().size(), this->size(),
 					     tmp_mat_size * 1);
 	    mat_grad_x.addProduct(mat_w_q, false, mat_grad_buf, false);
 
 
-	    // gradient w.r.t W_k, x for W_k
+	    // gradoemt w.r.t k
+	    //  \partial_E / \partial_k = 
+	    //                          = q * \partial_E / \partial_[Q^T*K]
+	    // gradient w.r.t W_k
+	    //  \partial_E / \partial_w_k = x * [\partial_E / \partial_k] ^ T
+	    //  
+	    // gradient w.r.t x from k
+	    //  \partial_E / \partial_x = w_k * \partial_E / \partial_k
 	    
-	    // \partial_E / \partial_{K} = \mat_Q * \partial_E / \partial_{Q^T}{K} 
+	    // \partial_E / \partial_k
+	    //   mat_align_grad: \partial_E / \partial_[Q^T*K]
+	    //   mat_q:          q
+	    //   mat_grad_buf:   \partial_E / \partial_q
 	    helpers::Matrix<TDevice> mat_q   (&m_mat_q, this->size(), frame_num_total);
 	    mat_grad_buf.assignProduct(mat_q, false, mat_align_grad, false);
 
-	    // \partial_E / \partial_W^k
+	    // \partial_E / \partial_w_k
 	    helpers::Matrix<TDevice> mat_grad_w_k (&this->_weightUpdates(),
 						   this->precedingLayer().size(), this->size(),
 						   tmp_mat_size * 1);
 	    mat_grad_w_k.assignProduct(mat_x, false, mat_grad_buf, true);
 
-	    // \partial_E / \partial_K * \partial_K / \partial_x
-	    
+	    // \partial_E / \partial_x
 	    helpers::Matrix<TDevice> mat_w_k(&this->weights(),                  
 					     this->precedingLayer().size(), this->size(),
 					     tmp_mat_size * 2);
@@ -545,7 +616,10 @@ namespace layers {
 	const helpers::JsonValue     &layersArray, 
 	const helpers::JsonAllocator &allocator) const
     {
-        TrainableLayer<TDevice>::exportLayer(layersArray, allocator);	
+	
+        TrainableLayer<TDevice>::exportLayer(layersArray, allocator);
+	(*layersArray)[layersArray->Size() - 1].AddMember("alignPriorWeight", m_align_prior_w,
+							  allocator);
     }
 
 
