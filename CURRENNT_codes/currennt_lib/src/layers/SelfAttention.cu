@@ -331,7 +331,7 @@ namespace layers {
 	    
 	    // scale W_q / sequence_length
 	    thrust::transform(m_mat_q.begin(), m_mat_q.end(), 
-			      thrust::make_constant_iterator(sqrt(1.0/frame_num_total)),
+			      thrust::make_constant_iterator(sqrt(1.0/this->size())),
 			      m_mat_q.begin(), thrust::multiplies<real_t>());
 
 	    // Key
@@ -553,7 +553,7 @@ namespace layers {
 	    helpers::Matrix<TDevice> mat_k   (&m_mat_k, this->size(), frame_num_total);
 	    mat_grad_buf.assignProduct(mat_k, false, mat_align_grad, true);
 	    thrust::transform(m_grad_buf.begin(), m_grad_buf.end(), 
-			      thrust::make_constant_iterator(sqrt(1.0/frame_num_total)),
+			      thrust::make_constant_iterator(sqrt(1.0/this->size())),
 			      m_grad_buf.begin(), thrust::multiplies<real_t>());
 
 	    // \partial_E / \partial_w_q

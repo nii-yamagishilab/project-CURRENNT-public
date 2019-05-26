@@ -946,6 +946,7 @@ namespace data_sets {
     {
         int ret;
         int ncid;
+	int flag_quick_net_test = 0;
 	
         if (fraction <= 0 || fraction > 1)
             throw std::runtime_error("Invalid fraction");
@@ -957,7 +958,10 @@ namespace data_sets {
 	m_auxFileExt         = config.auxillaryDataExt();
 	m_auxDataDim         = config.auxillaryDataDim();
 	m_auxDataTyp         = config.auxillaryDataTyp();
-	
+
+	// mode to test the network?
+	flag_quick_net_test = config.quickTestNetwork();
+	    
 	// Add 170327: Prepare the external input data
 	if (config.exInputDir().size() || config.exInputDirs().size()){
 	    if (config.exInputDim() > 0){
@@ -1117,6 +1121,12 @@ namespace data_sets {
                 int inputsBegin  = 0;
                 int targetsBegin = 0;
 
+		// if test the network, only load one utterance
+		if (flag_quick_net_test) {
+		    nSeq = 1;
+		    std::cout << std::endl << "Network checking mode" << std::endl;
+		}
+		
                 for (int i = 0; i < nSeq; ++i) {
                     int seqLength      = internal::readNcIntArray(ncid, "seqLengths", i);
                     m_totalTimesteps  += seqLength;
@@ -1479,6 +1489,10 @@ namespace data_sets {
             m_sequences.insert(m_sequences.end(), sequences.begin(), sequences.end());
 
             first_file = false;
+
+	    // for network test mode, only read one nc file
+	    if (flag_quick_net_test) break;
+	    
         } // nc file loop
 
         m_totalSequences = m_sequences.size();

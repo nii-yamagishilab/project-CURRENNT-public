@@ -158,6 +158,9 @@ Configuration::Configuration(int argc, const char *argv[])
 	("verbose",        
 	 po::value(&m_verbose)       ->default_value(0),            
 	 "information output level: 0 (default), 1")
+	("quick_network_test",        
+	 po::value(&m_quickTestNetwork)       ->default_value(0),            
+	 "load only 1 utterance and test network: 0 (default), 1")
         ;
 
     po::options_description feedForwardOptions("Forward pass options");
@@ -861,10 +864,16 @@ Configuration::Configuration(int argc, const char *argv[])
     }
     
     if (m_autosave) {
-        std::cout << "\tAutosave after EVERY EPOCH enabled." << std::endl;
+	if (m_quickTestNetwork > 0)
+	    m_autosave = false;
+	else
+	    std::cout << "\tAutosave after EVERY EPOCH enabled." << std::endl;
     }
     if (m_autosaveBest) {
-        std::cout << "\tAutosave on BEST VALIDATION ERROR enabled." << std::endl;
+	if (m_quickTestNetwork > 0)
+	    m_autosaveBest = false;
+	else
+	    std::cout << "\tAutosave on BEST VALIDATION ERROR enabled." << std::endl;
     }
 
     if (m_useCuda){
@@ -1646,4 +1655,8 @@ const real_t& Configuration::f0dataStd_signalgen() const{
 
 const int& Configuration::ARmodelSpecialGenMode() const{
     return m_ARmodelSpecialGenMode;
+}
+
+const int& Configuration::quickTestNetwork() const{
+    return m_quickTestNetwork;
 }

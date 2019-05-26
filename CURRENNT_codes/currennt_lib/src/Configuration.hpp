@@ -227,6 +227,9 @@ private:
     
 
     /**/
+    int         m_quickTestNetwork;
+    
+    /**/
     real_t      m_f0dataMean_signalgen;
     real_t      m_f0dataStd_signalgen;
     
@@ -795,6 +798,8 @@ public:
     const int& batchnorm_genmode() const;
 
     const int& ARmodelSpecialGenMode() const;
+
+    const int& quickTestNetwork() const;
 };
 
 
