@@ -810,6 +810,26 @@ namespace {
 	}
 	
     };
+
+    // Generate the positional code
+    struct positionalCode
+    {
+	int featureDim;
+	int parallel;
+	
+	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
+	{
+	    real_t timeIdx  = (real_t)(t.get<1>() / featureDim / parallel);
+	    int dimIdx   = t.get<1>() % featureDim;
+
+	    if (dimIdx % 2 == 0)
+		t.get<0>() = sin(timeIdx / powf(10000, dimIdx / 2 * 2.0 / featureDim));
+	    else
+		t.get<0>() = cos(timeIdx / powf(10000, dimIdx / 2 * 2.0 / featureDim));
+	    
+	}
+    };
+
     
 }
 }
@@ -1158,6 +1178,13 @@ namespace layers{
 	    
 	    m_noiseInput = this->outputs();
 	}
+
+	/* ------ positional encoding -------- */
+	m_positional_code_mode = (layerChild->HasMember("positional_code")?
+		     static_cast<int>((*layerChild)["positional_code"].GetDouble()) : -1);
+	if (m_positional_code_mode >= 0)
+	    printf("\tpositional code mode %d enabled", m_positional_code_mode);
+	    
 	
 	/* ------ print the information ------ */
 
@@ -1282,6 +1309,11 @@ namespace layers{
 							      allocator);
 	}
 	    
+	if (m_positional_code_mode >= 0){
+	    (*layersArray)[layersArray->Size() - 1].AddMember("positional_code",
+							      m_positional_code_mode,
+							      allocator);
+	}
 	
 	if (m_freqDim >= 0){
 	    
@@ -1705,6 +1737,22 @@ namespace layers{
 		  fn1);
 	    }
 	    
+	}else if (m_positional_code_mode >= 0){
+	    // generate the positional code
+	    {
+	    	internal::positionalCode fn1;
+		fn1.featureDim = this->size();
+		fn1.parallel   = this->parallelSequences();
+		
+		thrust::for_each(
+		  thrust::make_zip_iterator(
+		    thrust::make_tuple(this->outputs().begin(),
+				       thrust::counting_iterator<int>(0))),
+		  thrust::make_zip_iterator(
+		    thrust::make_tuple(this->outputs().begin()     + this->size() * timeLength,
+				 thrust::counting_iterator<int>(0) + this->size() * timeLength)),
+		  fn1);
+	    }	
 	}else{
 	    // normal mode
 	    if (m_noiseSize > 0){
@@ -2291,6 +2339,9 @@ namespace layers{
 	    
 	    
 	}else if (m_freqDim >= 0){
+	    // do nothing
+	    
+	}else if (m_positional_code_mode >= 0){
 	    // do nothing
 	    
 	}else if (m_F02UV){

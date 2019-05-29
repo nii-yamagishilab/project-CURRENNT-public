@@ -115,6 +115,8 @@ namespace layers{
 	int             m_F02UV;
 	real_t          m_F0DataMean;
 	real_t          m_F0DataStd;
+
+	int             m_positional_code_mode;
 	
 	OperationLayer(
 	    const helpers::JsonValue &layerChild,
