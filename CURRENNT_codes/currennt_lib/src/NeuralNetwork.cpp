@@ -1,4 +1,9 @@
 /******************************************************************************
+ * This file is modified version 
+ * Xin WANG
+ * National Institute of Informatics, Japan
+ * 2016
+ * 
  * Copyright (c) 2013 Johannes Bergmann, Felix Weninger, Bjoern Schuller
  * Institute for Human-Machine Communication
  * Technische Universitaet Muenchen (TUM)
@@ -30,6 +35,8 @@
 #include "layers/SkipLayer.hpp"
 #include "layers/NormFlowLayer.hpp"
 #include "layers/vaeMiddleLayer.hpp"
+#include "layers/InterMetric.hpp"
+
 #include "helpers/JsonClasses.hpp"
 #include "helpers/dataProcess.hpp"
 #include "MacroDefine.hpp"
@@ -714,6 +721,7 @@ void NeuralNetwork<TDevice>::__InitializeNetworkLayerIdx(const helpers::JsonDocu
 	m_featTransNetRange.clear();
 	m_feedBackHiddenLayers.clear();
 	m_feedBackHiddenLayersTimeResos.clear();
+	m_interMetricLayers.clear();
 	
 	m_firstFeedBackLayer    = -1;     // Idx of the first feedback layer
 	m_middlePostOutputLayer = -1;     // Idx of the PostOutputLayer inside the network
@@ -806,6 +814,10 @@ void NeuralNetwork<TDevice>::__InitializeNetworkLayerIdx(const helpers::JsonDocu
 	    }else if (layerType == "feedback_hidden"){
 		// feedback layers that takes the output of hidden layers
 		m_feedBackHiddenLayers.push_back(counter);
+		
+	    }else if (layerType.compare(0, 5, "inter") == 0){
+		// intermetric layers
+		m_interMetricLayers.push_back(counter);
 		
 	    }else{
 		// do nothing
@@ -3200,6 +3212,22 @@ real_t NeuralNetwork<TDevice>::calculateError(const bool flagGenerateMainError) 
 	    }	    
 	    return tmpError;
 	}
+	
+    }else if (!m_interMetricLayers.empty()){
+	
+	// With intermediate metrics
+	if(flagGenerateMainError){
+	    return static_cast<layers::PostOutputLayer<TDevice>&>(
+			*m_layers.back()).calculateError();
+	}else{
+	    real_t tmpError = 0.0;
+	    BOOST_FOREACH (int layerID, m_interMetricLayers){
+		tmpError += static_cast<layers::InterMetricLayer<TDevice>&>(
+					*m_layers[layerID]).calculateError();
+	    }	    
+	    return tmpError;
+	}
+	
     }else{
 	// Normal network
 	if(flagGenerateMainError)

@@ -73,6 +73,8 @@
 #include "layers/SsePostOutputLayerMultiSource.hpp"
 #include "layers/SincFilterLayer.hpp"
 #include "layers/SelfAttention.hpp"
+#include "layers/InterMetricSSE.hpp"
+#include "layers/InterMetricSoftmax.hpp"
 #include <stdexcept>
 
 
@@ -190,15 +192,6 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
     	return new SelfAttentionLayer<TDevice>(layerChild, weightsSection,
 					       *precedingLayer, maxSeqLength, layerID);
     
-    /*
-    // not implemented yet
-    else if (layerType == "lstmw")
-    	return new LstmLayerCharW<TDevice>(layerChild, weightsSection, *precedingLayer, 
-					   chaDim, maxTxtLength, false);
-    else if (layerType == "blstmw")
-    	return new LstmLayerCharW<TDevice>(layerChild, weightsSection, *precedingLayer, 
-					   chaDim, maxTxtLength, true);
-    */
     else if (layerType == "sse"                       || layerType == "weightedsse"  || 
 	     layerType == "rmse"                      || layerType == "ce"  || 
 	     layerType == "wf"                        || layerType == "binary_classification" ||
@@ -257,7 +250,13 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
     	    return new MulticlassClassificationLayer<TDevice>(layerChild,
 							      *precedingLayer, maxSeqLength,
 							      layerID);
-	
+
+    }else if (layerType == "inter_sse"){
+    	return new InterMetricLayer_sse<TDevice>(layerChild, *precedingLayer,
+						 maxSeqLength, layerID);
+    }else if (layerType == "inter_softmax"){
+    	return new InterMetricLayer_softmax<TDevice>(layerChild, *precedingLayer,
+						     maxSeqLength, layerID);
     }else{
         throw std::runtime_error(std::string("Error in network.jsn: unknown type'") +
 				 layerType + "'");

@@ -1185,6 +1185,16 @@ namespace layers{
 	if (m_positional_code_mode >= 0)
 	    printf("\tpositional code mode %d enabled", m_positional_code_mode);
 	    
+
+	/* ------ reverse gradient ----------- */
+	m_reverse_grad = (layerChild->HasMember("reverse_grad")?
+		     static_cast<int>((*layerChild)["reverse_grad"].GetDouble()) : -1);
+	if (m_reverse_grad >= 0){
+	    if (this->size() != this->precedingLayer().size())
+		throw std::runtime_error("reverse_grad layer size not equal to previous layer");
+	    else
+		printf("\treverse grad");
+	}
 	
 	/* ------ print the information ------ */
 
@@ -1315,6 +1325,11 @@ namespace layers{
 							      allocator);
 	}
 	
+	if (m_reverse_grad >= 0){
+	    (*layersArray)[layersArray->Size() - 1].AddMember("reverse_grad", m_reverse_grad,
+							      allocator);
+	}
+
 	if (m_freqDim >= 0){
 	    
 	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyDim", m_freqDim,
@@ -1753,6 +1768,10 @@ namespace layers{
 				 thrust::counting_iterator<int>(0) + this->size() * timeLength)),
 		  fn1);
 	    }	
+	}else if (m_reverse_grad){
+	    
+	    this->outputs() = this->precedingLayer().outputs();
+	    
 	}else{
 	    // normal mode
 	    if (m_noiseSize > 0){
@@ -2047,6 +2066,15 @@ namespace layers{
 					   this->outputs().begin()                  + effTimeEnd)),
 		  fn1);
 	    }
+	}else if (m_positional_code_mode >= 0){
+	    if (timeStep == 0)
+		this->computeForwardPass(nnState);
+	    
+	}else if (m_reverse_grad >=0 ){
+	    thrust::copy(this->precedingLayer().outputs().begin() + effTimeStart,
+			 this->precedingLayer().outputs().begin() + effTimeEnd,
+			 this->outputs().begin() + effTimeStart);
+	    
 	}else{
 	
 	    if (m_noiseSize > 0 && timeStep == 0){
@@ -2344,6 +2372,14 @@ namespace layers{
 	}else if (m_positional_code_mode >= 0){
 	    // do nothing
 	    
+	}else if (m_reverse_grad >=0){
+	    
+	    thrust::transform(this->outputErrors().begin(),
+			      this->outputErrors().end(), 
+			      thrust::make_constant_iterator(-1.0),
+			      this->precedingLayer().outputErrors().begin(),
+			      thrust::multiplies<real_t>());
+	    
 	}else if (m_F02UV){
 	    thrust::fill(this->precedingLayer().outputErrors().begin(),
 			 this->precedingLayer().outputErrors().end(), 0.0);
@@ -2479,6 +2515,16 @@ namespace layers{
 	}else if (m_freqDim >= 0){
 	    // do nothing
 	    
+	}else if (m_positional_code_mode >= 0){
+
+	}else if (m_reverse_grad >= 0){
+	    
+	    thrust::transform(this->outputErrors().begin() + effTimeStart,
+			      this->outputErrors().begin() + effTimeEnd, 
+			      thrust::make_constant_iterator(-1.0),
+			      this->precedingLayer().outputErrors().begin() + effTimeStart,
+			      thrust::multiplies<real_t>());
+
 	}else{
 	    
 	    if (m_outDupRate > 1){

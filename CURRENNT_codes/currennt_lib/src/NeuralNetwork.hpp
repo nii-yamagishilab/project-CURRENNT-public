@@ -128,7 +128,10 @@ private:
     std::vector<int> m_feedBackHiddenLayers;
     // vector of feedback_hidden layer time resolutions
     std::vector<int> m_feedBackHiddenLayersTimeResos;
-
+    // vector of InterMetric layers
+    std::vector<int> m_interMetricLayers;
+    
+    
     // vector of temporary layer index used in AR dependency building
     std::vector<int> m_tmpLayerIdx;
 
