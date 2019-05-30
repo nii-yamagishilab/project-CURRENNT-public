@@ -1188,7 +1188,7 @@ namespace layers{
 
 	/* ------ reverse gradient ----------- */
 	m_reverse_grad = (layerChild->HasMember("reverse_grad")?
-		     static_cast<int>((*layerChild)["reverse_grad"].GetDouble()) : -1);
+		     static_cast<real_t>((*layerChild)["reverse_grad"].GetDouble()) : -1);
 	if (m_reverse_grad >= 0){
 	    if (this->size() != this->precedingLayer().size())
 		throw std::runtime_error("reverse_grad layer size not equal to previous layer");
@@ -2376,7 +2376,7 @@ namespace layers{
 	    
 	    thrust::transform(this->outputErrors().begin(),
 			      this->outputErrors().end(), 
-			      thrust::make_constant_iterator(-1.0),
+			      thrust::make_constant_iterator(-1.0 * m_reverse_grad),
 			      this->precedingLayer().outputErrors().begin(),
 			      thrust::multiplies<real_t>());
 	    
@@ -2521,7 +2521,7 @@ namespace layers{
 	    
 	    thrust::transform(this->outputErrors().begin() + effTimeStart,
 			      this->outputErrors().begin() + effTimeEnd, 
-			      thrust::make_constant_iterator(-1.0),
+			      thrust::make_constant_iterator(-1.0 * m_reverse_grad),
 			      this->precedingLayer().outputErrors().begin() + effTimeStart,
 			      thrust::multiplies<real_t>());
 
