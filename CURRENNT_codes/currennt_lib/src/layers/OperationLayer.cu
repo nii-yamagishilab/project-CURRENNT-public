@@ -1768,7 +1768,7 @@ namespace layers{
 				 thrust::counting_iterator<int>(0) + this->size() * timeLength)),
 		  fn1);
 	    }	
-	}else if (m_reverse_grad){
+	}else if (m_reverse_grad >= 0){
 	    
 	    this->outputs() = this->precedingLayer().outputs();
 	    
