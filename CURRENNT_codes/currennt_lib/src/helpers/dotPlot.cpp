@@ -35,11 +35,14 @@ namespace dotPlot{
     }
 
     void printDotNode(std::ofstream& ofs,
-		      const int src_id, const std::string src,
-		      const int tar_id, const std::string tar)
+		      const int src_id, const std::string src_name, const std::string src_type,
+		      const int tar_id, const std::string tar_name, const std::string tar_type)
     {
-	ofs << "\"" << src_id << "_" << src << "\"" << " -> ";
-	ofs << "\"" << tar_id << "_" << tar << "\"" << ";\n" << std::endl;
+	
+	ofs << "\"" << src_id << "_" << src_type << "\\n" << src_name << "\"" << " -> ";
+	ofs << "\"" << tar_id << "_" << tar_type << "\\n" << tar_name << "\"" << ";\n" << std::endl;
+	//ofs << "\"" << src_id << "_" << src << "\"" << " -> ";
+	//ofs << "\"" << tar_id << "_" << tar << "\"" << ";\n" << std::endl;
 
     }
     

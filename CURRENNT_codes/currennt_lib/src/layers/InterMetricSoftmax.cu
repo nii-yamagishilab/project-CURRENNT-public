@@ -58,7 +58,8 @@ namespace {
                 return 0;
 
 	    int targetIdx = (int)dataBuf[patIdx * (featDim + 1)];
-
+	    dataBuf[patIdx * (featDim + 1)] = targetIdx;  // round the index if necessary
+	    
 	    if (targetIdx == dimIdx){
 		real_t targetProb = helpers::max(helpers::NumericLimits<real_t>::min(),
 						 dataBuf[patIdx * (featDim + 1) + targetIdx + 1]);

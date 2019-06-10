@@ -40,8 +40,8 @@ namespace dotPlot{
     void printDotNode(std::ofstream& ofs, const std::string src, const std::string tar);
 
     void printDotNode(std::ofstream& ofs,
-		      const int src_id, const std::string src,
-		      const int tar_id, const std::string tar);
+		      const int src_id, const std::string src_name, const std::string src_type,
+		      const int tar_id, const std::string tar_name, const std::string tar_type);
     
     void printDotEnd(std::ofstream& ofs);
 }

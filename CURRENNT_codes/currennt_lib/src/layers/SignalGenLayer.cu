@@ -1004,9 +1004,13 @@ namespace layers{
     template <typename TDevice>
     std::vector<int> SignalGenLayer<TDevice>::dependLayerIDs()
     {
-	std::vector<int> tmp;
-	tmp.clear();
-	return tmp;
+	if (m_freqDim >= 0){
+	    return Layer<TDevice>::dependLayerIDs();
+	}else{   
+	    std::vector<int> tmp;
+	    tmp.clear();
+	    return tmp;
+	}
     }
         
     template <typename TDevice>

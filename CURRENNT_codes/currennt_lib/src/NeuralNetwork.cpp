@@ -1434,8 +1434,11 @@ void NeuralNetwork<TDevice>::printLayerDependecy()
 	BOOST_FOREACH (network_helpers::layerDep layerDep_tmp, this->m_networkMng.get_layerDeps()){
 	    BOOST_FOREACH (int towhich, layerDep_tmp.get_towhich()){
 		dotPlot::printDotNode(ofs, layerDep_tmp.get_layerID(),
+				      m_layers[layerDep_tmp.get_layerID()]->name(),
 				      m_layers[layerDep_tmp.get_layerID()]->type(),
-				      towhich, m_layers[towhich]->type());
+				      towhich,
+				      m_layers[towhich]->name(),
+				      m_layers[towhich]->type());
 	    }
 	}
 	dotPlot::printDotEnd(ofs);

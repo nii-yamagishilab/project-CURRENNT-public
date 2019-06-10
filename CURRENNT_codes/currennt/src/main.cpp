@@ -164,7 +164,9 @@ int trainerMain(const Configuration &config)
         boost::shared_ptr<data_sets::DataSet> feedForwardSet = 
 	    boost::make_shared<data_sets::DataSet>();
 
+	int maxSeqLength;
         if (config.trainingMode()) {
+	    // training mode
             trainingSet = loadDataSet(DATA_SET_TRAINING);
             
             if (!config.validationFiles().empty())
@@ -172,23 +174,24 @@ int trainerMain(const Configuration &config)
             
             if (!config.testFiles().empty())
                 testSet = loadDataSet(DATA_SET_TEST);
-        }else if(config.printWeightPath().size()>0){
-	    
-        }else {
-            feedForwardSet = loadDataSet(DATA_SET_FEEDFORWARD);
-        }
 
-        // calculate the maximum sequence length
-        int maxSeqLength;
-        if (config.trainingMode())
-            maxSeqLength = std::max(trainingSet->maxSeqLength(), 
+	    maxSeqLength = std::max(trainingSet->maxSeqLength(), 
 				    std::max(validationSet->maxSeqLength(),
 					     testSet->maxSeqLength()));
-	else if(config.printWeightPath().size()>0)
+	    
+        }else if(config.printWeightPath().size()  > 0 ||
+		 config.networkGraphFile().size() > 0){
+	    // network conversion or network plotting mode
 	    maxSeqLength = 0;
-        else
-            maxSeqLength = feedForwardSet->maxSeqLength();
+	    
+        }else {
+	    // default: forward propagation mode
+            feedForwardSet = loadDataSet(DATA_SET_FEEDFORWARD);
+	    maxSeqLength = feedForwardSet->maxSeqLength();
+        }
+            
 
+	// number of parallel sequences in one block
         int parallelSequences = config.parallelSequences();
 	
 
@@ -558,6 +561,15 @@ int trainerMain(const Configuration &config)
 			    config.weLearningRate());
 		printf("done.\n");
 	    }
+
+	/********************* Network dot-plot file *************************/
+	}else if (config.networkGraphFile().size() > 0){
+	    
+	    // the dot plot should have been plotted during network initialization
+	    // nothing to do here
+	    printf("Generating dot graph file to %s.\n", config.networkGraphFile().c_str());
+	    printf("Please use dot to convert the graph file into a picture\n");
+	    
 	    
 	/********************* Data Generation    *************************/
         }else {
