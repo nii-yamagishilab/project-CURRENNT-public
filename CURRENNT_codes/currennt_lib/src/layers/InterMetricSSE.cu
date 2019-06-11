@@ -120,12 +120,14 @@ namespace layers {
     template <typename TDevice>
     real_t InterMetricLayer_sse<TDevice>::calculateError()
     {
+	int featureDim   = this->precedingLayer().size() / 2;
+	
 	internal::ComputeInterSseFn fn;
-	fn.featDim   = this->size() / 2;
+	fn.featDim   = featureDim;
 	fn.dataBuf   = helpers::getRawPointer(this->precedingLayer().outputs());
 	fn.patTypes  = helpers::getRawPointer(this->patTypes());
 
-	int n = this->curMaxSeqLength() * this->parallelSequences() * this->size() / 2;
+	int n = this->curMaxSeqLength() * this->parallelSequences() * featureDim;
 	    
 	real_t mse = (real_t)0.5 * thrust::transform_reduce(
                 thrust::make_zip_iterator(
@@ -136,7 +138,7 @@ namespace layers {
 					   thrust::counting_iterator<int>(0)        + n)),
 		fn,
 		(real_t)0,
-		thrust::plus<real_t>()) / this->size() / 2;
+		thrust::plus<real_t>()) / featureDim;
 	return mse;
 	
     }
@@ -155,13 +157,15 @@ namespace layers {
     template <typename TDevice>
     void InterMetricLayer_sse<TDevice>::computeBackwardPass(const int nnState)
     {
+	int featureDim   = this->precedingLayer().size() / 2;
+
 	internal::ComputeOutputInterErrorFn fn;
-	fn.featDim   = this->size() / 2;
+	fn.featDim   = featureDim;
 	fn.dataBuf   = helpers::getRawPointer(this->precedingLayer().outputs());
 	fn.patTypes  = helpers::getRawPointer(this->patTypes());
 	fn.grad_scale= this->__grad_scale();
 	
-	int n = this->curMaxSeqLength() * this->parallelSequences() * this->size();
+	int n = this->curMaxSeqLength() * this->parallelSequences() * featureDim * 2;
 
 	thrust::transform(
            thrust::make_zip_iterator(
