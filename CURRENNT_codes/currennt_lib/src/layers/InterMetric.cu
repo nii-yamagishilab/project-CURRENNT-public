@@ -47,8 +47,11 @@ namespace layers {
 			   &precedingLayer,
 			   createOutputs)
     {
-	// nothing
 	
+	m_grad_scale    = (layerChild->HasMember("error_scale") ? 
+			   static_cast<real_t>((*layerChild)["error_scale"].GetDouble()) : 1.0);
+	
+
     }
 
     template <typename TDevice>
@@ -62,6 +65,21 @@ namespace layers {
 	// do nothing
     }
 
+    template <typename TDevice>
+    void InterMetricLayer<TDevice>::exportLayer(const helpers::JsonValue &layersArray, 
+						const helpers::JsonAllocator &allocator) const
+    {
+        Layer<TDevice>::exportLayer(layersArray, allocator);
+	(*layersArray)[layersArray->Size() - 1].AddMember("error_scale",  m_grad_scale,
+							  allocator);
+    }
+
+    template <typename TDevice>
+    const real_t& InterMetricLayer<TDevice>::__grad_scale()
+    {
+	return m_grad_scale;
+    }
+    
     
     // explicit template instantiations
     template class InterMetricLayer<Cpu>;

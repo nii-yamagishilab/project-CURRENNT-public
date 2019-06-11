@@ -61,6 +61,7 @@ namespace {
     struct ComputeOutputInterErrorFn
     {        
     	int featDim;
+	real_t  grad_scale;
 	real_t *dataBuf;
     	const char *patTypes;
 	
@@ -76,11 +77,11 @@ namespace {
 	    // for target signal, grad = target - source
 	    // for source signal, grad = source - target
 	    if (dimIdx < featDim)
-		return dataBuf[patIdx * layerSize + dimIdx] -
-		    dataBuf[patIdx * layerSize + dimIdx + featDim];
+		return (dataBuf[patIdx * layerSize + dimIdx] -
+			dataBuf[patIdx * layerSize + dimIdx + featDim]) * grad_scale;
 	    else
-		return dataBuf[patIdx * layerSize + dimIdx] -
-		    dataBuf[patIdx * layerSize + dimIdx - featDim];
+		return (dataBuf[patIdx * layerSize + dimIdx] -
+			dataBuf[patIdx * layerSize + dimIdx - featDim]) * grad_scale;
 		    
 	}
     };
@@ -135,7 +136,7 @@ namespace layers {
 					   thrust::counting_iterator<int>(0)        + n)),
 		fn,
 		(real_t)0,
-		thrust::plus<real_t>());
+		thrust::plus<real_t>()) / this->size() / 2;
 	return mse;
 	
     }
@@ -158,7 +159,8 @@ namespace layers {
 	fn.featDim   = this->size() / 2;
 	fn.dataBuf   = helpers::getRawPointer(this->precedingLayer().outputs());
 	fn.patTypes  = helpers::getRawPointer(this->patTypes());
-
+	fn.grad_scale= this->__grad_scale();
+	
 	int n = this->curMaxSeqLength() * this->parallelSequences() * this->size();
 
 	thrust::transform(
@@ -184,7 +186,7 @@ namespace layers {
     void InterMetricLayer_sse<TDevice>::exportLayer(const helpers::JsonValue &layersArray, 
 						    const helpers::JsonAllocator &allocator) const
     {
-        Layer<TDevice>::exportLayer(layersArray, allocator);
+        InterMetricLayer<TDevice>::exportLayer(layersArray, allocator);
     }
 
     template <typename TDevice>

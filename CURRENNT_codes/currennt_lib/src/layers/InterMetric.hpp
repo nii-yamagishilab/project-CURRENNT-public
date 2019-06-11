@@ -34,6 +34,10 @@ namespace layers {
 	typedef typename TDevice::real_vector    real_vector;
     private:
 	//
+	real_t m_grad_scale;
+	
+    protected:
+	const real_t& __grad_scale();
 	
     public:
 	
@@ -51,6 +55,9 @@ namespace layers {
 	virtual real_t calculateError() =0;
 	
 	virtual void reInitWeight();
+	
+	virtual void exportLayer(const helpers::JsonValue &layersArray,
+				 const helpers::JsonAllocator &allocator) const;
 
     };
 
