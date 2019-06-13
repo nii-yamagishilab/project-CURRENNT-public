@@ -80,6 +80,8 @@
 
 #define PI_DEFINITION 3.141592654f
 
+// for F02UV
+#define NN_OPE_F02UV_THRESHOLD 10.0 // F0 > 10Hz, voiced
 
 // CUDA functions
 namespace internal{
@@ -715,7 +717,8 @@ namespace {
 
     
     // Convert F0 (normaized) into U/V
-    // assume F0 <= 0 is unvoiced
+    //  normed_F0 * std + mean > threshold
+    //  normed_F0 > (threshod - mean) / std
     struct normF0ToUV
     {
 	real_t F0mean;
@@ -723,7 +726,7 @@ namespace {
 	
 	__host__ __device__ void operator() (const thrust::tuple<real_t&, real_t&> &t) const
 	{
-	    if (t.get<0>() > (-1.0 * F0mean / F0std))
+	    if (t.get<0>() > ((NN_OPE_F02UV_THRESHOLD - F0mean) / F0std))
 		t.get<1>() = 1.0;
 	    else
 		t.get<1>() = 0.0;
