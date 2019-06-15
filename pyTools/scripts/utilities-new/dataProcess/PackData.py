@@ -109,7 +109,10 @@ if __name__ == "__main__":
             raise Exception("*** Fail to get mean and std. %s" % (line))
 
     else:
-        print("===== Skip calculating mean and variance =====")
+        # No longer calculate mean and variance in data.nc, ignore this notice
+        # print("===== Skip calculating mean and variance in data.nc =====")
+        pass
+    
 
     if step3==1:
         print("===== Normalize data.nc =====")
@@ -129,4 +132,6 @@ if __name__ == "__main__":
                     raise Exception("*** Fail to norm %s" % (line))
                     #print("*** Not sure where %s is still valid" % (line) )
     else:
-        print("===== skip Normalizing data.nc =====")
+        # No longer directly normalize data.nc, ignore this notice
+        # print("===== skip normalizing data.nc =====")
+        pass

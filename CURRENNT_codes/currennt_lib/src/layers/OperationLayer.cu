@@ -1029,9 +1029,9 @@ namespace layers{
 	    m_F0DataStd  = (layerChild->HasMember("frequencyF0Std")?
 			    (*layerChild)["frequencyF0Std"].GetDouble() : 1.0);
 	    const Configuration &config = Configuration::instance();
-	    if (config.f0dataMean_signalgen() > 0)
+	    if (config.f0dataMean_signalgen() > -1)
 		m_F0DataMean = config.f0dataMean_signalgen();
-	    if (config.f0dataStd_signalgen() > 0)
+	    if (config.f0dataStd_signalgen() > -1)
 		m_F0DataStd  = config.f0dataStd_signalgen();
 
 	    if (this->size() != 1)

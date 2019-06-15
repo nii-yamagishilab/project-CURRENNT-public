@@ -44,6 +44,7 @@
 #include <boost/algorithm/string.hpp>
 #include <vector>
 
+
 #define STRUCTTRANS_AX_B      1        // Ax + B
 #define STRUCTTRANS_AX_B_WITH_MU_STD 3 // Ax + B with mean and std into consideration
 #define STRUCTTRANS_AX_B_WITH_MU_STD_SHIFT 4 // type 3, with 1 time-step shifted
@@ -75,7 +76,8 @@ namespace{
 	    // skip dummy frame (for parallel sentence processing)
 	    if (patTypes != NULL && patTypes[timeIdx] == PATTYPE_NONE)
 		return;
-
+	    
+	    // In each frame of abData, [A_1st_dim, A_2nd_dim ..., B_1st_dim, B_2nd_dim ...]
 	    t.get<0>() = t.get<0>() * abData[(timeIdx-abShiftT) * 2 * dataDim + dataDim + dimIdx] +
 		abData[(timeIdx-abShiftT) * 2 * dataDim + dimIdx];
 
@@ -106,17 +108,20 @@ namespace{
 
 	    // skip dummy frame (for parallel sentence processing)
 	    if (patTypes != NULL && patTypes[timeIdx] == PATTYPE_NONE){
+		// if previous layers are skiplayers,
+		//  no need to do anything because gradients buffers have been initialized with 0
+		// if previous layers are not skiplayers,
+		//  just set the gradients to 0
 		if (!abFromSkipLayer){
 		    abError[timeIdx * dataDim * 2 + dimIdx] = 0;
 		    abError[timeIdx * dataDim * 2 + dimIdx + dataDim] = 0;
 		}
 		if (!xFromSkipLayer)
 		    xError[outputIdx] = 0;
-		
-		
 	    }else{
 
-		// \p E/ \p a = \p E / \p y * x  
+		// \p E/ \p a = \p E / \p y * x
+		// \p E/ \p b = \p E / \p y 
 		if (abFromSkipLayer){
 		    abError[timeIdx*dataDim*2+dimIdx+dataDim] += t.get<0>() * xData[outputIdx];
 		    abError[timeIdx*dataDim*2+dimIdx] += t.get<0>();
@@ -125,6 +130,7 @@ namespace{
 		    abError[timeIdx*dataDim*2+dimIdx] = t.get<0>();
 		}
 
+		// \p E/ \p x = \p E / \p y * a
 		if (xFromSkipLayer){
 		    xError[outputIdx] += t.get<0>() * abData[timeIdx*dataDim*2 + dimIdx +dataDim];
 		}else{
@@ -684,21 +690,37 @@ namespace layers{
 	// Initial check
 	if (precedingLayers.size() < 1)
 	    throw std::runtime_error("Error no precedinglayers in skipadd/skipini");
-	
+
+	/* --------- Configuration -------- */
+	// Type of transformation
+	//   STRUCTTRANS_AX_B:
+	//       Ax + B, common and simple transformation
+	//   STRUCTTRANS_AX_B_WITH_MU_STD:
+	//       Ax + B with mean and std, transformation the random variable and also the mean
+	//       and std of the p(x) (Gaussian)
+	//   STRUCTTRANS_AX_B_WITH_MU_STD_SHIFT:
+	//       STRUCTTRANS_AX_B_WITH_MU_STD and make it causal
+	// Note: I used STRUCTTRANS_AX_B_WITH_MU_STD and STRUCTTRANS_AX_B_WITH_MU_STD_SHIFT for
+	//     parallel WaveNet and ClariNet, although not successful
 	m_structTransType = (layerChild->HasMember("transType") ? 
 			     ((*layerChild)["transType"].GetInt()) : STRUCTTRANS_DEFAULT);
-	
+
+	// Input layers should be specified through preSkipLayer
 	m_previousSkipStr = (layerChild->HasMember("preSkipLayer") ? 
 			     ((*layerChild)["preSkipLayer"].GetString()) : "");
-	
+
+	// Time reverse the signal after transformation
 	m_structReverse   = (layerChild->HasMember("reverse") ? 
 			     ((*layerChild)["reverse"].GetInt()) : STRUCTTRANS_DIREC_NOTREVERSE);
 
+	/* --------- Data buffer and initialization -------- */
+	// Buffer to store the length of sequences (used to reverse signal)
 	m_seqLengthCpu = Cpu::int_vector(this->parallelSequences(), 0);
 	m_seqLength = m_seqLengthCpu;
 
-	if (m_previousSkipStr.size()){
-	    
+
+	// Get the name of input layers
+	if (m_previousSkipStr.size()){    
 	    // previous layers are specified by preSkipLayer
 	    std::vector<std::string> tmpOpt;
 	    misFuncs::ParseStrOpt(m_previousSkipStr, tmpOpt, ",");
@@ -718,11 +740,14 @@ namespace layers{
 		this->PreLayers().assign(precedingLayers.end()-2, precedingLayers.end());
 	}
 
-	
+	/* --------- Check ------------ */
 	if (this->PreLayers().size() != 2)
 	    throw std::runtime_error("Error: structTransform layer only needs two preSkipLayers");
-	
+
 	if (m_structTransType == STRUCTTRANS_AX_B){
+	    // For y= Ax+B, preLayer[0] should contain A and B
+	    //              preLayer[1] should contain x
+	    //              preLayer[0]->size() should be 2 * preLayer[1]->size()
 	    if (this->PreLayers()[0]->size() != this->size() * 2 ||
 		this->PreLayers()[1]->size() != this->size())
 		throw std::runtime_error("Error: Structtransform type 1, layer size mismatch");
@@ -731,6 +756,9 @@ namespace layers{
 	    
 	}else if (m_structTransType == STRUCTTRANS_AX_B_WITH_MU_STD ||
 		  m_structTransType == STRUCTTRANS_AX_B_WITH_MU_STD_SHIFT ){
+	    // For y = Ax + B and mean std, preLayer[0] should contain A and B
+	    //                              preLayer[1] should contain x, x_mu, x_std, or x only
+	    //                              this layer should contain y, y_mu, y_std
 	    if (this->size()/3 != this->PreLayers()[0]->size()/2){
 		printf("\nThis layer size: %d, 1st preSkipLayr size should be %d",
 		       this->size(), this->size()/3*2);
@@ -786,8 +814,9 @@ namespace layers{
 	if (this->getSaveMemoryFlag())
 	    throw std::runtime_error("Memory save mode should be turned off");
 	
-	// initialization for backward pass
-	// (because gradients will be accumulated from multiple layers)
+	// Initialization for backward pass
+	//   Because gradients will be accumulated from multiple layers,
+	//   we clean the gradients buffer before accumulation
 	if (this->flagTrainingMode()){
 	    thrust::fill(this->outputErrors().begin(), 
 			 (this->outputErrors().begin() + 
@@ -921,6 +950,7 @@ namespace layers{
     template <typename TDevice>
     void StructTransLayer<TDevice>::computeBackwardPass(const int nnState)
     {
+	
 	if (this->getSaveMemoryFlag())
 	    throw std::runtime_error("Memory save mode should be turned off");
 	
@@ -929,7 +959,8 @@ namespace layers{
 	int timeLength = this->precedingLayer().curMaxSeqLength();
 	timeLength = timeLength * this->precedingLayer().parallelSequences();
 
-	// at first, add the errors in both this->outputErrorsFromSkipLayer() and m_outputErrors
+	// Step1. accumulate gradients from this->outputErrorsFromSkipLayer()
+	//     this step is the same as other skipadd or skipini or skipcat layers
 	thrust::transform(this->outputErrorsFromSkipLayer().begin(),
 			  (this->outputErrorsFromSkipLayer().begin() + 
 			   this->curMaxSeqLength() * this->parallelSequences() * this->size()),
@@ -938,7 +969,7 @@ namespace layers{
 			  thrust::plus<real_t>());
 
 
-	// time reverse
+	// Step2. reverse the signal if necessary
 	if (this->m_structReverse == STRUCTTRANS_DIREC_REVERSE){
 	    // reverse back the output signals
 	    m_tempOutput.swap(this->outputs());
@@ -966,12 +997,13 @@ namespace layers{
 	    thrust::copy(m_tempOutput.begin(), m_tempOutput.end(), this->outputErrors().begin());
 	    
 	}
-
 	
-       	
+	
+       	// Step3. propagate the gradients
 	if (this->m_structTransType == STRUCTTRANS_AX_B){
-	    
-	    
+
+	    // In case the previous layers are skiplayers, the gradients
+	    //  should be put into outputErrorsFromSkipLayer(), not outputErrors() directly
 	    SkipLayer<TDevice>* tempLayerAb =
 		dynamic_cast<SkipLayer<TDevice>*>(this->PreLayers()[0]);
 	    SkipLayer<TDevice>* tempLayerX =

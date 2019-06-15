@@ -75,11 +75,13 @@ namespace {
 	real_t     *data;
 	real_t     *outdata;
 	real_t     *mean;
+	
 	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
 	{
 	    int dataIdx = t.get<1>();
 	    int timeIdx = dataIdx / layerSize;
 	    int dimIdx  = dataIdx % layerSize;
+	    
 	    if (patTypes[timeIdx] == PATTYPE_NONE){
 		// skip dummy node
 		outdata[dataIdx] = 0.0; //
@@ -336,8 +338,8 @@ namespace layers{
 	if (this->size() != precedingLayer.size()){
 	    throw std::runtime_error("Error in batchnorm layer size (must = previous one)");
 	}
-	
-	// initialization
+
+	/* ----------- Initialization ------------- */
 	m_stdConst  = 0.001;
 	m_outNormed = this->outputs();
 	m_batchCnt  = 0.0;
@@ -366,7 +368,14 @@ namespace layers{
 	    // remaining for mean, std (to be accumulated across the data corpus)
 	    thrust::fill(this->weights().begin() + this->size(), this->weights().end(), 0.0);
 	}
+	
+	/* ------------- options ----------------- */
+	m_noAffine = (layerChild->HasMember("NoAffineTrans")?
+			 (*layerChild)["NoAffineTrans"].GetInt() : 0);
+	if (m_noAffine)
+	    printf("\tBatchnorm layer always uses alpha=1.0 and beta=0.0");
 
+	
 	//const Configuration &config = Configuration::instance();
 	//m_trainFlag = config.trainingMode();
 	
@@ -416,9 +425,12 @@ namespace layers{
 		fn0,
 		(real_t)0.0,
 		thrust::plus<real_t>());
+	   
+	   // initialize the vector ( a matrix of dim [Length, 1]) to accumulate statistics
 	   thrust::fill(this->m_oneVector.begin(), this->m_oneVector.end(), 1.0/m_batchSize);
  
 	   // Step2. accumulate the mean
+	   //  step2.1  copy the data to m_buff 
 	   internal::PrepareForMeanStd fn1;
 	   fn1.layerSize = this->size();
 	   fn1.meanNotVar= true;
@@ -435,7 +447,8 @@ namespace layers{
 			thrust::make_tuple(this->outputs().begin() + tmp, 
 					   thrust::counting_iterator<int>(0) + tmp)),
 		fn1);
-	   
+
+	   //  step2.2 calculate the mean through matrix multiplication( [Dim, length] * [length, 1])
 	   helpers::Matrix<TDevice> onevec  (&this->m_oneVector, 
 					     this->curMaxSeqLength() * this->parallelSequences(), 
 					     1);
@@ -448,6 +461,7 @@ namespace layers{
 	   meanVec.assignProduct(data, false, onevec, false);
 
 	   // Step3. accumulate the var
+	   //  step3.1 copy (data - mean) to m_buff
 	   fn1.meanNotVar= false;
 	   fn1.mean      = helpers::getRawPointer(this->m_stats);; 
 	   thrust::for_each(
@@ -459,6 +473,7 @@ namespace layers{
 					   thrust::counting_iterator<int>(0) + tmp)),
 		fn1);
 
+	   //  step3.2 accumulate (data - mean) * (data - mean)
 	   helpers::Matrix<TDevice> data2   (&this->m_buff, 
 					     this->size(),
 					     this->curMaxSeqLength() * this->parallelSequences());
@@ -467,6 +482,8 @@ namespace layers{
 					     1,
 					     this->size());
 	   stdVec.assignProduct(data2, false, onevec, false);
+
+	   //  step3.3 sqrt()
 	   internal::GetStd fn3;
 	   fn3.stdConst = m_stdConst;
 	   fn3.meanStd  = helpers::getRawPointer(m_stats) + this->size();
@@ -519,8 +536,6 @@ namespace layers{
 					   thrust::counting_iterator<int>(0) + this->size())),
 					   fn);*/
 	   
-
-
 	   // Step4: normalize and scale the data
 	   internal::ComputeBatchNorm fn2;
 	   fn2.layerSize = this->size();
@@ -528,10 +543,22 @@ namespace layers{
 	   fn2.data      = helpers::getRawPointer(this->precedingLayer().outputs());
 	   fn2.outdata   = helpers::getRawPointer(this->outputs());
 	   fn2.outNormed = helpers::getRawPointer(m_outNormed);
-	   fn2.scale     = helpers::getRawPointer(this->weights());
 	   fn2.meanStd   = helpers::getRawPointer(m_stats);
+
+	   if (m_noAffine){
+	       // no affine transformation, alpha = 1.0, beta = 0.0
+	       // always use mean and std of the current sample
+	       fn2.trainFlag = true;
+	       thrust::fill(this->weights().begin(), this->weights().begin() + this->size(), 1.0);
+	       thrust::fill(this->weights().begin() + this->size(), this->weights().end(), 0.0);
+	   }else{
+	       // common batchnorm mode
+	       fn2.trainFlag = this->flagTrainingMode();
+	   }
+	   
+	   fn2.scale     = helpers::getRawPointer(this->weights());
 	   fn2.meanStdBuf= helpers::getRawPointer(this->weights()) + this->size() * 2;
-	   fn2.trainFlag = this->flagTrainingMode();
+	   
 	   
 	   tmp       = this->size() * this->curMaxSeqLength() * this->parallelSequences();
 	   thrust::for_each(
@@ -551,7 +578,9 @@ namespace layers{
     {
 	if (this->flagTrainingMode())
 	    throw std::runtime_error("Error: Batch norm is not for online propagation");
-
+	if (m_noAffine)
+	    throw std::runtime_error("Error: instance norm cannot be used for online propagation");
+	
 	int effTimeStart = timeStep * this->parallelSequences();
 	int effTimeEnd   = (timeStep+1) * this->parallelSequences();
 
@@ -678,6 +707,12 @@ namespace layers{
 					   thrust::counting_iterator<int>(0) + tmp)),
 		fn2);
 
+	   // Step4.
+	   if (m_noAffine){
+	       // if no affine transformation is used, set the gradients buffer to zero
+	       thrust::fill(this->_weightUpdates().begin(), this->_weightUpdates().end(), 0.0);
+	   }
+
 	}}
     
     }
@@ -687,6 +722,17 @@ namespace layers{
     {
 	throw std::runtime_error("Error: Batchnorm is not for online computation");
     }
+
+    template <typename TDevice>
+    void BatchNormLayer<TDevice>::exportLayer(const helpers::JsonValue     &layersArray, 
+					      const helpers::JsonAllocator &allocator) const
+    {
+	TrainableLayer<TDevice>::exportLayer(layersArray, allocator);
+	if (m_noAffine)
+	    (*layersArray)[layersArray->Size() - 1].AddMember("NoAffineTrans", m_noAffine,
+							      allocator);
+    }
+
     
     template class BatchNormLayer<Cpu>;
     template class BatchNormLayer<Gpu>;
