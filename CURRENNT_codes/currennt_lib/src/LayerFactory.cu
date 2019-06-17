@@ -75,6 +75,7 @@
 #include "layers/SelfAttention.hpp"
 #include "layers/InterMetricSSE.hpp"
 #include "layers/InterMetricSoftmax.hpp"
+#include "layers/RandomShuffleLayer.hpp"
 #include <stdexcept>
 
 
@@ -300,6 +301,9 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createSkipNonParaLayer(
     }else if (layerType == "feattrans"){
 	return new SkipForFeatTrans<TDevice>(layerChild, weightsSection,
 					     precedingLayers, maxSeqLength, layerID);
+    }else if (layerType == "random_shuffle"){
+	return new RandomShuffleLayer<TDevice>(layerChild, weightsSection,
+					       precedingLayers, maxSeqLength, layerID);
     }else{
 	printf("Impossible bug\n");
 	throw std::runtime_error(std::string("The layer is not skip-nonpara layer"));	

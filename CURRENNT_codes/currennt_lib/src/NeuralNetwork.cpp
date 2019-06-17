@@ -604,7 +604,8 @@ namespace {
 		layerType == "normflow"          ||
 		layerType == "structTrans"       ||
 		layerType == "distilling"        ||
-		layerType == "feattrans");
+		layerType == "feattrans"         ||
+		layerType == "random_shuffle");
     }
 
     bool skipNonParaLayerTypes(const std::string layerType){
@@ -616,7 +617,8 @@ namespace {
 		layerType == "normflow"          ||
 		layerType == "structTrans"       ||
 		layerType == "distilling"        ||
-		layerType == "feattrans");
+		layerType == "feattrans"         ||
+		layerType == "random_shuffle");
     }
 
     bool skipParaLayerTypes(const std::string layerType){
