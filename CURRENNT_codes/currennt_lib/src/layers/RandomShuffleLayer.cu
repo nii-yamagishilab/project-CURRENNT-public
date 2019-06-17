@@ -80,6 +80,15 @@ namespace {
 	}
     };
     
+    long int nameToInt(const std::string name)
+    {
+	std::vector<char> chars(name.c_str(), name.c_str() + name.size() + 1u);
+	long int tmp_number = 0;
+	for (size_t index = 0 ; index < chars.size(); index++)
+	    tmp_number += (int)chars[index];
+	return tmp_number;
+    }
+
     
 }
 }
@@ -141,7 +150,7 @@ namespace layers{
 		index_sequence_begin,
 		index_sequence_begin + m_randomValue.size(),
 		m_randomValue.begin(),
-		internal::genNoiseForShuffle(0.0, 1.0, (int)this->getLayerID()));
+		internal::genNoiseForShuffle(0.0, 1.0, internal::nameToInt(this->name())));
 	    
 	    thrust::sequence(m_dataIndex.begin(), m_dataIndex.end());
 	    m_dataIndexRev = m_dataIndex;
