@@ -41,6 +41,7 @@ def meanStdNormMask(fileScps, fileDims, fileNormMask, meanStdOutPath, f0Dim=-1):
         if len(normMask) == 0:
             pass
         elif len(normMask) == 1 and (normMask[0] == 0 or normMask[0]=='not_norm'):
+            print("mean is set to 0 and std is set to 1")
             meanStdData[dimRange[0]:dimRange[1]] = 0.0
             meanStdData[dimRange[0]+sum(fileDims):dimRange[1]+sum(fileDims)] = 1.0
         elif len(normMask) == 2:

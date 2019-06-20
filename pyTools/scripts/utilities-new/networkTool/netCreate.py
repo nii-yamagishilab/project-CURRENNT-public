@@ -76,7 +76,8 @@ def createMdnConfig(mdnConfigFile, MDNType, MDNTargetDim, ARDynamic=None, tieVar
 
         elif mdnConfig < 0:
             assert mdntarDim[1]-mdntarDim[0]==1, "Softmax to 1 dimension targert"
-            tmp = tmp + 1
+            #tmp = tmp + 1
+            tmp = tmp + tmp2
             mdnConfig = -1 # change it back to -1
         else:
             tmp = tmp + tmp2
@@ -95,10 +96,19 @@ def modifyNetworkFile(inputNetwork, inputSize, outputSize, mdnconfig, outputPath
     with open(inputNetwork, 'r') as filePtr:
         networkRaw = json.load(filePtr)
 
-
+    if networkRaw['layers'][1]['type'] != 'externalloader':
+        # add externalloader if necessary
+        networkRaw['layers'].insert(1, {'bias': 1.0, 'type': 'externalloader',
+                                        'name': 'external_loader', 'size': inputSize})
+        networkRaw['layers'][0]['size'] = 1
+        
     networkRaw['layers'][1]['size'] = inputSize
     networkRaw['layers'][-1]['size'] = outputSize
-
+    if 'useExternalOutput' in networkRaw['layers'][-1]:
+        networkRaw['layers'][-1]['useExternalOutput'] = 1
+    else:
+        networkRaw['layers'][-1]['useExternalOutput'] = 1
+    
     if len(mdnconfig) > 0:
         assert networkRaw['layers'][-1]['type'] == 'mdn', \
             "%s should use mdn as last layer" % (inputNetwork)

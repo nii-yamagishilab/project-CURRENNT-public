@@ -58,7 +58,11 @@ def f0Conversion(dataOut, outname):
         
         # if the extension is .qf0 (quantized F0)
         defaultOutput(vuv, fileDir + os.path.sep + fileBase + '.vuv')
-        defaultOutput(dataOut, fileDir + os.path.sep + fileBase + '.lf0')
+        
+        if fileExt == '.qf0':
+            defaultOutput(dataOut, fileDir + os.path.sep + fileBase + '.f0')
+        else:
+            defaultOutput(dataOut, fileDir + os.path.sep + fileBase + '.lf0')
 
     else:
         # for other data
