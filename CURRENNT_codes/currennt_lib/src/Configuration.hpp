@@ -94,8 +94,10 @@ private:
 
     /* Add 0408 Wang: to tap in the output of arbiary layer */
     int         m_outputTapLayer;         // the ID of the layer to be tapped in (start from 0)
-    bool        m_outputGateOut;         // whether to get output from the gate 
+    bool        m_outputGateOut;          // whether to get output from the gate 
+    int         m_outputFrameNum;         // sometimes we may only want to get a few frames of output
 
+    
     /* Add 0409 Wang: to decay the learning rate */
     real_t      m_lr_decay_rate;
     
@@ -692,6 +694,8 @@ public:
 
     const bool& outputFromGateLayer() const;
 
+    const int& outputFrameNum() const;
+    
     const real_t& lrDecayRate() const;
 
     const std::string& mdnDyn() const;

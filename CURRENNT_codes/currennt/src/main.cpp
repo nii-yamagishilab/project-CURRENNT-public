@@ -789,7 +789,7 @@ int trainerMain(const Configuration &config)
 	    */
 	    
             if (feedForwardSet != boost::shared_ptr<data_sets::DataSet>()) 
-                std::cout << "Removing cache file: "<<feedForwardSet->cacheFileName()<<std::endl;
+                std::cout << "\nRemoving cache file: "<<feedForwardSet->cacheFileName()<<std::endl;
             boost::filesystem::remove(feedForwardSet->cacheFileName());
         } // evaluation mode
     }

@@ -48,6 +48,7 @@
 #include <boost/lexical_cast.hpp>
 #include <vector>
 #include <stdexcept>
+#include <cmath>
 
 #include "../Configuration.hpp"
 
@@ -833,6 +834,60 @@ namespace {
 	}
     };
 
+
+    // Duplicate the result to every frame of the utterance
+    struct dimensionExpand
+    {
+	int     previousDim;
+	int     expandedDim;
+	int     expandRatio;
+	
+	real_t *sourceData;
+	
+	const char *patTypes;
+	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
+	{
+	    int outputIdx   = t.get<1>();
+	    int inputDimIdx = outputIdx % expandedDim / expandRatio;
+	    int timeIdx     = outputIdx / expandedDim;
+
+	    if (patTypes[timeIdx] == PATTYPE_NONE){
+		t.get<0>() = 0.0;
+		return;
+	    }
+	    
+	    t.get<0>() = sourceData[timeIdx * previousDim + inputDimIdx];   
+	}
+    };
+
+    // Duplicate the result to every frame of the utterance
+    struct dimensionExpandGrad
+    {
+	int     previousDim;
+	int     expandedDim;
+	int     expandRatio;
+	
+	real_t *inputGrad;
+	
+	const char *patTypes;
+	
+	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
+	{
+	    int gradIndex      = t.get<1>();
+	    int previousDimIdx = gradIndex % previousDim;
+	    int timeIdx        = gradIndex / previousDim;
+
+	    t.get<0>() = 0.0;
+	    
+	    if (patTypes[timeIdx] == PATTYPE_NONE)
+		return;
+	    else
+		for (int cnt = 0; cnt < expandRatio; cnt++)
+		    t.get<0>() += inputGrad[timeIdx * expandedDim +
+					    previousDimIdx * expandRatio + cnt];
+	}
+    };
+
     
 }
 }
@@ -1198,6 +1253,22 @@ namespace layers{
 	    else
 		printf("\treverse grad");
 	}
+
+	/* ------ expand dimension ----------- */
+	m_dimExpand = (layerChild->HasMember("dim_expand")?
+		     static_cast<int>((*layerChild)["dim_expand"].GetDouble()) : 0);
+	if (m_dimExpand){
+	    if (this->size() <= this->precedingLayer().size()){
+		throw std::runtime_error("dim_expand layer should be wider than previous layer");
+	    }else{
+		m_dimExpand = (int)std::ceil(((float)this->size())/this->precedingLayer().size());
+		printf("\tdimension expand: %d", m_dimExpand);
+		if (m_dimExpand < 1)
+		    throw std::runtime_error("dim_expand layer should be wider than previous layer");
+	    }
+	}
+
+	
 	
 	/* ------ print the information ------ */
 
@@ -1205,7 +1276,7 @@ namespace layers{
 	if (m_noiseSize > 0){
 	    if (this->size() != (this->precedingLayer().size() + m_noiseSize))
 		throw std::runtime_error("Error, noiseDim + preLayerSize = operator layerSize");
-	}else if (m_freqDim >= 0){
+	}else if (m_freqDim >= 0 || m_dimExpand){
 	    // free to choose the layer size
 	}else{
 	    if (this->size() != this->precedingLayer().size())
@@ -1370,6 +1441,9 @@ namespace layers{
 							      allocator);
 	}
 
+	if (m_dimExpand)
+	    (*layersArray)[layersArray->Size() - 1].AddMember("dim_expand", m_dimExpand, allocator);
+	
 	if (m_changeTimeRes > 0)
 	    (*layersArray)[layersArray->Size() - 1].AddMember("changeResolution",
 							      m_changeTimeRes,
@@ -1534,20 +1608,26 @@ namespace layers{
 	       fn1);
 	    
 	}else if (m_lastShot == NN_OPE_LAST_SHOT_MODE9){
-	    // use the average mode
-
-	    // for each utterance in the parallel block
-	    // 1. adjust the one-vec
-	    // 2. matrix multiplication
-	    // 3. output
+	    // Use the average mode
+	    // The average \sum_t=1^T x_t / T is conducted as matrix multiplication
+	    //   average = [1/T, 1/T .... 1/T] * [x_1, x_2, ..., x_T]^{\top} 
 	    
+	    // for each utterance in the parallel block
+	    // 1. adjust the vector [1/T, ..., 1/T]
+	    // 2. matrix multiplication
+	    // 3. duplicate the average to each frame
+	    // Because each utterance has different T, the first two steps
+	    //  must be conducted for each utterance separately
+
+	    // for each utterance in the parallel model
 	    for (int i = 0; i<this->parallelSequences(); i++){
-		
+
 		if (this->m_seqLengthBuffH[i] < 1){
 		    // skip over dummy sentences
 		    continue;
 		}
-		
+
+		// step1. adjust the vector [1/T, ..., 1/T]
 		int tmpUttL = this->parallelSequences() * this->m_seqLengthBuffH[i];
 		
 		{{
@@ -1567,22 +1647,20 @@ namespace layers{
 			fn1);
 		}}
 
-		// get the average, and save to the first frame
+		// step2. 
+		// get the average, and save to the first frame of each utterance
 		helpers::Matrix<TDevice> onevec (&this->m_oneVec,
 						 tmpUttL, 1,
 						 (this->parallelSequences() - 1 - i));
-		
 		helpers::Matrix<TDevice> source (&this->precedingLayer().outputs(),
 						 this->size(), tmpUttL);
-		
 		helpers::Matrix<TDevice> output (&this->outputs(), 
 						  this->size(), 1,
 						  i * this->size());
-		// sum the gradients for a_k
 		output.assignProduct(source, false, onevec, false);
 	    }
-	    
-	    // duplicate the output to all the frames
+
+	    // step3. duplicate the average to all the frames
 	    {{
 		internal::duplicateSentVec fn2;
 		fn2.featureDim = this->size();
@@ -1770,10 +1848,32 @@ namespace layers{
 		    thrust::make_tuple(this->outputs().begin()     + this->size() * timeLength,
 				 thrust::counting_iterator<int>(0) + this->size() * timeLength)),
 		  fn1);
-	    }	
+	    }
 	}else if (m_reverse_grad >= 0){
 	    
+	    // nothing for forward propagation during gradients reverse mode
 	    this->outputs() = this->precedingLayer().outputs();
+	    
+	}else if (m_dimExpand){
+
+	    // expand the dimensions
+	    {
+	    	internal::dimensionExpand fn1;
+		fn1.previousDim = this->precedingLayer().size();
+		fn1.expandedDim = this->size();
+		fn1.expandRatio = m_dimExpand;
+		fn1.patTypes    = helpers::getRawPointer(this->patTypes());
+		fn1.sourceData  = helpers::getRawPointer(this->precedingLayer().outputs());
+		
+		thrust::for_each(
+		  thrust::make_zip_iterator(
+		    thrust::make_tuple(this->outputs().begin(),
+				       thrust::counting_iterator<int>(0))),
+		  thrust::make_zip_iterator(
+		    thrust::make_tuple(this->outputs().begin()     + this->size() * timeLength,
+				 thrust::counting_iterator<int>(0) + this->size() * timeLength)),
+		  fn1);
+	    }
 	    
 	}else{
 	    // normal mode
@@ -2078,6 +2178,10 @@ namespace layers{
 			 this->precedingLayer().outputs().begin() + effTimeEnd,
 			 this->outputs().begin() + effTimeStart);
 	    
+	}else if (m_dimExpand){
+
+	    throw std::runtime_error("Error: dimExpanded not implemented for online mode");
+	    
 	}else{
 	
 	    if (m_noiseSize > 0 && timeStep == 0){
@@ -2208,14 +2312,25 @@ namespace layers{
 	    
 	}else if (m_lastShot == NN_OPE_LAST_SHOT_MODE9){
 
-	    // Just the same operation as in forwardPass
+	    // output_ave = \sum_t=1^T input_t
+	    // next_layer_input_t = output_ave, for t \in[1,T]
+	    // Therefore, \partial E / \partial input_t
+	    //    = \sum_m=1^T \partial E / \partial next_layer_input_m *
+	    //         \partial next_layer_input_m / \partial input_t
+	    //    = \sum_m=1^T \partial E / \partial next_layer_input_m *
+	    //         \partial output_ave / \partial input_t
+	    //    = 1/T * \sum_m=1^T \partial E / \partial next_layer_input_m
+	    //
+	    // Back-propagation uses the same procedure as forward propagation
 	    
+	    // For each utterance in the parallel mode
 	    for (int i = 0; i<this->parallelSequences(); i++){
 		if (this->m_seqLengthBuffH[i] < 1){
 		    // skip over dummy sentences
 		    continue;
 		}
 		
+		// step1. prepare the [1/T, ..., 1/T]
 		int tmpUttL = this->parallelSequences() * this->m_seqLengthBuffH[i];
 
 		{{
@@ -2235,7 +2350,9 @@ namespace layers{
 			fn1);
 		}}
 
-		// get the average, and save to the first frame
+
+		// step2. 
+		// get the average over gradients, and save to the first frame
 		helpers::Matrix<TDevice> onevec (&this->m_oneVec,
 						 tmpUttL, 1,
 						 (this->parallelSequences() - 1 - i));
@@ -2249,7 +2366,8 @@ namespace layers{
 		// sum the gradients for a_k
 		output.assignProduct(source, false, onevec, false);
 	    }
-	    
+
+	    // step3. 
 	    // duplicate the output to all the frames
 	    {{
 		internal::duplicateSentVec fn2;
@@ -2382,6 +2500,30 @@ namespace layers{
 			      thrust::make_constant_iterator(-1.0 * m_reverse_grad),
 			      this->precedingLayer().outputErrors().begin(),
 			      thrust::multiplies<real_t>());
+	    
+	}else if (m_dimExpand){
+
+	    // expand the dimensions
+	    {
+	    	internal::dimensionExpandGrad fn1;
+		fn1.previousDim = this->precedingLayer().size();
+		fn1.expandedDim = this->size();
+		fn1.expandRatio = m_dimExpand;
+		fn1.patTypes    = helpers::getRawPointer(this->patTypes());
+		fn1.inputGrad   = helpers::getRawPointer(this->outputErrors());
+		
+		thrust::for_each(
+		  thrust::make_zip_iterator(
+		    thrust::make_tuple(this->precedingLayer().outputErrors().begin(),
+				       thrust::counting_iterator<int>(0))),
+		  thrust::make_zip_iterator(
+		    thrust::make_tuple(this->precedingLayer().outputErrors().begin()
+				       + this->precedingLayer().size() * timeLength,
+				 thrust::counting_iterator<int>(0)
+				       + this->precedingLayer().size() * timeLength)),
+		  fn1);
+	    }
+
 	    
 	}else if (m_F02UV){
 	    thrust::fill(this->precedingLayer().outputErrors().begin(),
@@ -2528,6 +2670,31 @@ namespace layers{
 			      this->precedingLayer().outputErrors().begin() + effTimeStart,
 			      thrust::multiplies<real_t>());
 
+	}else if (m_dimExpand){
+	    
+	    // expand the dimensions
+	    {
+	    	internal::dimensionExpandGrad fn1;
+		fn1.previousDim = this->precedingLayer().size();
+		fn1.expandedDim = this->size();
+		fn1.expandRatio = m_dimExpand;
+		fn1.patTypes    = helpers::getRawPointer(this->patTypes());
+		fn1.inputGrad   = helpers::getRawPointer(this->outputErrors());
+
+		int st = effTimeStart * this->precedingLayer().size();
+		int et = effTimeEnd   * this->precedingLayer().size();
+		
+		thrust::for_each(
+		  thrust::make_zip_iterator(
+		    thrust::make_tuple(this->precedingLayer().outputErrors().begin() + st,
+				       thrust::counting_iterator<int>(0)             + st)),
+		  thrust::make_zip_iterator(
+		    thrust::make_tuple(this->precedingLayer().outputErrors().begin() + et,
+				       thrust::counting_iterator<int>(0)             + et)),
+		  fn1);
+	    }
+
+	    
 	}else{
 	    
 	    if (m_outDupRate > 1){

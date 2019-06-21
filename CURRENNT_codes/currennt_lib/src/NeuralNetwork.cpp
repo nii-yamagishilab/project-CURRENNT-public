@@ -3300,25 +3300,49 @@ template <typename TDevice>
 std::vector<std::vector<std::vector<real_t> > > NeuralNetwork<TDevice>::getOutputs(
 	const real_t mdnoutput)
 {
-
-    // Get configuration
+    /* All the features should have been generated and saved, by calling computeForwardPassGen.
+       This function only retrieves the desired features from the specified layer, and save them
+       into CPU vectors.
+     */
+    
+    /* -----  Get configuration ----- */
     const Configuration &config = Configuration::instance();
-    
+
+    // specify the layer for generating output features (may not be the last layer)
     const int  layerID        = config.outputFromWhichLayer();
+    
+    // whether to output highway gate control signals from highway layers?
     const bool flagGateOutput = config.outputFromGateLayer();
+
+    // whether to output VQ index from vqLayers
     const int  flagVQIndex    = config.vaeGetVQIndex();
+
+    // if we only want to save a few frames from the output sequences
+    const int  saveFrameNum   = config.outputFrameNum();
     
+    if (saveFrameNum > 0)
+	printf("\n\tOnly save the first %d frames from the output sequence", saveFrameNum);
+    
+    /* ----- Variables and initialization ----- */
+    // buffer to store output features
     std::vector<std::vector<std::vector<real_t> > > outputs;
+
+    // pointer to highway layers (SkipParaLayer)
     layers::SkipLayer<TDevice> *olg;
+    // pointer to MDN layer
     layers::MDNLayer<TDevice>  *olm;
+    // pointer to VQVAE layer
     layers::vqLayer<TDevice>   *olq;
-    
+
+    // Generation methods
     unsigned char genMethod;
-    int tempLayerID;
-    
     enum genMethod {ERROR = 0,VQINDEX,GATEOUTPUT, MDNSAMPLING, MDNPARAMETER, MDNEMGEN, NORMAL};
 
-    /*
+    // a temporary layer ID variable 
+    int tempLayerID;
+
+    
+    /* Old CURRENNT generation methods
       specify old, olm, tempLayerId
        -3.0 is chosen for convience.
        
@@ -3356,9 +3380,10 @@ std::vector<std::vector<std::vector<real_t> > > NeuralNetwork<TDevice>::getOutpu
 
     /* Since we move the olm->getOutput(mdnoutput) to computeForwardPassGen, mdnoutput is not 
        necessay here
-     */
+    */
 
-    // Determine the output layer
+
+    /* ----- Determine the output layer ----- */    
     if (layerID < 0){
 	// If layerID is not specified, generate from the last output/postoutput layer
 	olg = NULL;
@@ -3371,6 +3396,7 @@ std::vector<std::vector<std::vector<real_t> > > NeuralNetwork<TDevice>::getOutpu
 	    tempLayerID = this->m_totalNumLayers-1; // MDN postoutput layer
 	
     }else{
+	
 	// If layerID is specified, generate from that layer
 	if (flagGateOutput){
 	    // generate from Highway gate
@@ -3393,7 +3419,9 @@ std::vector<std::vector<std::vector<real_t> > > NeuralNetwork<TDevice>::getOutpu
 	tempLayerID = layerID;
     }
 
-    // Determine the generation method
+    
+    /* ----- Determine the generation method ----- */
+    // Both output layer type and generation options are taken into consideration
     if (olg == NULL && olq == NULL){
 	if (olm == NULL)
 	    // output from the layer output
@@ -3409,11 +3437,16 @@ std::vector<std::vector<std::vector<real_t> > > NeuralNetwork<TDevice>::getOutpu
 	genMethod = VQINDEX;
     }
 
-    // retrieve the output
+    /* ----- Retrieve the output from the output layer ------ */
     layers::Layer<TDevice> &ol      = outputLayer(tempLayerID);
     Cpu::pattype_vector tmpPatTypes = ol.patTypes();
     
     for (int patIdx = 0; patIdx < (int)ol.patTypes().size(); ++patIdx) {
+
+	// If we only save a few frames
+	if (saveFrameNum > 0 && patIdx == saveFrameNum)
+	    break;
+	    
 	switch (tmpPatTypes[patIdx]) {
 	case PATTYPE_FIRST:
 	    outputs.resize(outputs.size() + 1);
@@ -3425,6 +3458,7 @@ std::vector<std::vector<std::vector<real_t> > > NeuralNetwork<TDevice>::getOutpu
 	    case MDNSAMPLING:
 	    case NORMAL:
 		{
+		    // Save output features from output layers
 		    Cpu::real_vector pattern(ol.outputs().begin() + patIdx * ol.size(), 
 					     ol.outputs().begin() + (patIdx+1) * ol.size());
 		    int psIdx = patIdx % ol.parallelSequences();
@@ -3433,7 +3467,7 @@ std::vector<std::vector<std::vector<real_t> > > NeuralNetwork<TDevice>::getOutpu
 		}
 	    case MDNPARAMETER:
 		{
-		    
+		    // Save MDN parameters from MDN layers
 		    Cpu::real_vector pattern(
 				olm->mdnParaVec().begin()+patIdx*olm->mdnParaDim(), 
 				olm->mdnParaVec().begin()+(patIdx+1)*olm->mdnParaDim());
@@ -3443,6 +3477,7 @@ std::vector<std::vector<std::vector<real_t> > > NeuralNetwork<TDevice>::getOutpu
 		}
 	    case GATEOUTPUT:
 		{
+		    // Save Highway gate output from Highway layers
 		    Cpu::real_vector pattern(olg->outputFromGate().begin() + patIdx * ol.size(),
 					     olg->outputFromGate().begin()+(patIdx+1) * ol.size());
 		    int psIdx = patIdx % ol.parallelSequences();
@@ -3451,8 +3486,11 @@ std::vector<std::vector<std::vector<real_t> > > NeuralNetwork<TDevice>::getOutpu
 		}
 	    case VQINDEX:
 		{
-		    Cpu::real_vector pattern(olq->codeIdx().begin() + patIdx * olq->codeBookNum(),
-					     olq->codeIdx().begin() + (patIdx+1) * olq->codeBookNum());
+		    // Save VQVAE code index (maybe from multiple codebooks) from the vqlayer
+		    Cpu::real_vector pattern(
+			olq->codeIdx().begin() + patIdx     * olq->codeBookNum(),
+			olq->codeIdx().begin() + (patIdx+1) * olq->codeBookNum());
+		    
 		    int psIdx = patIdx % ol.parallelSequences();
 		    outputs[psIdx].push_back(std::vector<real_t>(pattern.begin(), pattern.end()));
 		    break;
@@ -3460,6 +3498,7 @@ std::vector<std::vector<std::vector<real_t> > > NeuralNetwork<TDevice>::getOutpu
 	    default:
 		break;   
 	    }
+
 	}
 	default:
 	    break;

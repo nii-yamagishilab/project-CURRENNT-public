@@ -195,6 +195,11 @@ Configuration::Configuration(int argc, const char *argv[])
 	 std::string(
 	      std::string("if the output layer is a gate layer, get output from gate instead") +
 	      std::string("of transformation units? (default false)")).c_str())
+	("output_a_few_frames",
+	 po::value(&m_outputFrameNum)->default_value(-1),
+	 std::string(
+	      std::string("if we only want to save the first N frames of the output sequence,") +
+	      std::string("use --output_a_few_frames N. (default -1, all frames)")).c_str())
 	("mdnUVSigThreshold",
 	 po::value(&m_mdnUVSigThreshold)->default_value(0.5),                  
 	 std::string("Threhold for uvsigmoid (default 0.5)").c_str())
@@ -1273,6 +1278,11 @@ const int& Configuration::outputFromWhichLayer() const
 const bool& Configuration::outputFromGateLayer() const
 {
     return m_outputGateOut;
+}
+
+const int& Configuration::outputFrameNum() const
+{
+    return m_outputFrameNum;
 }
 
 const real_t& Configuration::lrDecayRate() const

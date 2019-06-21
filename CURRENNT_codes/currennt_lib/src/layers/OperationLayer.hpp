@@ -119,6 +119,8 @@ namespace layers{
 	int             m_positional_code_mode;
 
 	real_t          m_reverse_grad;
+
+	int             m_dimExpand;
 	
 	OperationLayer(
 	    const helpers::JsonValue &layerChild,
