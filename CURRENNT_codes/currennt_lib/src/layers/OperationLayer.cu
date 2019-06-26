@@ -724,13 +724,22 @@ namespace {
     {
 	real_t F0mean;
 	real_t F0std;
+	bool   ReverseSign;
 	
 	__host__ __device__ void operator() (const thrust::tuple<real_t&, real_t&> &t) const
 	{
-	    if (t.get<0>() > ((NN_OPE_F02UV_THRESHOLD - F0mean) / F0std))
-		t.get<1>() = 1.0;
-	    else
-		t.get<1>() = 0.0;
+	    if (ReverseSign){
+		if (t.get<0>() > ((NN_OPE_F02UV_THRESHOLD - F0mean) / F0std))
+		    t.get<1>() = 0.0;
+		else
+		    t.get<1>() = 1.0;
+	    }else{
+		if (t.get<0>() > ((NN_OPE_F02UV_THRESHOLD - F0mean) / F0std))
+		    t.get<1>() = 1.0;
+		else
+		    t.get<1>() = 0.0;
+	    }
+
 	}
 	
     };
@@ -1083,12 +1092,20 @@ namespace layers{
 			    (*layerChild)["frequencyF0Mean"].GetDouble() : 0.0);
 	    m_F0DataStd  = (layerChild->HasMember("frequencyF0Std")?
 			    (*layerChild)["frequencyF0Std"].GetDouble() : 1.0);
+	    
 	    const Configuration &config = Configuration::instance();
 	    if (config.f0dataMean_signalgen() > -1)
 		m_F0DataMean = config.f0dataMean_signalgen();
 	    if (config.f0dataStd_signalgen() > -1)
 		m_F0DataStd  = config.f0dataStd_signalgen();
 
+	    if (m_F02UV < 0)
+		printf("\tF0 (mean: %f, std: %f) to U/V, with voice->0, unvoiced->1)",
+		       m_F0DataMean, m_F0DataStd);
+	    else
+		printf("\tF0 (mean: %f, std: %f) to U/V, with voice->1, unvoiced->0)",
+		       m_F0DataMean, m_F0DataStd);
+	    
 	    if (this->size() != 1)
 		throw std::runtime_error("Error: U/V extraction only receives 1d input");
 	}
@@ -1821,8 +1838,9 @@ namespace layers{
 	    thrust::fill(this->outputErrors().begin(), this->outputErrors().end(), 0.0);
 	    {
 		internal::normF0ToUV fn1;
-		fn1.F0mean = m_F0DataMean;
-		fn1.F0std  = m_F0DataStd;
+		fn1.F0mean  = m_F0DataMean;
+		fn1.F0std   = m_F0DataStd;
+		fn1.ReverseSign = (m_F02UV < 0);
 		thrust::for_each(
 		  thrust::make_zip_iterator(
 			thrust::make_tuple(this->precedingLayer().outputs().begin(),
@@ -2160,6 +2178,7 @@ namespace layers{
 		internal::normF0ToUV fn1;
 		fn1.F0mean = m_F0DataMean;
 		fn1.F0std  = m_F0DataStd;
+		fn1.ReverseSign = (m_F02UV < 0);
 		thrust::for_each(
 		  thrust::make_zip_iterator(
 			thrust::make_tuple(this->precedingLayer().outputs().begin() + effTimeStart,

@@ -934,8 +934,73 @@ namespace layers{
     template <typename TDevice>
     void StructTransLayer<TDevice>::computeForwardPass(const int timeStep, const int nnState)
     {
-	// Not implemented yet
-	throw std::runtime_error("Not implemented structTransLayer computeForward(timeStep)");	
+
+	// absolute time
+	int effTimeS = timeStep     * this->parallelSequences();
+	int effTimeE = (timeStep+1) * this->parallelSequences();
+	
+	// shift of the pointer to the data 
+	int shiftIn0 = this->PreLayers()[0]->outputBufPtrBias(timeStep * this->parallelSequences(),
+							      nnState);
+	int shiftIn1 = this->PreLayers()[1]->outputBufPtrBias(timeStep * this->parallelSequences(),
+							      nnState);
+	int shiftOut = this->outputBufPtrBias(timeStep * this->parallelSequences(), nnState);
+
+	// set gradients to zero in necessary
+	if (timeStep == 0 && this->flagTrainingMode()){
+	    thrust::fill(this->outputErrors().begin(), 
+			 (this->outputErrors().begin() + 
+			  this->curMaxSeqLength() * this->parallelSequences() * this->size()),
+			 0.0);
+
+	    thrust::fill(this->outputErrorsFromSkipLayer().begin(),
+			 (this->outputErrorsFromSkipLayer().begin() + 
+			  this->curMaxSeqLength() * this->parallelSequences() * this->size()),
+			 0.0);
+	}
+
+	if (this->m_structTransType == STRUCTTRANS_AX_B){
+	    // Type 1 transformation
+	    thrust::copy(this->PreLayers()[1]->outputs().begin() +
+			 effTimeS * this->PreLayers()[1]->size() - shiftIn1,
+			 this->PreLayers()[1]->outputs().begin() +
+			 effTimeE * this->PreLayers()[1]->size() - shiftIn1,
+			 this->outputs().begin() + effTimeS * this->size() - shiftOut);
+	    
+	    internal::trans_ax_b fn1;
+	    fn1.abData = helpers::getRawPointer(this->PreLayers()[0]->outputs()) +
+		effTimeS * this->PreLayers()[0]->size() - shiftIn0;
+	    fn1.dataDim = this->size();
+	    fn1.abShiftT = 0;
+	    fn1.patTypes = helpers::getRawPointer(this->patTypes());
+
+	    thrust::for_each(
+	     thrust::make_zip_iterator(
+	      thrust::make_tuple(
+		this->outputs().begin() + effTimeS * this->size() - shiftOut, 
+		thrust::counting_iterator<int>(0) + effTimeS * this->size() - shiftOut)),
+	     thrust::make_zip_iterator(
+	      thrust::make_tuple(
+	        this->outputs().begin() + effTimeE * this->size() - shiftOut, 
+		thrust::counting_iterator<int>(0) + effTimeE * this->size() - shiftOut)),
+	      fn1);
+	    
+	}else if (this->m_structTransType == STRUCTTRANS_AX_B_WITH_MU_STD){
+	    throw std::runtime_error("Impossible Error");
+	    
+	}else if (this->m_structTransType == STRUCTTRANS_AX_B_WITH_MU_STD_SHIFT){
+	    throw std::runtime_error("Impossible Error");
+	    
+	}else{
+	    throw std::runtime_error("Impossible Error");
+	}
+
+		// time reverse
+	if (this->m_structReverse == STRUCTTRANS_DIREC_REVERSE){
+	    printf("\nError: structTransLayer computeForward(timeStep) cannot support reverse");
+	    throw std::runtime_error("Error: structTransLayer computeForward(timeStep)");
+	}
+	
     }
 
     // NN forward
