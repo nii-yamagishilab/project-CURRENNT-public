@@ -76,6 +76,7 @@
 #include "layers/InterMetricSSE.hpp"
 #include "layers/InterMetricSoftmax.hpp"
 #include "layers/RandomShuffleLayer.hpp"
+#include "layers/SseCosPostOutputLayer.hpp"
 #include <stdexcept>
 
 
@@ -198,7 +199,8 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
 	     layerType == "wf"                        || layerType == "binary_classification" ||
 	     layerType == "multiclass_classification" || layerType == "mdn" || 
 	     layerType == "kld"                       || layerType == "dft" ||
-	     layerType == "featsse"                   || layerType == "sse_multi") {
+	     layerType == "featsse"                   || layerType == "sse_multi" ||
+	     layerType == "sse_cos") {
         //layers::TrainableLayer<TDevice>* precedingTrainableLayer = 
 	// dynamic_cast<layers::TrainableLayer<TDevice>*>(precedingLayer);
         //if (!precedingTrainableLayer)
@@ -246,7 +248,12 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
 	else if (layerType == "sse_multi")
 	    return new SsePostOutputMultiLayer<TDevice>(layerChild,
 							*precedingLayer, maxSeqLength,
-							layerID);	
+							layerID);
+	else if (layerType == "sse_cos")
+	    return new SseCosPostOutputLayer<TDevice>(layerChild,
+						      *precedingLayer, maxSeqLength,
+						      layerID);	
+
         else // if (layerType == "multiclass_classification")
     	    return new MulticlassClassificationLayer<TDevice>(layerChild,
 							      *precedingLayer, maxSeqLength,
