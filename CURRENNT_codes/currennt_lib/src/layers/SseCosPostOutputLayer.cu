@@ -77,9 +77,17 @@ namespace {
 		}
 		for (int dim_idx = 0 ; dim_idx < layerSize ; dim_idx++){
 		    data_ptr = timeStep * layerSize + dim_idx;
-		    ab += (a_buf[data_ptr] - a_mean) * (b_buf[data_ptr] - b_mean);
-		    aa += (a_buf[data_ptr] - a_mean) * (a_buf[data_ptr] - a_mean);
-		    bb += (b_buf[data_ptr] - b_mean) * (b_buf[data_ptr] - b_mean);
+
+		    a_buf[data_ptr] = (a_buf[data_ptr] - a_mean);
+		    b_buf[data_ptr] = (b_buf[data_ptr] - b_mean);
+		    
+		    ab += a_buf[data_ptr] * b_buf[data_ptr];
+		    aa += a_buf[data_ptr] * a_buf[data_ptr];
+		    bb += b_buf[data_ptr] * b_buf[data_ptr];
+		    
+		    //ab += (a_buf[data_ptr] - a_mean) * (b_buf[data_ptr] - b_mean);
+		    //aa += (a_buf[data_ptr] - a_mean) * (a_buf[data_ptr] - a_mean);
+		    //bb += (b_buf[data_ptr] - b_mean) * (b_buf[data_ptr] - b_mean);
 		}
 	    }
 	    // [a.b, a.a, b.b, (a.b)^2/(a.a * b.b)]
@@ -109,27 +117,39 @@ namespace {
         }
     };
     
-
-
     struct calculateCosSquareGradient
     {
 	int layerSize;
+	bool corr_gen_residual;
 	real_t *output_buf;
 	real_t cos_weight;
         const char *patTypes;
 
         __host__ __device__ void operator() (const thrust::tuple<real_t&, real_t&,
-					     real_t&, int> &values) const
+					     real_t&, real_t&, int> &values) const
         {
-	    int timeStep = values.get<3>() / layerSize;
+	    // t<0>, grad
+	    // t<1>, a = mean_normed(generated - target)
+	    // t<2>, b = mean_normed(target)
+	    // t<3>, b = mean_normed(generated)
+	    // t<4>, index 
+	    int timeStep = values.get<4>() / layerSize;
 	    
             if (patTypes[timeStep] == PATTYPE_NONE){
 		values.get<0>() = 0;
 	    }else{
-		// gradient = cos^2(a,b) [b/a.b - a/a.a]
-		values.get<0>() = cos_weight * output_buf[timeStep * 4 + 3] *
-		    (values.get<2>() / output_buf[timeStep * 4 + 0] -
-		     values.get<1>() / output_buf[timeStep * 4 + 1]);
+		if (corr_gen_residual){
+		    // gradient = cos^2(a,b) [(a+b)/a.b - a/a.a - b/b.b]
+		    values.get<0>() = cos_weight * output_buf[timeStep * 4 + 3] *
+			((values.get<3>() + values.get<1>()) / output_buf[timeStep * 4 + 0] -
+			 values.get<1>() / output_buf[timeStep * 4 + 1] -
+			 values.get<3>() / output_buf[timeStep * 4 + 2]);
+		}else{
+		    // gradient = cos^2(a,b) [b/a.b - a/a.a]
+		    values.get<0>() = cos_weight * output_buf[timeStep * 4 + 3] *
+			(values.get<2>() / output_buf[timeStep * 4 + 0] -
+			 values.get<1>() / output_buf[timeStep * 4 + 1]);
+		}
 	    }
         }
     };
@@ -202,6 +222,9 @@ namespace layers {
 	m_pearsoncorr     = ((layerChild->HasMember("cos_mean_norm")) ? 
 			     (*layerChild)["cos_mean_norm"].GetBool() : true);
 
+	m_corr_gen_residual = ((layerChild->HasMember("cos_gen_residual")) ? 
+			       (*layerChild)["cos_gen_residual"].GetBool() : true);
+	
 	/* ---- allocate memory space ----- */
 	// memory for residuals
 	m_residual = this->precedingLayer().outputs();
@@ -212,6 +235,11 @@ namespace layers {
 
 	if (m_pearsoncorr)
 	    printf("\n\tcos distance with mean normalized (pearson correlation)");
+
+	if (m_corr_gen_residual)
+	    printf("\n\tcos distance between generated data and residual");
+	else
+	    printf("\n\tcos distance between natural data and residual");
 	
 	// Done
     }
@@ -248,15 +276,26 @@ namespace layers {
 			      this->m_residual.begin(),
 			      thrust::minus<real_t>());
 	    
-	    // step 2.2, let a = generated - target, b = target,
-	    //    calculate vector norm a^Tb, a^Ta, b^Tb, and (a^Tb)^2 / (a^Ta * b^Tb)
+	    // step 2.2,
+	    //   when m_corr_gen_residual == true,  a = generated - target, b = generated,
+	    //   when m_corr_gen_residual == false, a = generated - target, b = target,
+	    //   first, a = a - mean(a)
+	    //          b = b - mean(b)
+	    //   then, calculate vector norm a^Tb, a^Ta, b^Tb, and (a^Tb)^2 / (a^Ta * b^Tb)
+	    //
+	    //   Note: b_buf will be changed
 	    {
 		internal::calculateVectorNormAndCosSquare fn;
 		fn.layerSize  = this->size();
 		fn.pearsoncorr= m_pearsoncorr;
 		fn.patTypes   = helpers::getRawPointer(this->patTypes());
 		fn.a_buf      = helpers::getRawPointer(this->m_residual);
-		fn.b_buf      = helpers::getRawPointer(this->_targets());
+
+		if (m_corr_gen_residual)
+		    fn.b_buf  = helpers::getRawPointer(this->_actualOutputs());
+		else
+		    fn.b_buf  = helpers::getRawPointer(this->_targets());
+		
 		fn.output_buf = helpers::getRawPointer(this->m_vector_norm);
 
 		thrust::for_each(
@@ -315,18 +354,32 @@ namespace layers {
 
 	
 	// step 2.1,
-	//   for common cos distance,
-	//       a = generated - target, b = target
-	//   for pearson correlation,
-	//       \hat{a} = generated - target, \hat{b} = target
-	//       a = \hat{a} - mean(\hat{a}), b = \hat{b} - mean(\hat{b})
-	//   
-	//    calculate \partial cos_E / \partial a_k for each dimensio
-	//    \partial cos_E / \partial a_k = cos^2(a,b) [b_k /<a,b> - a_k /<a,a>]
 	{
+	    //   if m_corr_gen_residual == true
+	    //       a = generated - target, b = generated
+	    //   for pearson correlation,
+	    //       \hat{a} = generated - target, \hat{b} = generated
+	    //       a = \hat{a} - mean(\hat{a}), b = \hat{b} - mean(\hat{b})
+	    //   
+	    //    calculate \partial cos_E / \partial a_k for each dimensio
+	    //    \partial cos_E / \partial a_k + \partial cos_E / \partial b_k
+	    //            = cos^2(a,b) [(b_k + a_k)/<a,b> - a_k /<a,a> - b_k / <b,b>]
+	    
+	    
+	    //   if m_corr_gen_residual == false
+	    //       a = generated - target, b = target
+	    //   for pearson correlation,
+	    //       \hat{a} = generated - target, \hat{b} = target
+	    //       a = \hat{a} - mean(\hat{a}), b = \hat{b} - mean(\hat{b})
+	    //   
+	    //    calculate \partial cos_E / \partial a_k for each dimensio
+	    //    \partial cos_E / \partial a_k = cos^2(a,b) [b_k /<a,b> - a_k /<a,a>]
+
 	    internal::calculateCosSquareGradient fn;
 	    fn.layerSize  = this->size();
 	    fn.cos_weight = this->m_cos_weight;
+	    fn.corr_gen_residual = this->m_corr_gen_residual;
+	    
 	    fn.output_buf = helpers::getRawPointer(this->m_vector_norm);
 	    fn.patTypes   = helpers::getRawPointer(this->patTypes());
 
@@ -338,11 +391,13 @@ namespace layers {
 		thrust::make_tuple(this->outputErrors().begin(),
 				   this->m_residual.begin(),
 				   this->_targets().begin(),
+				   this->_actualOutputs().begin(),
 				   thrust::counting_iterator<int>(0))),
 	       thrust::make_zip_iterator(
-		thrust::make_tuple(this->outputErrors().begin()     + n,
+		thrust::make_tuple(this->outputErrors().begin()      + n,
 				   this->m_residual.begin()          + n,
 				   this->_targets().begin()          + n,
+				   this->_actualOutputs().begin()    + n,
 				   thrust::counting_iterator<int>(0) + n)),
 	       fn);
 	}
@@ -411,8 +466,11 @@ namespace layers {
     {
         SsePostOutputLayer<TDevice>::exportLayer(layersArray, allocator);
 	(*layersArray)[layersArray->Size() - 1].AddMember("cos_weight", m_cos_weight, allocator);
-	if (m_pearsoncorr)
+	if (!m_pearsoncorr)
 	    (*layersArray)[layersArray->Size() - 1].AddMember("cos_mean_norm", m_pearsoncorr,
+							      allocator);
+	if (!m_corr_gen_residual)
+	    (*layersArray)[layersArray->Size() - 1].AddMember("cos_gen_residual", m_pearsoncorr,
 							      allocator);
     }
     

@@ -32,8 +32,12 @@
 
 #include "../helpers/getRawPointer.cuh"
 #include "../helpers/Matrix.hpp"
+#include "../helpers/min.cuh"
+#include "../helpers/max.cuh"
+#include "../helpers/safeExp.cuh"
 #include "../helpers/JsonClasses.hpp"
 #include "../helpers/misFuncs.hpp"
+#include "../helpers/NumericLimits.cuh"
 
 #include <thrust/transform.h>
 #include <thrust/transform_reduce.h>
@@ -57,8 +61,29 @@
 #define NN_VQINPUT_CODE_PROB   1
 #define NN_VQINPUT_CODE_INDEX  2
 
+#define SKIP_MARKER helpers::NumericLimits<real_t>::max()
+
 namespace internal{
 namespace {
+
+    struct genNoise
+    {
+	float a, b;
+	int   seed;
+	
+	__host__ __device__
+	genNoise(float _a=-1.f, float _b=1.f, int _seed=123) : a(_a), b(_b), seed(_seed) {};
+
+	__host__ __device__
+	float operator()(const unsigned int n) const
+	{
+	    thrust::default_random_engine rng(seed);
+	    thrust::uniform_real_distribution<float> dist(a, b);
+	    rng.discard(n);
+	    return dist(rng);
+	}
+    };
+
     struct computeDisMatrix
     {
 	int featureDim;      // code dimension
@@ -170,7 +195,51 @@ namespace {
 	    }
 	}
     };
+    
 
+    struct vqLoadAvarageCode
+    {
+	int codeDim;
+	int dimPtr;
+	
+	int featureDim;
+
+	int bestNcode;
+	
+	int howmanyBook;
+	int whichBook;
+	
+	real_t *outputData;
+	real_t *codeData;
+	real_t *index;
+	int    *codeDimFlag;
+	
+	const char *patTypes;
+
+	// for 0 : T * featureDim
+	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
+	{
+	    int timeIdx = t.get<1>() / codeDim;
+	    int featIdx = t.get<1>() % codeDim;
+	    
+	    if (patTypes[timeIdx] == PATTYPE_NONE ||
+		codeDimFlag[dimPtr + featIdx] == NN_VQLAYER_CODE_NOTUSE){
+		outputData[timeIdx * featureDim + dimPtr + featIdx] = 0.0;
+	    }else{
+		int tmpIndex = 0;
+		outputData[timeIdx * featureDim + dimPtr + featIdx] = 0.0;
+		
+		for (int idx = 0 ; idx < bestNcode; idx++){
+		    tmpIndex = (int)index[(timeIdx * howmanyBook + whichBook) * bestNcode + idx];
+		    outputData[timeIdx * featureDim + dimPtr + featIdx] +=
+			codeData[tmpIndex * codeDim + featIdx] / (real_t)bestNcode;
+		}
+		
+	    }
+	}
+    };
+    
+    
     struct WeightedSumVq
     {
 	int codeDim;
@@ -244,6 +313,38 @@ namespace {
     };
 
 
+    struct vqCodeDiffEMA
+    {
+	int     encoderLayerSize;
+	int     thisLayerSize;
+	int     dimPtr;
+	
+	real_t *outputData;
+	real_t *inputData;
+	
+	const char *patTypes;
+
+	// for 0 : T * featureDim
+	__host__ __device__ real_t operator() (const thrust::tuple<const real_t&, int> &t) const
+	{
+	    
+	    int timeIdx = t.get<1>() / encoderLayerSize;
+	    int dimIdx  = t.get<1>() % encoderLayerSize;
+	    
+	    
+	    if (patTypes[timeIdx] == PATTYPE_NONE){
+		return 0.0;
+	    }else{
+		return ((inputData[timeIdx * encoderLayerSize + dimIdx] -
+			 outputData[timeIdx * thisLayerSize + dimPtr + dimIdx]) *
+			(inputData[timeIdx * encoderLayerSize + dimIdx] -
+			 outputData[timeIdx * thisLayerSize + dimPtr + dimIdx]));
+	    }
+	}
+    };
+
+
+    
     struct CopyGradient
     {
 	int preLayerDim;
@@ -278,6 +379,38 @@ namespace {
 	    
 	}
     };
+
+
+    struct CopyGradientBeta
+    {
+	real_t beta;
+	int    inputLayerDim;
+	int    thisLayerDim;
+	int    dimPtr;
+	
+	int        *codeDimFlag;
+	real_t     *vqOutput;
+	const char *patTypes;
+	
+	__host__ __device__ void operator() (const thrust::tuple<real_t&, real_t&, int> &t) const
+	{
+
+	    int timeStep = t.get<2>() / inputLayerDim;
+	    int dimIdx   = t.get<2>() % inputLayerDim;
+	    
+
+	    if (patTypes[timeStep] == PATTYPE_NONE ||
+		codeDimFlag[dimPtr + dimIdx] == NN_VQLAYER_CODE_NOTUSE ||
+		codeDimFlag[dimPtr + dimIdx] == NN_VQLAYER_CODE_USE)
+	    {
+		// do nothing
+	    }else{
+		t.get<0>() += beta * (t.get<1>() -
+				      vqOutput[timeStep * thisLayerDim + dimPtr + dimIdx]);
+	    }
+	}
+    };
+
     
     struct GradientForCodeBook
     {
@@ -342,6 +475,221 @@ namespace {
 		t.get<0>() = 0.0;
 	}
     };
+
+    struct GradientForCodeBookEMA
+    {
+	int codeDim;
+	int codeBookSize;
+	
+	int howmanyBook;
+	int whichBook;
+
+	int dimPtr;
+
+	int bestNcode;
+	
+	int    *codeDimFlag;
+	real_t *inputData;
+	real_t  lambdaPara;
+	
+	int *index;
+
+	int timeLength;
+	const char *patTypes;
+
+	// for codeBookSize * featureDim
+	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
+	{
+
+	    int codeIdx = t.get<1>() / codeDim;
+	    int featIdx = t.get<1>() % codeDim;
+
+	    int timeIdx = 0;
+	    
+	    real_t sumInput = 0.0;
+	    real_t cnt = 0.0;
+	    
+	    for (int i = 0; i<timeLength; i++){
+		
+		if (patTypes[i] == PATTYPE_NONE)
+		    break;
+
+		for (int j = 0; j < bestNcode; j++){
+		    if (index[(i * howmanyBook + whichBook) * bestNcode + j] == codeIdx){
+			cnt += 1.0;
+			timeIdx = i;
+			sumInput += (inputData[timeIdx * codeDim + featIdx] - sumInput)/cnt;
+		    
+		    }
+		}
+	    }
+	    
+	    // Method2: sum of the gradients over time
+	    if (codeDimFlag[dimPtr + featIdx] == NN_VQLAYER_CODE_TRAIN)
+		t.get<0>() = t.get<0>() * lambdaPara + (1.0 - lambdaPara) * sumInput;
+	    else
+		t.get<0>() = 0.0;
+	}
+    };
+
+    struct vqCalculateOffsetFn
+    {
+        int codeBooksize;
+	
+        const real_t *dismatrix;
+        const char *patTypes;
+
+        __host__ __device__ real_t operator() (const int &patIdx) const
+        {
+            if (patTypes[patIdx] == PATTYPE_NONE)
+                return SKIP_MARKER;
+
+            // search for the min and max output
+            real_t max = helpers::NumericLimits<real_t>::min();
+            real_t min = helpers::NumericLimits<real_t>::max();
+
+            const real_t *offOutputs = &dismatrix[patIdx * codeBooksize];
+
+            for (int i = 0; i < codeBooksize; ++i) {
+                real_t x = offOutputs[i];
+                min = helpers::min(min, x);
+                max = helpers::max(max, x);
+            }
+
+            // calculate the offset
+            real_t offset = (real_t)0.5 * (min + max);
+
+            return offset;
+        }
+    };
+
+
+    struct vqCalculateExpFn
+    {
+        int codeBooksize;
+
+        const real_t *offsets;
+
+        __host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
+        {
+            // unpack the tuple
+            real_t output = t.get<0>();
+            int outputIdx = t.get<1>();
+
+            // calculate the pattern index
+            int patIdx = outputIdx / codeBooksize;
+
+            // check if we can stop the calculation
+            real_t offset = offsets[patIdx];
+            if (offset == SKIP_MARKER)
+                return;
+
+            // calculate the exponent
+            real_t x = helpers::safeExp(output - offset);
+
+            // store the result
+            t.get<0>() = x;
+        }
+    };
+
+    
+    struct vqSumUpOutputsFn
+    {
+        int codeBooksize;
+
+        const real_t *disMatrix;
+
+        __host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
+        {
+            // unpack the tuple
+            int patIdx = t.get<1>();
+
+            // check if the pattern belongs to a sequence
+            if (t.get<0>() == SKIP_MARKER)
+                return;
+
+            // sum up the outputs
+            const real_t *offOutputs = &disMatrix[patIdx * codeBooksize];
+
+            real_t sum = 0;
+            for (int i = 0; i < codeBooksize; ++i)
+                sum += offOutputs[i];
+
+            // store the result
+            t.get<0>() = sum;
+        }
+    };
+
+    struct vqNormalizeOutputsFn
+    {
+        int codeBooksize;
+
+        const real_t *normFacts;
+
+        __host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
+        {
+            // unpack the tuple
+            int outputIdx = t.get<1>();
+
+            // calculate the pattern index
+            int patIdx = outputIdx / codeBooksize;
+
+            // check if we can stop the calculation
+            real_t normFact = normFacts[patIdx];
+            if (normFact == SKIP_MARKER)
+                return;
+
+            // calculate the normalized value
+            real_t x = t.get<0>() / normFact;
+
+            // store the result
+            t.get<0>() = x;
+        }
+    };
+
+
+    struct vqSamplingSoftmax
+    {
+        int codeBooksize;
+	int codeNbest;
+	int howmanyBook;
+	int whichBook;
+	
+	real_t       *randomSeeds;
+	real_t       *indexBufferF;
+	int          *indexBuffer;
+	
+	const real_t *probBuff;    // softmax probability
+	const char   *patTypes;
+
+	
+        __host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
+        {
+	    int timeIdx   = t.get<1>() / codeNbest;
+	    int searchIdx = t.get<1>() % codeNbest;
+		
+	    if (patTypes[timeIdx] == PATTYPE_NONE)
+		return;
+	    
+	    real_t probAccum = 0.0;
+	    real_t randomNum = randomSeeds[t.get<1>()];
+
+	    int    ptr = (timeIdx * howmanyBook + whichBook) * codeNbest + searchIdx;
+	    
+	    // 
+	    for (int i = 0; i < codeBooksize; i++){
+		probAccum += probBuff[timeIdx * codeBooksize + i];
+		if (randomNum < probAccum){
+		    indexBufferF[ptr] = (real_t)i;
+		    indexBuffer[ptr]  = i;
+		    break;
+		}
+	    }
+        }
+    };
+
+    
+    
 }
 }
 
@@ -364,18 +712,77 @@ namespace layers{
 	, m_vqCodeBookSizeAll ((layerChild->HasMember("vqCodeBookSize") ? 
 				((*layerChild)["vqCodeBookSize"].GetInt()) : 0))
     {
+
+	// load options
+	this->__loadOpts(layerChild);
+	
+	// link to the output layers of encoder
+	this->__setUp_encoder_inputs();
+
+	// allocate memory
+	this->__setUp_allocateMem();
+
+	// show information
+	this->__showOpts();
+	
+	// done
+    }	
+
+    // Destructor
+    template <typename TDevice>
+    vqLayer<TDevice>::~vqLayer()
+    {
+    }
+
+
+    template <typename TDevice>
+    void vqLayer<TDevice>::__loadOpts(const helpers::JsonValue &layerChild)
+    {
+
+	// Size of each codebook (string)
 	m_vqCodeBookSizeStr = (layerChild->HasMember("vqEachCodeBookSize") ? 
 			       ((*layerChild)["vqEachCodeBookSize"].GetString()) : "");
+
+	// Outpu layers from encoders
 	m_preLayerNamesStr  = (layerChild->HasMember("inputLayers") ? 
 			       ((*layerChild)["inputLayers"].GetString()) : "");
+	
+	// Status of each codebook
 	m_codeBookStatusStr = (layerChild->HasMember("codeBookStatus") ? 
 			       ((*layerChild)["codeBookStatus"].GetString()) : "");
 
+	// 1-best code or N-best code?
+	m_bestNcode         = ((layerChild->HasMember("nbest") ? 
+				((*layerChild)["nbest"].GetInt()) : 1));
 
+	// weight for commitment loss
+	m_betaPara     = (layerChild->HasMember("beta") ? 
+			  ((*layerChild)["beta"].GetDouble()) : 0.25);
+
+	// parameter for exponential moving average update of codes
+	m_lambdaPara   = (layerChild->HasMember("lambda") ? 
+			  ((*layerChild)["lambda"].GetDouble()) : 0.99);
+
+
+	if ((!this->flagTrainingMode()) && m_bestNcode > 1){
+	    printf("\t\nGeneration uses 1-best VQ code");
+	    m_bestNcode = 1;
+	}
+	// done
+	
+    }
+
+    template <typename TDevice>
+    void vqLayer<TDevice>::__setUp_encoder_inputs()
+    {
 	// Parse the preLayer option
+	
 	if (m_preLayerNamesStr.size()){
+	    
 	    std::vector<std::string> tmpOpt;
 	    misFuncs::ParseStrOpt(m_preLayerNamesStr, tmpOpt, ",");
+
+	    // find the encoder's output layer
 	    for (int cnt = 0 ; cnt < tmpOpt.size(); cnt++) {
 		layers::Layer<TDevice>          *tmpLayerPtr = &this->precedingLayer();
 		layers::TrainableLayer<TDevice> *tmpTLayerPtr;
@@ -384,6 +791,7 @@ namespace layers{
 		// Find the input layer for each code book
 		while (tmpLayerPtr != NULL){
 		    tmpTLayerPtr = dynamic_cast<layers::TrainableLayer<TDevice>*>(tmpLayerPtr);
+		    
 		    if (tmpLayerPtr->name() == tmpOpt[cnt]){
 			m_preLayers.push_back(tmpTLayerPtr);
 
@@ -391,12 +799,10 @@ namespace layers{
 			tmpSLayerPtr = dynamic_cast<layers::SkipLayer<TDevice>*>(tmpLayerPtr);
 			
 			if (tmpSLayerPtr == NULL &&
-			    tmpLayerPtr->name() != this->precedingLayer().name())
-			{
+			    tmpLayerPtr->name() != this->precedingLayer().name()){
 			    printf("Please add skipini after %s", tmpLayerPtr->name().c_str());
 			    throw std::runtime_error("Invalid network structure");
 			}
-			
 			break;
 		    }
 		    
@@ -410,7 +816,8 @@ namespace layers{
 		    }
 		}
 	    }
-	    
+
+	    // check
 	    if (m_vqCodeBookSizeStr.size() == 0){
 		throw std::runtime_error("vqEachCodeBookSize is not specified");
 	    }else{
@@ -419,7 +826,6 @@ namespace layers{
 		    throw std::runtime_error("vqEachCodeBookSize & inputLayers unequal length");
 		if (misFuncs::SumCpuIntVec(m_vqCodeBookSizeVec) != m_vqCodeBookSizeAll)
 		    throw std::runtime_error("sum of vqEachCodeBookSize unqual vqCodeBookSize");
-		
 	    }
 	    
 	}else{
@@ -430,8 +836,7 @@ namespace layers{
 	    m_vqCodeBookSizeStr = "";
 	}
 
-
-
+	// 
 	cpu_int_vector tmpBookStatus;
 	if (m_codeBookStatusStr.size()){
 	    misFuncs::ParseIntOpt(m_codeBookStatusStr, tmpBookStatus);
@@ -485,6 +890,9 @@ namespace layers{
 		throw std::runtime_error("Please check resolution of vqLayer");		
 	    }
 
+	    if (layer->getResolution() != this->getResolution() && m_bestNcode > 1)
+		throw std::runtime_error("N-best vq cannot work for resolution changed vqLayer");
+	    
 	    layerCnt++;
 	}
 
@@ -496,21 +904,7 @@ namespace layers{
 	
 	if (m_vqCodeBookSizeAll < 1)
 	    throw std::runtime_error("vqLayer vqCodeBookSize is not an positive integer");
-
-	// Initialize the distance matrix
-	int maxSeqLengthParallel = this->parallelSequences() * maxSeqLength;
-	cpu_real_vector temp(maxSeqLengthParallel * m_vqCodeBookSizeAll, 0.0);
-	m_disMatrix = temp;
-
-	cpu_int_vector temp2(maxSeqLengthParallel * m_vqCodeBookSizeVec.size(), 0);
-	m_selectedIdx  = temp2;
-
-	cpu_real_vector temp3(maxSeqLengthParallel * m_vqCodeBookSizeVec.size(), 0);
-	m_selectedIdxF = temp3;
-
-	m_betaPara    = (layerChild->HasMember("beta") ? 
-			 ((*layerChild)["beta"].GetDouble()) : 0.25);
-
+	
 	// Set the gradients of dummy weights to zero
 	real_vector tmpWeights = this->weights();
 	this->reInitWeight();
@@ -518,12 +912,36 @@ namespace layers{
 		     this->weights().begin());
 	thrust::fill(this->_weightUpdates().begin() + validWeightNum,
 		     this->_weightUpdates().end(), 0.0);
-    }	
 
-    // Destructor
+    }
+
     template <typename TDevice>
-    vqLayer<TDevice>::~vqLayer()
+    void vqLayer<TDevice>::__setUp_allocateMem()
     {
+	// Initialize the distance matrix
+	int maxSeqLengthParallel = this->outputs().size() / this->size();
+	cpu_real_vector temp(maxSeqLengthParallel * m_vqCodeBookSizeAll, 0.0);
+	m_disMatrix = temp;
+	m_softmaxRand = temp;
+	
+	cpu_int_vector  temp2(maxSeqLengthParallel * m_vqCodeBookSizeVec.size() * m_bestNcode, 0);
+	m_selectedIdx  = temp2;
+
+	cpu_real_vector temp3(maxSeqLengthParallel * m_vqCodeBookSizeVec.size() * m_bestNcode, 0);
+	m_selectedIdxF = temp3;
+
+	cpu_real_vector temp4(maxSeqLengthParallel, 0);
+	m_softmaxTmp   = temp4;	
+	
+    }
+
+    template <typename TDevice>
+    void vqLayer<TDevice>::__showOpts()
+    {
+	if (m_bestNcode >= 1)
+	    printf("\n\tVQ Layer uses %d best codes", m_bestNcode);
+	else
+	    throw std::runtime_error("\n\tVQ Layer has no latent code");
     }
     
     // Load sequences
@@ -531,9 +949,12 @@ namespace layers{
     void vqLayer<TDevice>::loadSequences(const data_sets::DataSetFraction &fraction,
 					 const int nnState)
     {
+	// Load sequences through the conventional TrainableLayer interface
 	TrainableLayer<TDevice>::loadSequences(fraction, nnState);
-	
+
+	// If vqcodes are provided externally
 	if (Configuration::instance().vaeCodeInputDir().size()){
+	
 	    if (fraction.numSequences() > 1)
 		throw std::runtime_error("Please turn off parallel mode");
 
@@ -715,111 +1136,287 @@ namespace layers{
 	if (Configuration::instance().vaeCodeInputDir().size())
 	    return;
 
+	// Length of the input data sequence
 	int uttLength = this->curMaxSeqLength() * this->parallelSequences();
-
-	m_codeError = 0.0;
-	int cnt = 0;
+	
+	m_codeError     = 0.0;
+	int cnt         = 0;
 	int codeBookPtr = 0;
-	int dimPtr = 0;
+	int dimPtr      = 0;
+
+	// For each input layer from the encoder
 	BOOST_FOREACH (layers::TrainableLayer<TDevice> *layer, m_preLayers){
-	   	    
+
+	    // Step1. compute the distance matrix
 	    {{
-	    // step1. compute the distance matrix
-	    internal::computeDisMatrix fn1;
-	    fn1.featureDim   = layer->size();
-	    fn1.codeBookSize = this->m_vqCodeBookSizeVec[cnt];
-	    fn1.inputData    = helpers::getRawPointer(layer->outputs());
-	    fn1.codeData     = helpers::getRawPointer(this->weights()) + codeBookPtr;
-	    fn1.patTypes     = helpers::getRawPointer(this->patTypes());
-	    fn1.resoRatio    = layer->getResolution() / this->getResolution();
-	    fn1.paralNum     = this->parallelSequences();
+		internal::computeDisMatrix fn1;
+		fn1.featureDim   = layer->size();
+		fn1.codeBookSize = this->m_vqCodeBookSizeVec[cnt];
+		fn1.inputData    = helpers::getRawPointer(layer->outputs());
+		fn1.codeData     = helpers::getRawPointer(this->weights()) + codeBookPtr;
+		fn1.patTypes     = helpers::getRawPointer(this->patTypes());
+		fn1.resoRatio    = layer->getResolution() / this->getResolution();
+		fn1.paralNum     = this->parallelSequences();
 		
-	    int n = uttLength * this->m_vqCodeBookSizeVec[cnt];
-	    thrust::for_each(
-               thrust::make_zip_iterator(
+		int n = uttLength * this->m_vqCodeBookSizeVec[cnt];
+		thrust::for_each(
+                 thrust::make_zip_iterator(
 		  thrust::make_tuple(this->m_disMatrix.begin(),
 				     thrust::counting_iterator<int>(0))),
-	       thrust::make_zip_iterator(
+		 thrust::make_zip_iterator(
 		  thrust::make_tuple(this->m_disMatrix.begin()         + n,
 				     thrust::counting_iterator<int>(0) + n)),
-	       fn1);
-	    
-	    // step2. search for the best index
-	    internal::getBestIndex fn2;
-	    fn2.codeBookSize = this->m_vqCodeBookSizeVec[cnt];
-	    fn2.disMatrix    = helpers::getRawPointer(this->m_disMatrix);
-	    fn2.patTypes     = helpers::getRawPointer(this->patTypes());
-	    fn2.indexBuffer  = helpers::getRawPointer(this->m_selectedIdx);
-	    fn2.indexBufferF = helpers::getRawPointer(this->m_selectedIdxF);
-	    fn2.howmanyBook  = this->m_vqCodeBookSizeVec.size();
-	    fn2.whichBook    = cnt;
-	    
-	    thrust::for_each(
-               thrust::make_zip_iterator(
-		  thrust::make_tuple(this->m_selectedIdx.begin(),
-				     thrust::counting_iterator<int>(0))),
-	       thrust::make_zip_iterator(
-		  thrust::make_tuple(this->m_selectedIdx.begin() + uttLength,
-				     thrust::counting_iterator<int>(0) + uttLength)),
-	       fn2);	
+		 fn1);
 	    }}
 
+	    // 
+	    if (m_bestNcode == 1){
+		
+		// If only one-best from VQ code book
+		{{
+		    // step2. search for the best index
+		    internal::getBestIndex fn2;
+		    fn2.codeBookSize = this->m_vqCodeBookSizeVec[cnt];
+		    fn2.disMatrix    = helpers::getRawPointer(this->m_disMatrix);
+		    fn2.patTypes     = helpers::getRawPointer(this->patTypes());
+		    fn2.indexBuffer  = helpers::getRawPointer(this->m_selectedIdx);
+		    fn2.indexBufferF = helpers::getRawPointer(this->m_selectedIdxF);
+		    fn2.howmanyBook  = this->m_vqCodeBookSizeVec.size();
+		    fn2.whichBook    = cnt;
+		
+		    thrust::for_each(
+                     thrust::make_zip_iterator(
+			thrust::make_tuple(this->m_selectedIdx.begin(),
+					   thrust::counting_iterator<int>(0))),
+		     thrust::make_zip_iterator(
+		        thrust::make_tuple(this->m_selectedIdx.begin() + uttLength,
+					   thrust::counting_iterator<int>(0) + uttLength)),
+		     fn2);	
+		}}
+		
+		{{
+		    // step3. optional, calculate the error
+		    internal::CodeDiff fn4;
+		    fn4.featureDim   = layer->size();
+		    fn4.codeBookSize = this->m_vqCodeBookSizeVec[cnt];
+		    fn4.codeData     = helpers::getRawPointer(this->weights()) + codeBookPtr;
+		    fn4.index        = helpers::getRawPointer(this->m_selectedIdx);
+		    fn4.patTypes     = helpers::getRawPointer(this->patTypes());
+		    fn4.howmanyBook  = this->m_vqCodeBookSizeVec.size();
+		    fn4.whichBook    = cnt;
+		    fn4.resoRatio    = layer->getResolution() / this->getResolution();
+		    fn4.inputData    = helpers::getRawPointer(layer->outputs());
+		    fn4.paralNum     = this->parallelSequences();
+	    
+		    int n = uttLength * layer->size();
+		    real_t tmpError = thrust::transform_reduce(
+                      thrust::make_zip_iterator(
+			thrust::make_tuple(this->outputs().begin(),
+					   thrust::counting_iterator<int>(0))),
+		      thrust::make_zip_iterator(
+		        thrust::make_tuple(this->outputs().begin()           + n,
+					   thrust::counting_iterator<int>(0) + n)),
+		      fn4, (real_t)0.0, thrust::plus<real_t>());
+		    if (m_codeDimStatus[dimPtr] != NN_VQLAYER_CODE_NOTUSE)
+			m_codeError += (tmpError / uttLength);
+		}}
 
-	    // step4. optional, calculate the error
-	    {{
-	    internal::CodeDiff fn4;
-	    fn4.featureDim   = layer->size();
-	    fn4.codeBookSize = this->m_vqCodeBookSizeVec[cnt];
-	    fn4.codeData     = helpers::getRawPointer(this->weights()) + codeBookPtr;
-	    fn4.index        = helpers::getRawPointer(this->m_selectedIdx);
-	    fn4.patTypes     = helpers::getRawPointer(this->patTypes());
-	    fn4.howmanyBook  = this->m_vqCodeBookSizeVec.size();
-	    fn4.whichBook    = cnt;
-	    fn4.resoRatio    = layer->getResolution() / this->getResolution();
-	    fn4.inputData    = helpers::getRawPointer(layer->outputs());
-	    fn4.paralNum     = this->parallelSequences();
 	    
-	    int n = uttLength * layer->size();
-	    real_t tmpError = thrust::transform_reduce(
-               thrust::make_zip_iterator(
-		  thrust::make_tuple(this->outputs().begin(),
-				     thrust::counting_iterator<int>(0))),
-	       thrust::make_zip_iterator(
-		  thrust::make_tuple(this->outputs().begin()           + n,
-				     thrust::counting_iterator<int>(0) + n)),
-	       fn4, (real_t)0.0, thrust::plus<real_t>());
-	    if (m_codeDimStatus[dimPtr] != NN_VQLAYER_CODE_NOTUSE)
-		m_codeError += (tmpError / uttLength);
-	    }}
+		// step4. use the best vector as the output
+		{{
+		    internal::LoadVq fn3;
+		    fn3.codeDim      = layer->size();
+		    fn3.dimPtr       = dimPtr;
+		    fn3.featureDim   = this->size();
+		    fn3.codeBookSize = this->m_vqCodeBookSizeVec[cnt];
+		    fn3.codeData     = helpers::getRawPointer(this->weights()) + codeBookPtr;
+		    fn3.index        = helpers::getRawPointer(this->m_selectedIdxF);
+		    fn3.patTypes     = helpers::getRawPointer(this->patTypes());
+		    fn3.outputData   = helpers::getRawPointer(this->outputs());
+		    fn3.codeDimFlag  = helpers::getRawPointer(this->m_codeDimStatus);
+	    
+		    fn3.howmanyBook  = this->m_vqCodeBookSizeVec.size();
+		    fn3.whichBook    = cnt;
+	    
+		    int n = uttLength * layer->size();
+		    thrust::for_each(
+                      thrust::make_zip_iterator(
+			thrust::make_tuple(this->outputs().begin(),
+					   thrust::counting_iterator<int>(0))),
+		      thrust::make_zip_iterator(
+		        thrust::make_tuple(this->outputs().begin()           + n,
+					   thrust::counting_iterator<int>(0) + n)),
+		      fn3);
+		    
+		}}
+		
+	    }else{
+		
+		// If bestNcode > 1
+		
+		// step2. get the categorical distribution based on m_disMatrix
+		int codeNumTotal = uttLength * this->m_vqCodeBookSizeVec[cnt];
+		{{
+		    internal::vqCalculateOffsetFn fn;
+		    fn.codeBooksize = this->m_vqCodeBookSizeVec[cnt];
+		    fn.dismatrix    = helpers::getRawPointer(this->m_disMatrix);
+		    fn.patTypes     = helpers::getRawPointer(this->patTypes());
 
-	    
-	    // step3. use the best vector as the output
-	    {{
-	    internal::LoadVq fn3;
-	    fn3.codeDim      = layer->size();
-	    fn3.dimPtr       = dimPtr;
-	    fn3.featureDim   = this->size();
-	    fn3.codeBookSize = this->m_vqCodeBookSizeVec[cnt];
-	    fn3.codeData     = helpers::getRawPointer(this->weights()) + codeBookPtr;
-	    fn3.index        = helpers::getRawPointer(this->m_selectedIdxF);
-	    fn3.patTypes     = helpers::getRawPointer(this->patTypes());
-	    fn3.outputData   = helpers::getRawPointer(this->outputs());
-	    fn3.codeDimFlag  = helpers::getRawPointer(this->m_codeDimStatus);
-	    
-	    fn3.howmanyBook  = this->m_vqCodeBookSizeVec.size();
-	    fn3.whichBook    = cnt;
-	    
-	    int n = uttLength * layer->size();
-	    thrust::for_each(
-               thrust::make_zip_iterator(
-		  thrust::make_tuple(this->outputs().begin(),
-				     thrust::counting_iterator<int>(0))),
-	       thrust::make_zip_iterator(
-		  thrust::make_tuple(this->outputs().begin()           + n,
-				     thrust::counting_iterator<int>(0) + n)),
-	       fn3);
-	    
-	    }}
+		    thrust::transform(
+                      thrust::counting_iterator<int>(0),
+		      thrust::counting_iterator<int>(0) + uttLength,
+		      m_softmaxTmp.begin(),
+		      fn);
+	       }}
+
+		// calculate the exponent
+		{{
+		    internal::vqCalculateExpFn fn;
+		    fn.codeBooksize = this->m_vqCodeBookSizeVec[cnt];
+		    fn.offsets   = helpers::getRawPointer(m_softmaxTmp);
+		    
+		    thrust::for_each(
+		      thrust::make_zip_iterator(
+			thrust::make_tuple(this->m_disMatrix.begin(),
+					   thrust::counting_iterator<int>(0))),
+		      thrust::make_zip_iterator(
+		        thrust::make_tuple(this->m_disMatrix.begin()         + codeNumTotal,
+					   thrust::counting_iterator<int>(0) + codeNumTotal)),
+		      fn);
+		}}
+
+		// sum up all outputs for each pattern
+		{{
+		    internal::vqSumUpOutputsFn fn;
+		    fn.codeBooksize = this->m_vqCodeBookSizeVec[cnt];
+		    fn.disMatrix    = helpers::getRawPointer(m_disMatrix);
+
+		    thrust::for_each(
+		      thrust::make_zip_iterator(
+			thrust::make_tuple(m_softmaxTmp.begin(),
+					   thrust::counting_iterator<int>(0))),
+		      thrust::make_zip_iterator(
+			thrust::make_tuple(m_softmaxTmp.begin()              + uttLength,
+					   thrust::counting_iterator<int>(0) + uttLength)),
+		      fn);
+		}}
+
+		// normalize the outputs
+		{{
+		    internal::vqNormalizeOutputsFn fn;
+		    fn.codeBooksize = this->m_vqCodeBookSizeVec[cnt];
+		    fn.normFacts    = helpers::getRawPointer(m_softmaxTmp);
+
+		    thrust::for_each(
+		      thrust::make_zip_iterator(
+			thrust::make_tuple(this->m_disMatrix.begin(),
+					   thrust::counting_iterator<int>(0))),
+		      thrust::make_zip_iterator(
+			thrust::make_tuple(this->m_disMatrix.begin()         + codeNumTotal,
+					   thrust::counting_iterator<int>(0) + codeNumTotal)),
+		      fn);
+		}}
+
+		// step3. sampling from the categorical distribution
+		{{
+		    // generate the random number
+		    thrust::counting_iterator<unsigned int> index_sequence_begin(0);
+		    thrust::transform(
+			index_sequence_begin, index_sequence_begin + uttLength * m_bestNcode,
+			m_softmaxRand.begin(),
+			internal::genNoise(0.0, 1.0,
+					   (int)(misFuncs::GetRandomNumber()*1000.0)));
+
+		    // sampling
+		    internal::vqSamplingSoftmax fn;
+		    fn.codeBooksize = this->m_vqCodeBookSizeVec[cnt];
+		    fn.codeNbest    = this->m_bestNcode;
+
+		    fn.randomSeeds  = helpers::getRawPointer(m_softmaxRand);
+		    fn.probBuff     = helpers::getRawPointer(m_disMatrix);
+
+		    fn.howmanyBook  = this->m_vqCodeBookSizeVec.size();
+		    fn.whichBook    = cnt;
+
+		    fn.indexBuffer  = helpers::getRawPointer(this->m_selectedIdx);
+		    fn.indexBufferF = helpers::getRawPointer(this->m_selectedIdxF);
+		    
+		    fn.patTypes     = helpers::getRawPointer(this->precedingLayer().patTypes());
+		
+		    thrust::for_each(
+		     thrust::make_zip_iterator(
+		      thrust::make_tuple(
+				this->m_selectedIdxF.begin(),
+				thrust::counting_iterator<int>(0))),
+		     thrust::make_zip_iterator(
+		      thrust::make_tuple(
+				this->m_selectedIdxF.begin()      + uttLength * m_bestNcode,
+				thrust::counting_iterator<int>(0) + uttLength * m_bestNcode)),
+		     fn);
+		}}
+		
+		// step4. load the average code
+		{{
+		    internal::vqLoadAvarageCode fn3;
+		    fn3.codeDim      = layer->size();
+		    fn3.dimPtr       = dimPtr;
+		    
+		    fn3.featureDim   = this->size();
+		    fn3.bestNcode    = m_bestNcode;
+
+		    fn3.howmanyBook  = this->m_vqCodeBookSizeVec.size();
+		    fn3.whichBook    = cnt;
+
+		    fn3.outputData   = helpers::getRawPointer(this->outputs());
+		    fn3.codeData     = helpers::getRawPointer(this->weights()) + codeBookPtr;
+		    fn3.index        = helpers::getRawPointer(this->m_selectedIdxF);
+		    fn3.codeDimFlag  = helpers::getRawPointer(this->m_codeDimStatus);
+		    
+		    fn3.patTypes     = helpers::getRawPointer(this->patTypes());
+		    
+		    int n = uttLength * layer->size();
+		    thrust::for_each(
+                      thrust::make_zip_iterator(
+			thrust::make_tuple(this->outputs().begin(),
+					   thrust::counting_iterator<int>(0))),
+		      thrust::make_zip_iterator(
+		        thrust::make_tuple(this->outputs().begin()           + n,
+					   thrust::counting_iterator<int>(0) + n)),
+		      fn3);
+
+		}}
+
+		// step3. calculate the code differenaces
+		{{
+		    // do it later
+		    internal::vqCodeDiffEMA fn4;
+		    fn4.encoderLayerSize = layer->size();
+		    fn4.thisLayerSize    = this->size();
+		    
+		    fn4.dimPtr  = dimPtr;
+
+		    fn4.inputData  = helpers::getRawPointer(layer->outputs());
+		    fn4.outputData = helpers::getRawPointer(this->outputs());
+
+		    fn4.patTypes     = helpers::getRawPointer(this->patTypes());
+		    
+		    int n = uttLength * layer->size();
+		    
+		    real_t tmpError = thrust::transform_reduce(
+                      thrust::make_zip_iterator(
+			thrust::make_tuple(this->outputs().begin(),
+					   thrust::counting_iterator<int>(0))),
+		      thrust::make_zip_iterator(
+		        thrust::make_tuple(this->outputs().begin()           + n,
+					   thrust::counting_iterator<int>(0) + n)),
+		      fn4, (real_t)0.0, thrust::plus<real_t>());
+		    
+		    if (m_codeDimStatus[dimPtr] != NN_VQLAYER_CODE_NOTUSE)
+			m_codeError += (tmpError / uttLength);
+
+		}}
+		
+	    }
 	    
 	    // Move the pointer to the next code book
 	    codeBookPtr += layer->size() * this->m_vqCodeBookSizeVec[cnt];
@@ -856,6 +1453,8 @@ namespace layers{
 	int cnt = 0;
 	int codeBookPtr = 0;
 	int dimPtr = 0;
+	int n = 0;
+	
 	layers::SkipLayer<TDevice> *tmpSkipLayerPtr;
 	BOOST_FOREACH (layers::TrainableLayer<TDevice> *layer, m_preLayers){
 	    
@@ -874,7 +1473,7 @@ namespace layers{
 	      fn0.codeDimFlag  = helpers::getRawPointer(this->m_codeDimStatus);
 	      
 	      
-	      int n = layer->patTypes().size() * layer->size();
+	      n = layer->patTypes().size() * layer->size();
 	      if (tmpSkipLayerPtr){
 		  // Note: previous skipini will only one-input-one-output
 		  //       it is save to set outputErrorsFromSkipLayer()[*] = 0 in
@@ -899,45 +1498,125 @@ namespace layers{
 	      }
 	    }}
 
-
+	    
 	    // Update the codeBook
-	    {{
-	    internal::GradientForCodeBook fn1;
-	    fn1.codeDim      = layer->size();
-	    fn1.codeBookSize = this->m_vqCodeBookSizeVec[cnt];
-	    fn1.howmanyBook  = this->m_vqCodeBookSizeVec.size();
-	    fn1.whichBook    = cnt;
-	    fn1.dimPtr       = dimPtr;
-	    fn1.resoRatio    = (layer->getResolution()/this->getResolution());
-	    fn1.paralNum     = this->parallelSequences();
+	    if (m_bestNcode == 1){
+		{
+		    internal::GradientForCodeBook fn1;
+		    fn1.codeDim      = layer->size();
+		    fn1.codeBookSize = this->m_vqCodeBookSizeVec[cnt];
+		    fn1.howmanyBook  = this->m_vqCodeBookSizeVec.size();
+		    fn1.whichBook    = cnt;
+		    fn1.dimPtr       = dimPtr;
+		    fn1.resoRatio    = (layer->getResolution()/this->getResolution());
+		    fn1.paralNum     = this->parallelSequences();
 	    
-	    fn1.codeData     = helpers::getRawPointer(this->weights()) + codeBookPtr;
-	    fn1.inputData    = helpers::getRawPointer(layer->outputs());
-	    fn1.codeDimFlag  = helpers::getRawPointer(this->m_codeDimStatus);
+		    fn1.codeData     = helpers::getRawPointer(this->weights()) + codeBookPtr;
+		    fn1.inputData    = helpers::getRawPointer(layer->outputs());
+		    fn1.codeDimFlag  = helpers::getRawPointer(this->m_codeDimStatus);
 		      
-	    if (tmpSkipLayerPtr)
-		fn1.preLayerGrad = helpers::getRawPointer(
+		    if (tmpSkipLayerPtr)
+			fn1.preLayerGrad = helpers::getRawPointer(
 						    tmpSkipLayerPtr->outputErrorsFromSkipLayer());
-	    else
-		fn1.preLayerGrad = helpers::getRawPointer(layer->outputErrors());
+		    else
+			fn1.preLayerGrad = helpers::getRawPointer(layer->outputErrors());
 	    
-	    fn1.beta         = m_betaPara;
-	    fn1.index        = helpers::getRawPointer(this->m_selectedIdx);
+		    fn1.beta         = m_betaPara;
+		    fn1.index        = helpers::getRawPointer(this->m_selectedIdx);
 	    
-	    fn1.timeLength   = timeLength;
-	    fn1.patTypes     = helpers::getRawPointer(this->patTypes());
+		    fn1.timeLength   = timeLength;
+		    fn1.patTypes     = helpers::getRawPointer(this->patTypes());
 	    
-	    int n = layer->size() * this->m_vqCodeBookSizeVec[cnt];
-	    thrust::for_each(
-               thrust::make_zip_iterator(
-		  thrust::make_tuple(this->_weightUpdates().begin() + codeBookPtr,
-				     thrust::counting_iterator<int>(0))),
-	       thrust::make_zip_iterator(
-		  thrust::make_tuple(this->_weightUpdates().begin() + codeBookPtr   + n,
-				     thrust::counting_iterator<int>(0) + n)),
-	       fn1);
+		    n = layer->size() * this->m_vqCodeBookSizeVec[cnt];
+		    thrust::for_each(
+                     thrust::make_zip_iterator(
+		      thrust::make_tuple(this->_weightUpdates().begin() + codeBookPtr,
+					 thrust::counting_iterator<int>(0))),
+		     thrust::make_zip_iterator(
+		      thrust::make_tuple(this->_weightUpdates().begin() + codeBookPtr   + n,
+					 thrust::counting_iterator<int>(0) + n)),
+		     fn1);
+		}
+		
+	    }else{
+		
+		// backward for n-best codes case
+		
+		// step1. propagate the commitment loss \beta (encoder_output - ave_embedding)
+		
+		internal::CopyGradientBeta fn1;
+		fn1.beta          = this->m_betaPara;
+		fn1.inputLayerDim = layer->size();
+		fn1.thisLayerDim  = this->size();
+		fn1.dimPtr        = dimPtr;
+		
+		fn1.vqOutput      = helpers::getRawPointer(this->outputs());
+		fn1.patTypes      = helpers::getRawPointer(layer->patTypes());
+		fn1.codeDimFlag   = helpers::getRawPointer(this->m_codeDimStatus);
+		
+		n = layer->patTypes().size() * layer->size();
+		
+		if (tmpSkipLayerPtr){
+		    
+		  thrust::for_each(
+		    thrust::make_zip_iterator(
+		       thrust::make_tuple(tmpSkipLayerPtr->outputErrorsFromSkipLayer().begin(),
+					  layer->outputs().begin(),
+					  thrust::counting_iterator<int>(0))),
+		    thrust::make_zip_iterator(
+		       thrust::make_tuple(tmpSkipLayerPtr->outputErrorsFromSkipLayer().begin() + n,
+					  layer->outputs().begin() + n,
+					  thrust::counting_iterator<int>(0) + n)),
+		    fn1);
+		}else{
+		  thrust::for_each(
+			thrust::make_zip_iterator(
+		          thrust::make_tuple(layer->outputErrors().begin(),
+					     layer->outputs().begin(),
+					     thrust::counting_iterator<int>(0))),
+			thrust::make_zip_iterator(
+		          thrust::make_tuple(layer->outputErrors().begin()     + n,
+					     layer->outputs().begin()          + n,
+					     thrust::counting_iterator<int>(0) + n)),
+			fn1);
+		}
 
-	    }}
+		// step2. update the codebook using exponential moving average
+		{
+		    internal::GradientForCodeBookEMA fn1;
+		    fn1.codeDim      = layer->size();
+		    fn1.codeBookSize = this->m_vqCodeBookSizeVec[cnt];
+		    
+		    fn1.howmanyBook  = this->m_vqCodeBookSizeVec.size();
+		    fn1.whichBook    = cnt;
+		    
+		    
+		    fn1.dimPtr       = dimPtr;
+		   
+		    fn1.inputData    = helpers::getRawPointer(layer->outputs());
+		    fn1.codeDimFlag  = helpers::getRawPointer(this->m_codeDimStatus);
+		    fn1.index        = helpers::getRawPointer(this->m_selectedIdx);
+		    fn1.timeLength   = timeLength;
+		    fn1.patTypes     = helpers::getRawPointer(this->patTypes());
+
+		    fn1.lambdaPara   = this->m_lambdaPara;
+		    fn1.bestNcode    = this->m_bestNcode;
+		    
+		    n = layer->size() * this->m_vqCodeBookSizeVec[cnt];
+		    
+		    thrust::for_each(
+                     thrust::make_zip_iterator(
+		      thrust::make_tuple(this->weights().begin() + codeBookPtr,
+					 thrust::counting_iterator<int>(0))),
+		     thrust::make_zip_iterator(
+		      thrust::make_tuple(this->weights().begin() + codeBookPtr   + n,
+					 thrust::counting_iterator<int>(0) + n)),
+		     fn1);
+		}
+
+		// clean the gradients for SGD on codes
+		thrust::fill(this->_weightUpdates().begin(), this->_weightUpdates().end(), 0.0);
+	    }
 
 	    
 	    // Move the pointer to the next code book
@@ -977,6 +1656,11 @@ namespace layers{
 	    (*layersArray)[layersArray->Size() - 1].AddMember("codeBookStatus",
 							      m_codeBookStatusStr.c_str(),
 							      allocator);
+	if (m_bestNcode > 1){
+	    (*layersArray)[layersArray->Size() - 1].AddMember("nbest", m_bestNcode, allocator);
+	    (*layersArray)[layersArray->Size() - 1].AddMember("lambda", m_lambdaPara, allocator);
+	}
+
     }
 
         // Add 0527: re-read the weight from weightsSection

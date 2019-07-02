@@ -44,21 +44,35 @@ namespace layers{
 	typedef typename TDevice::pattype_vector  pattype_vector;
 	typedef typename Cpu::int_vector          cpu_int_vector;
 
+    private:
+	void __loadOpts(const helpers::JsonValue &layerChild);
+	void __setUp_encoder_inputs();
+	void __setUp_allocateMem();
+	void __showOpts();
+	
     public:
 
-	const int    m_vqCodeBookSizeAll;     // size of the code book in total
+	const int        m_vqCodeBookSizeAll;     // size of the code book in total
 	cpu_int_vector   m_vqCodeBookSizeVec; // size of each VQ code book
-	std::string  m_vqCodeBookSizeStr;     // size of the VQ code book string
-	std::string  m_preLayerNamesStr;
-	std::string  m_codeBookStatusStr;     
+	std::string      m_vqCodeBookSizeStr;     // size of the VQ code book string
+	std::string      m_preLayerNamesStr;
+	std::string      m_codeBookStatusStr;     
 	std::vector <TrainableLayer<TDevice>*> m_preLayers;
 	
 	real_vector  m_disMatrix;        // distance matrix
-	int_vector   m_selectedIdx;
 	real_vector  m_selectedIdxF;
+	
+	int_vector   m_selectedIdx;
 	int_vector   m_codeDimStatus;    //
+
+	real_vector  m_softmaxTmp;
+	real_vector  m_softmaxRand;
+	
 	real_t       m_betaPara;
 	real_t       m_codeError;
+	real_t       m_lambdaPara;
+	
+	int          m_bestNcode;        //
 	
 	vqLayer(
 	    const helpers::JsonValue &layerChild,

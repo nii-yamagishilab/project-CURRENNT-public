@@ -46,7 +46,7 @@ namespace layers {
 	real_vector      m_vector_norm;                  // norm of vectors
 
 	bool             m_pearsoncorr;                  // use pearson correlation
-	
+	bool             m_corr_gen_residual;            // correlation between generated and resi
     public:
         /**
          * Constructs the Layer
