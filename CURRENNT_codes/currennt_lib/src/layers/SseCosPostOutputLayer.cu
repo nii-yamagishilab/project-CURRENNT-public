@@ -35,6 +35,9 @@
 #include <thrust/iterator/counting_iterator.h>
 #include <thrust/functional.h>
 
+
+#define TEMP_VECTOR_NORM_DIM 6
+
 namespace internal {
 namespace {
 
@@ -55,7 +58,7 @@ namespace {
         {
 	    int timeStep = values.get<1>();
 	    
-	    real_t ab = 0.0, aa = 0.0, bb = 0.0;
+	    real_t ab_mean_normed = 0.0, aa_mean_normed = 0.0, bb_mean_normed = 0.0;
 	    size_t data_ptr = 0;
 
 	    real_t a_mean = 0.0, b_mean = 0.0;
@@ -78,23 +81,40 @@ namespace {
 		for (int dim_idx = 0 ; dim_idx < layerSize ; dim_idx++){
 		    data_ptr = timeStep * layerSize + dim_idx;
 
-		    a_buf[data_ptr] = (a_buf[data_ptr] - a_mean);
-		    b_buf[data_ptr] = (b_buf[data_ptr] - b_mean);
+		    // We cannot change the actual output value here
+		    // because it will be used by SsePostOutputLayer to calculate grad of MSE
 		    
-		    ab += a_buf[data_ptr] * b_buf[data_ptr];
-		    aa += a_buf[data_ptr] * a_buf[data_ptr];
-		    bb += b_buf[data_ptr] * b_buf[data_ptr];
+		    //a_buf[data_ptr] = (a_buf[data_ptr] - a_mean);
+		    //b_buf[data_ptr] = (b_buf[data_ptr] - b_mean);
 		    
-		    //ab += (a_buf[data_ptr] - a_mean) * (b_buf[data_ptr] - b_mean);
-		    //aa += (a_buf[data_ptr] - a_mean) * (a_buf[data_ptr] - a_mean);
-		    //bb += (b_buf[data_ptr] - b_mean) * (b_buf[data_ptr] - b_mean);
+		    //ab += a_buf[data_ptr] * b_buf[data_ptr];
+		    //aa += a_buf[data_ptr] * a_buf[data_ptr];
+		    //bb += b_buf[data_ptr] * b_buf[data_ptr];
+		    
+		    ab_mean_normed += (a_buf[data_ptr] - a_mean) * (b_buf[data_ptr] - b_mean);
+		    aa_mean_normed += (a_buf[data_ptr] - a_mean) * (a_buf[data_ptr] - a_mean);
+		    bb_mean_normed += (b_buf[data_ptr] - b_mean) * (b_buf[data_ptr] - b_mean);
 		}
 	    }
-	    // [a.b, a.a, b.b, (a.b)^2/(a.a * b.b)]
-            output_buf[timeStep * 4]     = ab;
-	    output_buf[timeStep * 4 + 1] = aa;
-	    output_buf[timeStep * 4 + 2] = bb;
-	    output_buf[timeStep * 4 + 3] = (ab / aa) * (ab / bb);
+	    // <a_normed.b_normed>
+	    output_buf[timeStep * TEMP_VECTOR_NORM_DIM]     = ab_mean_normed;
+	    
+	    // <a_normed.a_normed>,
+	    output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 1] = aa_mean_normed;
+
+	    // <b_normed.b_normed>, 
+	    output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 2] = bb_mean_normed;
+	    
+	    // (<a_normed.b_normed>)^2/(<a_normed.a_normed * b_normed.b_normed>),
+	    output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 3] =
+		(ab_mean_normed / aa_mean_normed) * (ab_mean_normed / bb_mean_normed);
+
+	    // mean(a)
+	    output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 4] = a_mean;
+	    
+	    // mean(b)
+	    output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 5] = b_mean;
+	    
         }
     };
 
@@ -112,7 +132,8 @@ namespace {
             if (patTypes[timeStep] == PATTYPE_NONE){
 		return 0.0;
 	    }else{
-		return output_buf[timeStep * 4 + 3];
+		// (<a_normed.b_normed>)^2/(<a_normed.a_normed * b_normed.b_normed>),
+		return output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 3];
 	    }
         }
     };
@@ -129,26 +150,42 @@ namespace {
 					     real_t&, real_t&, int> &values) const
         {
 	    // t<0>, grad
-	    // t<1>, a = mean_normed(generated - target)
-	    // t<2>, b = mean_normed(target)
-	    // t<3>, b = mean_normed(generated)
-	    // t<4>, index 
+	    // t<1>, a = generated - target, not mean-normalized
+	    // t<2>, b = target, not mean-normalized
+	    // t<3>, b = generated, not mean-normalized
+	    // t<4>, index
+	    
 	    int timeStep = values.get<4>() / layerSize;
 	    
             if (patTypes[timeStep] == PATTYPE_NONE){
 		values.get<0>() = 0;
 	    }else{
+		
 		if (corr_gen_residual){
-		    // gradient = cos^2(a,b) [(a+b)/a.b - a/a.a - b/b.b]
-		    values.get<0>() = cos_weight * output_buf[timeStep * 4 + 3] *
-			((values.get<3>() + values.get<1>()) / output_buf[timeStep * 4 + 0] -
-			 values.get<1>() / output_buf[timeStep * 4 + 1] -
-			 values.get<3>() / output_buf[timeStep * 4 + 2]);
+		    
+		    // gradient = weight * pearson(a,b)^2 *
+		    //             [(a_normed + b_normed) / <a_normed.b_normed> -
+		    //              a_normed / <a_normed.a_normed> - b_normed / <b_normed.b_normed>]
+
+		    values.get<0>() =
+			cos_weight * output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 3] *
+			((values.get<1>() - output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 4] +
+			  values.get<3>() - output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 5]) /
+			 output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 0] -
+			 (values.get<1>() - output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 4]) /
+			 output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 1] -
+			 (values.get<3>() - output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 5]) /
+			 output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 2]);
 		}else{
-		    // gradient = cos^2(a,b) [b/a.b - a/a.a]
-		    values.get<0>() = cos_weight * output_buf[timeStep * 4 + 3] *
-			(values.get<2>() / output_buf[timeStep * 4 + 0] -
-			 values.get<1>() / output_buf[timeStep * 4 + 1]);
+		    
+		    // gradient = weight * pearson(a,b)^2 *
+		    //             [b_normed / <a_normed.b_normed> - a_normed / <a_normed.a_normed>]
+		    values.get<0>() =
+			cos_weight * output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 3] *
+			((values.get<2>() - output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 5]) /
+			 output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 0] -
+			 (values.get<1>() - output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 4]) /
+			 output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 1]);
 		}
 	    }
         }
@@ -169,7 +206,7 @@ namespace {
             if (patTypes[timeStep] == PATTYPE_NONE){
 		return;
 	    }else{
-		
+		// calculate the gradient mean (across dimensions)
 		for (int dim_idx = 0; dim_idx < layerSize; dim_idx++){
 		    values.get<0>() += grad_buf[timeStep * layerSize + dim_idx];
 		}
@@ -193,6 +230,7 @@ namespace {
             if (patTypes[timeStep] == PATTYPE_NONE){
 		values.get<0>() = 0;
 	    }else{
+		// Merge the pearson gradient with MSE gradient
 		if (pearsoncorr)
 		    values.get<0>() = values.get<0>() + values.get<1>() - mean_grad[timeStep];
 		else
@@ -230,7 +268,7 @@ namespace layers {
 	m_residual = this->precedingLayer().outputs();
 
 	// memory for vector norm, including a^Ta, b^Tb, a^Tb
-	cpu_real_vector tmp(this->parallelSequences() * maxSeqLength * 4, 0.0);
+	cpu_real_vector tmp(this->parallelSequences() * maxSeqLength * TEMP_VECTOR_NORM_DIM, 0.0);
 	m_vector_norm = tmp;
 
 	if (m_pearsoncorr)
@@ -264,7 +302,6 @@ namespace layers {
 
 	// step1. computesseFn
 	real_t mse = SsePostOutputLayer<TDevice>::calculateError();
-
 	
 	// step2. Cos distance
 	real_t cos_dis = 0.0;
@@ -279,11 +316,10 @@ namespace layers {
 	    // step 2.2,
 	    //   when m_corr_gen_residual == true,  a = generated - target, b = generated,
 	    //   when m_corr_gen_residual == false, a = generated - target, b = target,
-	    //   first, a = a - mean(a)
-	    //          b = b - mean(b)
-	    //   then, calculate vector norm a^Tb, a^Ta, b^Tb, and (a^Tb)^2 / (a^Ta * b^Tb)
-	    //
-	    //   Note: b_buf will be changed
+	    
+	    //   then, calculate <a_normed.b_normed>, <a_normed.a_normed>,
+	    //                   <b_normed.b_normed>,
+	    //                   <a_normed.b_normed>^2/<a_normed.a_normed><b_normed.b_normed>
 	    {
 		internal::calculateVectorNormAndCosSquare fn;
 		fn.layerSize  = this->size();
@@ -308,7 +344,7 @@ namespace layers {
 		 fn);
 	    }
 
-	    // step 2.3, sum the cos^2 distance
+	    // step 2.3, sum <a_normed.b_normed>^2/<a_normed.a_normed><b_normed.b_normed> across time
 	    {
 		internal::calculateCosSquareDistance fn;
 		fn.patTypes   = helpers::getRawPointer(this->patTypes());
@@ -325,7 +361,8 @@ namespace layers {
 
 	    }
 	}
-	// just print and return the results
+	
+	// print and return the results
 	if (Configuration::instance().verboseLevel() == OP_VERBOSE_LEVEL_1)
 	    std::cerr << mse << ", " << cos_dis << ", ";
 	
@@ -361,7 +398,7 @@ namespace layers {
 	    //       \hat{a} = generated - target, \hat{b} = generated
 	    //       a = \hat{a} - mean(\hat{a}), b = \hat{b} - mean(\hat{b})
 	    //   
-	    //    calculate \partial cos_E / \partial a_k for each dimensio
+	    //    calculate \partial cos_E / \partial a_k for each dimension
 	    //    \partial cos_E / \partial a_k + \partial cos_E / \partial b_k
 	    //            = cos^2(a,b) [(b_k + a_k)/<a,b> - a_k /<a,a> - b_k / <b,b>]
 	    
@@ -402,13 +439,28 @@ namespace layers {
 	       fn);
 	}
 	
-	// step2.2 if pearson correlation is used, calculate 
-	//      \partial cos_E / \partial \hat{a}_k
+	// step2.2 if pearson correlation is used, calculate
+	///  if m_corr_gen_residual == false
+	//      \partial cos_E / \partial generated_mel_k
+	//           = \partial cos_E / \partial \hat{a}_k
 	//           = sum_i \partial cos_E / \partial {a}_i * \partial {a}_i / \partial \hat{a}_k
-	//           = \partial cos_E / \partial {a}_k - mean(\sum_i \partial cos_E / \partial {a}_i)
+	//           = \partial cos_E / \partial {a}_k - mean_over_i(\partial cos_E / \partial {a}_i)
+	//
+	//   if m_corr_gen_residual == true
+	//      \partial cos_E / \partial generated_mel_k
+	//           = \partial cos_E / \partial \hat{a}_k + \partial cos_E / \partial \hat{b}_k
+	//           = sum_i \partial cos_E / \partial {a}_i * \partial {a}_i / \partial \hat{a}_k
+	//                  + \partial cos_E / \partial {b}_i * \partial {b}_i / \partial \hat{b}_k
+	//           = sum_i [\partial cos_E / \partial {a}_i + \partial cos_E / \partial {b}_i] *
+	//                \partial {a}_i / \partial \hat{a}_k
+	//       note that \partial {a}_i / \partial \hat{a}_k = \partial {b}_i / \partial \hat{b}_k
+	//           = [\partial cos_E / \partial {a}_k + \partial cos_E / \partial {b}_k]
+	//             - mean_over_i([\partial cos_E/\partial {a}_i + \partial cos_E/\partial {b}_i])
+	
 	if (m_pearsoncorr)
 	{
-	    // get the mean(\sum_i \partial cos_E / \partial {a}_i)
+	    // get the mean_over_i(\sum_i \partial cos_E / \partial {a}_i)
+	    // or      mean_over_i([\partial cos_E/\partial {a}_i + \partial cos_E/\partial {b}_i])
 	    internal::calculateErrorMean fn1;
 	    fn1.layerSize  = this->size();
 	    fn1.grad_buf   = helpers::getRawPointer(this->outputErrors());
