@@ -386,7 +386,7 @@ namespace layers {
     {
 	// step1. gradients w.r.t MSE
 	SsePostOutputLayer<TDevice>::computeBackwardPass(nnState);
-
+	
 	// step2. gradients w.r.t cos distance
 
 	

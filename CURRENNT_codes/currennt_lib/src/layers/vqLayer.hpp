@@ -49,6 +49,10 @@ namespace layers{
 	void __setUp_encoder_inputs();
 	void __setUp_allocateMem();
 	void __showOpts();
+
+	void __computeForwardPass_OneBestOneFold(const int nnState);
+	void __computeForwardPass_NBestOneFold(const int nnState);
+	void __computeForwardPass_OneBestNFold(const int nnState);
 	
     public:
 
@@ -73,7 +77,7 @@ namespace layers{
 	real_t       m_lambdaPara;
 	
 	int          m_bestNcode;        //
-	
+	int          m_codebookNfold;    // 
 	vqLayer(
 	    const helpers::JsonValue &layerChild,
 	    const helpers::JsonValue &weightsSection,
