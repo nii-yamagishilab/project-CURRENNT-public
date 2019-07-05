@@ -173,6 +173,13 @@ namespace layers {
 	
 	int n = this->curMaxSeqLength() * this->parallelSequences() * this->size();
 
+	/* Note: the gradient is directly summed to the source layer.
+	   However, this gradient may be over-writtern by the next layer of that source layer.
+	   Thus, a source layer (except the last output layer) should be a skiplayer and 
+	   its next layer should also be a skip layer.
+	   Currently, this is not checked
+	 */
+	
 	BOOST_FOREACH (Layer<TDevice> *layer, this->m_sourceLayers) {
 	    thrust::transform(
                thrust::make_zip_iterator(

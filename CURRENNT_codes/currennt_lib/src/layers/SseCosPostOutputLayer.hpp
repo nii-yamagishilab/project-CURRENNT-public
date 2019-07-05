@@ -43,10 +43,17 @@ namespace layers {
     private:
 	real_t           m_cos_weight;                   // weight to the cos distance
 	real_vector      m_residual;                     // residual vectors
+	real_vector      m_b_data;
+	real_vector      m_grad_mean;
 	real_vector      m_vector_norm;                  // norm of vectors
 
 	bool             m_pearsoncorr;                  // use pearson correlation
 	bool             m_corr_gen_residual;            // correlation between generated and resi
+
+	std::vector<Layer<TDevice>*> m_sourceLayers;
+	std::string                  m_sourceLayersStr;
+	std::vector<std::string>     m_sourceLayersNames;
+	
     public:
         /**
          * Constructs the Layer
@@ -103,7 +110,11 @@ namespace layers {
 	virtual void exportLayer(const helpers::JsonValue &layersArray, 
 				 const helpers::JsonAllocator &allocator) const;
 
-	
+
+	/*
+	 * @ linkTargetLayer
+	 */
+	void linkTargetLayer(Layer<TDevice> &targetLayer);
     };
 
 } // namespace layers

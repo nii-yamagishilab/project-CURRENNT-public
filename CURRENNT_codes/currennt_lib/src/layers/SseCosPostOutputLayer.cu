@@ -27,6 +27,7 @@
 #include "../helpers/getRawPointer.cuh"
 #include "../Configuration.hpp"
 #include "../MacroDefine.hpp"
+#include "../helpers/misFuncs.hpp"
 
 #include <thrust/reduce.h>
 #include <thrust/transform.h>
@@ -137,7 +138,8 @@ namespace {
 	    }
         }
     };
-    
+
+    /*
     struct calculateCosSquareGradient
     {
 	int layerSize;
@@ -185,6 +187,51 @@ namespace {
 			((values.get<2>() - output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 5]) /
 			 output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 0] -
 			 (values.get<1>() - output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 4]) /
+			 output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 1]);
+		}
+	    }
+        }
+    };
+    */
+
+    struct calculateCosSquareGradient
+    {
+	int         layerSize;
+	real_t     *output_buf;
+	real_t      cos_weight;
+	bool        grad_to_a;
+        const char *patTypes;
+
+        __host__ __device__ void operator() (const thrust::tuple<real_t&, real_t&,
+					     real_t&, int> &values) const
+        {
+	    // t<0>, <a,b> grad w.r.t a
+	    // t<1>, a = res
+	    // t<2>, b = someinput
+	    // t<3>, index
+	    
+	    int timeStep = values.get<3>() / layerSize;
+	    
+            if (patTypes[timeStep] == PATTYPE_NONE){
+		values.get<0>() = 0;
+	    }else{
+		if (grad_to_a){
+		    // grad_to_a = weight * pearson(a,b)^2 *
+		    //             [b_normed / <a_normed.b_normed> - a_normed / <a_normed.a_normed>]
+		    values.get<0>() =
+			cos_weight * output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 3] *
+			((values.get<2>() - output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 5]) /
+			 output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 0] -
+			 (values.get<1>() - output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 4]) /
+			 output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 1]);
+		}else{
+		    // grad_to_b = weight * pearson(a,b)^2 *
+		    //             [a_normed / <a_normed.b_normed> - b_normed / <b_normed.b_normed>]
+		    values.get<0>() =
+			cos_weight * output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 3] *
+			((values.get<1>() - output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 4]) /
+			 output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 0] -
+			 (values.get<2>() - output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 5]) /
 			 output_buf[timeStep * TEMP_VECTOR_NORM_DIM + 1]);
 		}
 	    }
@@ -263,14 +310,26 @@ namespace layers {
 	m_corr_gen_residual = ((layerChild->HasMember("cos_gen_residual")) ? 
 			       (*layerChild)["cos_gen_residual"].GetBool() : true);
 	
+	m_sourceLayersStr = (layerChild->HasMember("cos_source_layer") ? 
+			     ((*layerChild)["cos_source_layer"].GetString()) : "");
+	m_sourceLayers.clear();
+	m_sourceLayersNames.clear();	
+	misFuncs::ParseStrOpt(m_sourceLayersStr, m_sourceLayersNames, ",");
+	
 	/* ---- allocate memory space ----- */
 	// memory for residuals
 	m_residual = this->precedingLayer().outputs();
-
+	// memory to save b data
+	m_b_data   = this->precedingLayer().outputs();
+	
 	// memory for vector norm, including a^Ta, b^Tb, a^Tb
 	cpu_real_vector tmp(this->parallelSequences() * maxSeqLength * TEMP_VECTOR_NORM_DIM, 0.0);
 	m_vector_norm = tmp;
 
+	// memory for mean gradient
+	cpu_real_vector tmp2(this->parallelSequences() * maxSeqLength, 0.0);
+	m_grad_mean   = tmp2;
+	
 	if (m_pearsoncorr)
 	    printf("\n\tcos distance with mean normalized (pearson correlation)");
 
@@ -300,8 +359,27 @@ namespace layers {
 	int seq_length = this->curMaxSeqLength() * this->parallelSequences();
 	int data_num   = seq_length * this->size();
 
+	// step0. which data is used as b in <a,b>
+	if (m_corr_gen_residual){
+	    if (m_sourceLayers.size() == 0){
+		// b is from the final output layer
+		thrust::copy(this->_actualOutputs().begin(), this->_actualOutputs().end(),
+			     this->m_b_data.begin());
+	    }else{
+		// b is from another hidden layer
+		thrust::copy(m_sourceLayers[0]->outputs().begin(), m_sourceLayers[0]->outputs().end(),
+			     this->m_b_data.begin());
+	    }
+	}else{
+	    // b is from the actual target
+	    thrust::copy(this->_targets().begin(), this->_targets().end(),
+			 this->m_b_data.begin());
+	}
+		
+	
 	// step1. computesseFn
 	real_t mse = SsePostOutputLayer<TDevice>::calculateError();
+
 	
 	// step2. Cos distance
 	real_t cos_dis = 0.0;
@@ -326,12 +404,7 @@ namespace layers {
 		fn.pearsoncorr= m_pearsoncorr;
 		fn.patTypes   = helpers::getRawPointer(this->patTypes());
 		fn.a_buf      = helpers::getRawPointer(this->m_residual);
-
-		if (m_corr_gen_residual)
-		    fn.b_buf  = helpers::getRawPointer(this->_actualOutputs());
-		else
-		    fn.b_buf  = helpers::getRawPointer(this->_targets());
-		
+		fn.b_buf      = helpers::getRawPointer(this->m_b_data);
 		fn.output_buf = helpers::getRawPointer(this->m_vector_norm);
 
 		thrust::for_each(
@@ -386,10 +459,166 @@ namespace layers {
     {
 	// step1. gradients w.r.t MSE
 	SsePostOutputLayer<TDevice>::computeBackwardPass(nnState);
+
+	int uttLength = this->curMaxSeqLength() * this->parallelSequences();
+	int nElement  = uttLength * this->size();
 	
 	// step2. gradients w.r.t cos distance
+	//   a = generated - target, b = some_input
+	// 
+	// step2.1, gradients w.r.t a
+	{
+	    {
+	    internal::calculateCosSquareGradient fn;
+	    fn.layerSize  = this->size();
+	    fn.cos_weight = this->m_cos_weight;
+	    fn.grad_to_a  = true;
+	    
+	    fn.output_buf = helpers::getRawPointer(this->m_vector_norm);
+	    fn.patTypes   = helpers::getRawPointer(this->patTypes());
+
+	    
+	    // note: we save cos_dis gradients to this->outputErrors()
+	    thrust::for_each(
+               thrust::make_zip_iterator(
+		thrust::make_tuple(this->outputErrors().begin(),
+				   this->m_residual.begin(),
+				   this->m_b_data.begin(),
+				   thrust::counting_iterator<int>(0))),
+	       thrust::make_zip_iterator(
+		thrust::make_tuple(this->outputErrors().begin()      + nElement,
+				   this->m_residual.begin()          + nElement,
+				   this->m_b_data.begin()            + nElement,
+				   thrust::counting_iterator<int>(0) + nElement)),
+	       fn);
+	    }
+	
+	    if (m_pearsoncorr){
+	    // get the mean_over_i(\sum_i \partial cos_E / \partial {a}_i)
+	    // or      mean_over_i([\partial cos_E/\partial {a}_i + \partial cos_E/\partial {b}_i])
+	    internal::calculateErrorMean fn1;
+	    fn1.layerSize  = this->size();
+	    fn1.grad_buf   = helpers::getRawPointer(this->outputErrors());
+	    fn1.patTypes   = helpers::getRawPointer(this->patTypes());
+
+	    thrust::for_each(
+               thrust::make_zip_iterator(
+		thrust::make_tuple(this->m_grad_mean.begin(),
+				   thrust::counting_iterator<int>(0))),
+	       thrust::make_zip_iterator(
+		thrust::make_tuple(this->m_grad_mean.begin()         + uttLength,
+				   thrust::counting_iterator<int>(0) + uttLength)),
+	       fn1);   
+	    }
+
+	    // Merge the cos_gradient with the MSE gradient
+	    // subtract the mean if pearsoncorr is used
+	    {
+	    
+	    internal::mse_cos_grad_merge fn2;
+	    fn2.layerSize   = this->size();
+	    fn2.pearsoncorr = m_pearsoncorr;
+	    fn2.mean_grad   = helpers::getRawPointer(this->m_grad_mean);
+	    fn2.patTypes    = helpers::getRawPointer(this->patTypes());
+
+	    int n = this->curMaxSeqLength() * this->parallelSequences() * this->size();
+
+	    thrust::for_each(
+               thrust::make_zip_iterator(
+		thrust::make_tuple(this->_outputErrors().begin(),
+				   this->outputErrors().begin(),
+				   thrust::counting_iterator<int>(0))),
+	       thrust::make_zip_iterator(
+		thrust::make_tuple(this->_outputErrors().begin()     + n,
+				   this->outputErrors().begin()      + n,
+				   thrust::counting_iterator<int>(0) + n)),
+	       fn2);   
+	    }
+	}
 
 	
+	// step2.2, gradients w.r.t b is necessary
+	if (m_corr_gen_residual){
+	    {
+	    internal::calculateCosSquareGradient fn;
+	    fn.layerSize  = this->size();
+	    fn.cos_weight = this->m_cos_weight;
+	    fn.grad_to_a  = false;
+	    
+	    fn.output_buf = helpers::getRawPointer(this->m_vector_norm);
+	    fn.patTypes   = helpers::getRawPointer(this->patTypes());
+
+	    
+	    // note: we save cos_dis gradients to this->outputErrors()
+	    thrust::for_each(
+               thrust::make_zip_iterator(
+		thrust::make_tuple(this->outputErrors().begin(),
+				   this->m_residual.begin(),
+				   this->m_b_data.begin(),
+				   thrust::counting_iterator<int>(0))),
+	       thrust::make_zip_iterator(
+		thrust::make_tuple(this->outputErrors().begin()      + nElement,
+				   this->m_residual.begin()          + nElement,
+				   this->m_b_data.begin()            + nElement,
+				   thrust::counting_iterator<int>(0) + nElement)),
+	       fn);
+	    }
+	
+	    if (m_pearsoncorr){
+	    internal::calculateErrorMean fn1;
+	    fn1.layerSize  = this->size();
+	    fn1.grad_buf   = helpers::getRawPointer(this->outputErrors());
+	    fn1.patTypes   = helpers::getRawPointer(this->patTypes());
+
+	    thrust::for_each(
+               thrust::make_zip_iterator(
+		thrust::make_tuple(this->m_grad_mean.begin(),
+				   thrust::counting_iterator<int>(0))),
+	       thrust::make_zip_iterator(
+		thrust::make_tuple(this->m_grad_mean.begin()         + uttLength,
+				   thrust::counting_iterator<int>(0) + uttLength)),
+	       fn1);   
+	    }
+
+	    // Merge the cos_gradient with the MSE gradient
+	    // subtract the mean if pearsoncorr is used
+	    {	    
+		internal::mse_cos_grad_merge fn2;
+		fn2.layerSize   = this->size();
+		fn2.pearsoncorr = m_pearsoncorr;
+		fn2.mean_grad   = helpers::getRawPointer(this->m_grad_mean);
+		fn2.patTypes    = helpers::getRawPointer(this->patTypes());
+		if (m_sourceLayers.size() == 0){
+		    thrust::for_each(
+                      thrust::make_zip_iterator(
+		        thrust::make_tuple(this->_outputErrors().begin(),
+					   this->outputErrors().begin(),
+					   thrust::counting_iterator<int>(0))),
+		      thrust::make_zip_iterator(
+			thrust::make_tuple(this->_outputErrors().begin()     + nElement,
+					   this->outputErrors().begin()      + nElement,
+					   thrust::counting_iterator<int>(0) + nElement)),
+		      fn2);   
+		}else{
+		    thrust::for_each(
+                      thrust::make_zip_iterator(
+		        thrust::make_tuple(m_sourceLayers[0]->outputErrors().begin(),
+					   this->outputErrors().begin(),
+					   thrust::counting_iterator<int>(0))),
+		      thrust::make_zip_iterator(
+			thrust::make_tuple(m_sourceLayers[0]->outputErrors().begin() + nElement,
+					   this->outputErrors().begin()            + nElement,
+					   thrust::counting_iterator<int>(0)       + nElement)),
+		      fn2);   
+		    
+		}
+	    }
+
+	}
+
+	
+	// step2. gradients w.r.t cos distance
+	/*
 	// step 2.1,
 	{
 	    //   if m_corr_gen_residual == true
@@ -438,6 +667,7 @@ namespace layers {
 				   thrust::counting_iterator<int>(0) + n)),
 	       fn);
 	}
+	*/
 	
 	// step2.2 if pearson correlation is used, calculate
 	///  if m_corr_gen_residual == false
@@ -457,51 +687,7 @@ namespace layers {
 	//           = [\partial cos_E / \partial {a}_k + \partial cos_E / \partial {b}_k]
 	//             - mean_over_i([\partial cos_E/\partial {a}_i + \partial cos_E/\partial {b}_i])
 	
-	if (m_pearsoncorr)
-	{
-	    // get the mean_over_i(\sum_i \partial cos_E / \partial {a}_i)
-	    // or      mean_over_i([\partial cos_E/\partial {a}_i + \partial cos_E/\partial {b}_i])
-	    internal::calculateErrorMean fn1;
-	    fn1.layerSize  = this->size();
-	    fn1.grad_buf   = helpers::getRawPointer(this->outputErrors());
-	    fn1.patTypes   = helpers::getRawPointer(this->patTypes());
-
-	    int n = this->curMaxSeqLength() * this->parallelSequences();
-
-	    thrust::for_each(
-               thrust::make_zip_iterator(
-		thrust::make_tuple(this->m_vector_norm.begin(),
-				   thrust::counting_iterator<int>(0))),
-	       thrust::make_zip_iterator(
-		thrust::make_tuple(this->m_vector_norm.begin()       + n,
-				   thrust::counting_iterator<int>(0) + n)),
-	       fn1);   
-
-	}
-
-	// step 3. merge the cos_gradient with the MSE gradient
-	// subtract the mean if pearsoncorr is used
-	{
-	    
-	    internal::mse_cos_grad_merge fn2;
-	    fn2.layerSize   = this->size();
-	    fn2.pearsoncorr = m_pearsoncorr;
-	    fn2.mean_grad   = helpers::getRawPointer(this->m_vector_norm);
-	    fn2.patTypes    = helpers::getRawPointer(this->patTypes());
-
-	    int n = this->curMaxSeqLength() * this->parallelSequences() * this->size();
-
-	    thrust::for_each(
-               thrust::make_zip_iterator(
-		thrust::make_tuple(this->_outputErrors().begin(),
-				   this->outputErrors().begin(),
-				   thrust::counting_iterator<int>(0))),
-	       thrust::make_zip_iterator(
-		thrust::make_tuple(this->_outputErrors().begin()     + n,
-				   this->outputErrors().begin()      + n,
-				   thrust::counting_iterator<int>(0) + n)),
-	       fn2);   
-	}
+	
     }
 
 
@@ -524,8 +710,27 @@ namespace layers {
 	if (!m_corr_gen_residual)
 	    (*layersArray)[layersArray->Size() - 1].AddMember("cos_gen_residual", m_pearsoncorr,
 							      allocator);
+
+	if (m_sourceLayersStr.size())
+	    (*layersArray)[layersArray->Size() - 1].AddMember("cos_source_layer",
+							      m_sourceLayersStr.c_str(),
+							      allocator);
     }
-    
+
+    template <typename TDevice>
+    void SseCosPostOutputLayer<TDevice>::linkTargetLayer(Layer<TDevice> &targetLayer)
+    {
+	
+	for (int i = 0; i<m_sourceLayersNames.size(); i++){
+	    if (targetLayer.name() == m_sourceLayersNames[i] &&
+		targetLayer.size() == this->size()){
+		m_sourceLayers.push_back(&targetLayer);
+		printf("\nLink for SseCosPostOutputLayer: %s", targetLayer.name().c_str());
+		break;
+	    }
+	}
+    }
+
     // explicit template instantiations
     template class SseCosPostOutputLayer<Cpu>;
     template class SseCosPostOutputLayer<Gpu>;

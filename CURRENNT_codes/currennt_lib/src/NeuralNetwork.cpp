@@ -1271,12 +1271,12 @@ void NeuralNetwork<TDevice>::__LinkNetworkLayers()
 		m_layers[m_dftLayerIdx]->linkTargetLayer(*(m_layers[i].get()));
 	}
 
-	// Link the source layer for sse_muti
-	if (m_layers[m_totalNumLayers-1]->type() == "sse_multi"){
+	// Link the source layer for sse_muti or sse_cos layers
+	if (m_layers[m_totalNumLayers-1]->type() == "sse_multi" ||
+	    m_layers[m_totalNumLayers-1]->type() == "sse_cos"){
 	    for (size_t i = 0; i < m_totalNumLayers-1; i++)
 		m_layers[m_totalNumLayers-1]->linkTargetLayer(*(m_layers[i].get()));
 	}
-
 	
 	// Link the feedback hidden layers
 	if (m_feedBackHiddenLayers.size()){
