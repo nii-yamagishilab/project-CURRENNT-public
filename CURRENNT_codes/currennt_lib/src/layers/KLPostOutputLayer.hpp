@@ -97,6 +97,13 @@ namespace layers {
          * @see Layer::computeBackwardPass()
          */
         virtual void computeBackwardPass(const int timeStep, const int nnState);
+
+	/**
+	 * export layer information
+	 */
+	virtual void exportLayer(const helpers::JsonValue &layersArray, 
+				 const helpers::JsonAllocator &allocator) const;
+
     };
 
 } // namespace layers

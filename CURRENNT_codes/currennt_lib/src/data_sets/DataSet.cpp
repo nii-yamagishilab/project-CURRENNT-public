@@ -44,9 +44,9 @@
 #include <cassert>
 
 #define DATASET_EXINPUT_TYPE_0 0 // nothing
-#define DATASET_EXINPUT_TYPE_1 1 // input is the index in a increasing order ([1 1 1 2..2 N..N])
+#define DATASET_EXINPUT_TYPE_1 1 // input is the index in an increasing order ([1 1 1 2..2 N..N])
                                  // assume external data will have N frames
-#define DATASET_EXINPUT_TYPE_2 2 // input is the index in a increasing order ([1 1 1 2..2 N..N])
+#define DATASET_EXINPUT_TYPE_2 2 // input is the index in an increasing order ([1 1 1 2..2 N..N])
                                  // assume external data will have N/resolution frames
 
 #define DATASET_FLAG_READING_ALL -1 // reading all the external data
@@ -579,6 +579,11 @@ namespace data_sets {
 
     boost::shared_ptr<DataSetFraction> DataSet::_makeFractionTask(int firstSeqIdx)
     {
+	// This function load data into DataFrac
+	//  firstSeqIdx: index of the first segment in this DataFrac
+	
+	// Concatenate multiple input frames as one input frame (like CNN layer)
+	// These are not used 
         int context_left   = Configuration::instance().inputLeftContext();
         int context_right  = Configuration::instance().inputRightContext();
         int context_length = context_left + context_right + 1;
@@ -617,26 +622,44 @@ namespace data_sets {
 	
 	// Dust #2017101205
 
-        // fill fraction sequence info
+        // Fill in the information of a data fraction.
+	// One data fraction may contain multiple utterances that will be processed in parallel
         for (int seqIdx = firstSeqIdx; seqIdx < firstSeqIdx + m_parallelSequences; ++seqIdx) {
             if (seqIdx < (int)m_sequences.size()) {
+		// max length of data segment (sequence)
                 frac->m_maxSeqLength = std::max(frac->m_maxSeqLength, m_sequences[seqIdx].length);
+		// min length of data segment (sentence)
                 frac->m_minSeqLength = std::min(frac->m_minSeqLength, m_sequences[seqIdx].length);
-		
+
+		// max length of external input data sequence, which could be different from
+		//   frac->m_maxSeqLength.
+		// For example, in WaveNet where external input is frame-level acoustic features,
+		//  while input index is the sampling-level time index
 		frac->m_maxExInputLength = std::max(frac->m_maxExInputLength,
 						    m_sequences[seqIdx].exInputLength);
+		// min length of external input data sequence
 		frac->m_minExInputLength = std::min(frac->m_minExInputLength,
 						    m_sequences[seqIdx].exInputLength);
+
+		// max length of external output data sequence
 		frac->m_maxExOutputLength = std::max(frac->m_maxExOutputLength,
 						    m_sequences[seqIdx].exOutputLength);
+		// min length of external output data sequence
 		frac->m_minExOutputLength = std::min(frac->m_minExOutputLength,
 						    m_sequences[seqIdx].exOutputLength);
-		
+
+		// Information about each invidial segment in this data fraction
+		// If parallel is not used, there is only one segment in this data fraction
                 DataSetFraction::seq_info_t seqInfo;
+		// index of this segment in the original utterance
                 seqInfo.originalSeqIdx = m_sequences[seqIdx].originalSeqIdx;
+		// length of this segment
                 seqInfo.length         = m_sequences[seqIdx].length;
+		// name of this utterance (file name)
                 seqInfo.seqTag         = m_sequences[seqIdx].seqTag;
+		// external input length
 		seqInfo.exInputLength  = m_sequences[seqIdx].exInputLength;
+		// external output length
 		seqInfo.exOutputLength = m_sequences[seqIdx].exOutputLength;
 		
 		// Dust #2017101206		
@@ -666,20 +689,27 @@ namespace data_sets {
 	}
 	
 	
-	// prepare the resolution information buffer
+	// Prepare the resolution information buffer
+	//  if a network uses upsampling / downsampling in input/hidden/output layers,
+	//   the corresponding patTypes sequence should be lengthened / shortened
+
+	// the memory space needed to save the patTypes for different time resolutions
 	int patTypesResoLength = 0;	
 	frac->m_resolutionBuffer.clear();
 	for (int resoIdx = 0; resoIdx < m_resolutionBuf.size(); resoIdx++){
 	    DataSetFraction::reso_info tempResoBuf;
+	    // value of time resolution
 	    tempResoBuf.resolution = m_resolutionBuf[resoIdx];
+	    // pointer to the start of the patType for this time resolution
 	    tempResoBuf.bufferPos  = patTypesResoLength;
+	    // length of patTypes for this time resolution
 	    tempResoBuf.length     = misFuncs::getResoLength(frac->m_patTypes.size(),
 							     m_resolutionBuf[resoIdx],
 							     m_parallelSequences);
 	    patTypesResoLength += tempResoBuf.length;
 	    frac->m_resolutionBuffer.push_back(tempResoBuf);
 	}
-	
+	// Allocate the memory space for patTypes
 	if (patTypesResoLength > 0){
 	    frac->m_patTypesLowTimeRes.resize(patTypesResoLength, PATTYPE_NONE);
 	}else{
@@ -728,13 +758,25 @@ namespace data_sets {
 
             const sequence_t &seq = m_sequences[firstSeqIdx + i];
 
-            // load inputs data
+            // load inputs data from cache
             Cpu::real_vector inputs = _loadInputsFromCache(seq);
+	    
+	    // add noise if necessary
             _addNoise(&inputs);
+
 	    //int tmpInputPatternSize = (m_exInputFlag)?(m_exInputDim[0]):(m_inputPatternSize);
+
+	    // for each time step in this data segmeng
             for (int timestep = 0; timestep < seq.length; ++timestep) {
+		
+		// pointer to the start datum of this time step in source data buffer 
                 int srcStart = m_inputPatternSize * timestep;
+		
+		// not used anymore
                 int offset_out = 0;
+
+		// load data in a local time window [context_left, current_time, context_right]
+		// not used anymore, only [currennt_time]
                 for (int offset_in = -context_left; offset_in <= context_right; ++offset_in) {
                     int srcStart = m_inputPatternSize * (timestep + offset_in);
                     // duplicate first time step if needed
@@ -743,23 +785,30 @@ namespace data_sets {
                     // duplicate last time step if needed
                     else if (srcStart > m_inputPatternSize * (seq.length - 1))
                         srcStart = m_inputPatternSize * (seq.length - 1);
+		    
+		    // pointer to the datum in target data buffer
+		    // note: data from other segments in this parallel frac are also loaded
                     int tgtStart = frac->m_inputPatternSize * 
 			(timestep * m_parallelSequences + i) +
 			offset_out * m_inputPatternSize;
+		    
                     //std::cout << "copy from " << srcStart << " to " << tgtStart 
 		    // << " size " << m_inputPatternSize << std::endl;
+		    
                     thrust::copy_n(inputs.begin() + srcStart, m_inputPatternSize, 
 				   frac->m_inputs.begin() + tgtStart);
                     ++offset_out;
                 }
             }
+	    
             /*std::cout << "original inputs: ";
             thrust::copy(inputs.begin(), inputs.end(), 
 	    std::ostream_iterator<real_t>(std::cout, ";"));
             std::cout << std::endl;*/
 
-            // target classes
+            // Load output data
             if (m_isClassificationData) {
+		// if data are for classification (not used anymore)
                 Cpu::int_vector targetClasses = _loadTargetClassesFromCache(seq);
                 for (int timestep = 0; timestep < seq.length; ++timestep) {
                     int tgt = 0; // default class (make configurable?)
@@ -767,18 +816,26 @@ namespace data_sets {
                         tgt = targetClasses[timestep - output_lag];
                     frac->m_targetClasses[timestep * m_parallelSequences + i] = tgt;
                 }
-            }
-	    
-            // outputs
-            else {
+            }else {
+		// normal data
+
+		// load data from cache
                 Cpu::real_vector outputs = _loadOutputsFromCache(seq);
+
+		// for each time step in this segment
                 for (int timestep = 0; timestep < seq.length; ++timestep) {
+
+		    // pointer to the datum in the target data buffer
                     int tgtStart  = m_outputPatternSize * (timestep * m_parallelSequences + i);
+		    
                     if (timestep >= output_lag) {
+			// pointer to the datum in the source data buffer
                         int srcStart = m_outputPatternSize * (timestep - output_lag);
+			// copy data from source to target
                         thrust::copy_n(outputs.begin() + srcStart, m_outputPatternSize, 
 				       frac->m_outputs.begin() + tgtStart);
                     }else {
+			// if timestep is out of range, use default data value = 1.0f
                         for (int oi = 0; oi < m_outputPatternSize; ++oi) {
                             frac->m_outputs[tgtStart + oi] = 1.0f; 
 			    // default value (make configurable?)
@@ -788,7 +845,8 @@ namespace data_sets {
             }
 	    
 	    // Dust #2017101208
-	    
+
+	    // Load external input data
 	    if (m_exInputFlag){
 		Cpu::real_vector exInput = _loadExInputsFromCache(seq);
 		for (int timestep = 0; timestep < seq.exInputLength; ++timestep) {
@@ -799,6 +857,7 @@ namespace data_sets {
 		}
 	    }
 
+	    // Load external output data
 	    if (m_exOutputFlag){
 		Cpu::real_vector exOutput = _loadExOutputsFromCache(seq);
 		for (int timestep = 0; timestep < seq.exOutputLength; ++timestep) {
@@ -809,6 +868,7 @@ namespace data_sets {
 		}
 	    }
 
+	    // Load auxillary data
 	    if (m_auxDirPath.size()>0){
 		if (m_auxDataTyp == AUXDATATYPE_CHAR){
 		    Cpu::pattype_vector auxData = _loadAuxPattypeDataFromCache(seq);
@@ -857,6 +917,8 @@ namespace data_sets {
 
             // pattern types
             for (int timestep = 0; timestep < seq.length; ++timestep) {
+
+		// Load patTypes for resolution = 1
                 Cpu::pattype_vector::value_type patType;
                 if (timestep == 0)
                     patType = PATTYPE_FIRST;
@@ -868,7 +930,7 @@ namespace data_sets {
                 frac->m_patTypes[timestep * m_parallelSequences + i] = patType;
 		frac->m_fracTotalLength = frac->m_fracTotalLength+1;
 
-		// also fill in the resolution buffer
+		// Load patTypes for resolution != 1
 		for (int resoIdx = 0; resoIdx < frac->m_resolutionBuffer.size(); resoIdx++){
 		    int dataPos = timestep / frac->m_resolutionBuffer[resoIdx].resolution;
 		    
@@ -954,18 +1016,23 @@ namespace data_sets {
 	/* --- Preparation --- */
 	// Add 1111: Prepare the auxillary data 
 	static Configuration config = Configuration::instance();
+	// path to load auxillary data
 	m_auxDirPath         = config.auxillaryDataDir();
+	// file extenion of auxillary data fil
 	m_auxFileExt         = config.auxillaryDataExt();
+	// dimension of auxillary data per frame
 	m_auxDataDim         = config.auxillaryDataDim();
+	// type of auxillary datum (char, int, or float)
 	m_auxDataTyp         = config.auxillaryDataTyp();
 
 	// mode to test the network?
 	quick_net_test_utt_num = config.quickTestNetwork();
-	    
+
+	
 	// Add 170327: Prepare the external input data
 	if (config.exInputDir().size() || config.exInputDirs().size()){
 	    if (config.exInputDim() > 0){
-		// only single external input file
+		// Obsolete 
 		m_exInputDir  = config.exInputDir();
 		m_exInputExt  = config.exInputExt();
 		m_exInputDim  = config.exInputDim();
@@ -975,33 +1042,39 @@ namespace data_sets {
 		    m_exInputType = DATASET_EXINPUT_TYPE_2;
 		else
 		    m_exInputType = DATASET_EXINPUT_TYPE_1;
-
-		
-
 		m_exInputDirs.clear();
 		m_exInputExts.clear();
 		m_exInputDims.clear();
+		
 	    }else if (config.exInputDims().size() > 0){
+		// Read in mulitple input data from external files rather than data.nc
 		misFuncs::ParseStrOpt(config.exInputDirs(), m_exInputDirs, ",");
 		misFuncs::ParseStrOpt(config.exInputExts(), m_exInputExts, ",");
 		misFuncs::ParseIntOpt(config.exInputDims(), m_exInputDims);
+		
 		if (m_exInputDirs.size() != m_exInputExts.size() ||
 		    m_exInputDirs.size() != m_exInputDims.size())
 		    throw std::runtime_error("ExtInput options unequal length");
 		m_exInputFlag = true;
+
+		// data type: see Macro definition on the top of this page
 		if (config.exInputType() == 2)
 		    m_exInputType = DATASET_EXINPUT_TYPE_2;
 		else
 		    m_exInputType = DATASET_EXINPUT_TYPE_1;
+		
 		m_exInputReso = config.exInputReso();		
 		m_exInputDir  = "";
 		m_exInputExt  = "";
 		m_exInputDim  = 0;
+		
 	    }else{
 		throw std::runtime_error("ExtInputDim(s) is not configured");
 	    }
+	    
 	    // set the input noise to zero
 	    m_noiseDeviation = 0.0;
+	    
 	}else{
 	    m_exInputDir  = "";
 	    m_exInputExt  = "";
@@ -1014,11 +1087,12 @@ namespace data_sets {
 	    m_exInputDims.clear();
 	}
 
-	// Add 171012: Prepare the external output data
+	// Add 171012: Prepare the external output data, similar to external input data
 	if (config.exOutputDirs().size()){
 	    misFuncs::ParseStrOpt(config.exOutputDirs(), m_exOutputDirs, ",");
 	    misFuncs::ParseStrOpt(config.exOutputExts(), m_exOutputExts, ",");
 	    misFuncs::ParseIntOpt(config.exOutputDims(), m_exOutputDims);
+	    
 	    if (m_exOutputDirs.size() != m_exOutputExts.size() ||
 		m_exOutputDirs.size() != m_exOutputDims.size())
 		throw std::runtime_error("ExOutput options unequal length");
@@ -1028,6 +1102,7 @@ namespace data_sets {
 		m_exOutputType = DATASET_EXINPUT_TYPE_2;
 	    else
 		m_exOutputType = DATASET_EXINPUT_TYPE_1;
+	    
 	    m_exOutputReso = config.exOutputReso();
 	    
 	}else{
@@ -1038,7 +1113,9 @@ namespace data_sets {
 	    m_exOutputDims.clear();
 	    m_exOutputReso = -1;
 	}
-	
+
+
+	// Load the time resolution options
 	if (Configuration::instance().resolutions().size()){
 	    Cpu::int_vector temp;
 	    misFuncs::ParseIntOpt(Configuration::instance().resolutions(), temp);
@@ -1055,8 +1132,9 @@ namespace data_sets {
 	    
 	}else
 	    m_resolutionBuf.clear();
+
 	
-        // Preparation: cache data
+        // Preparation: load cache data pointer
         std::string tmpFileName = "";
         if (cachePath == "")
             tmpFileName = (boost::filesystem::temp_directory_path() / 
@@ -1072,6 +1150,8 @@ namespace data_sets {
             throw std::runtime_error(std::string("Cannot open temporary file '") + 
 				     tmpFileName + "'");
 
+
+	
 	/* --- Read in the data --- */
 	
 	// Read *.nc files
@@ -1079,18 +1159,29 @@ namespace data_sets {
         for (std::vector<std::string>::const_iterator nc_itr = ncfiles.begin();
 	     nc_itr != ncfiles.end(); ++nc_itr) 
         {
+	    // buffer of data segments
             std::vector<sequence_t> sequences;
+	    
+	    // Check existence
             if ((ret = nc_open(nc_itr->c_str(), NC_NOWRITE, &ncid)))
                 throw std::runtime_error(std::string("Could not open '") + 
 					 *nc_itr + "': " + nc_strerror(ret));
+	    // Try to load
             try {
+		// Load maxSeqTagLength 
                 int maxSeqTagLength = internal::readNcDimension(ncid, "maxSeqTagLength");
 
 		// Check input and output size
                 if (first_file) {
-                    m_isClassificationData = internal::hasNcDimension (ncid, "numLabels");
-                    m_inputPatternSize     = internal::readNcDimension(ncid, "inputPattSize");
+		    // Load options from the first nc file
 		    
+		    // is the data for classification (obsolete)
+                    m_isClassificationData = internal::hasNcDimension (ncid, "numLabels");
+		    
+		    // dimension of input data
+                    m_inputPatternSize     = internal::readNcDimension(ncid, "inputPattSize");
+
+		    // dimension of output data
                     if (m_isClassificationData) {
                         int numLabels       = internal::readNcDimension(ncid, "numLabels");
                         m_outputPatternSize = (numLabels == 2 ? 1 : numLabels);
@@ -1098,7 +1189,10 @@ namespace data_sets {
                         m_outputPatternSize = internal::readNcDimension(ncid, "targetPattSize");
                     }
 		    // Dust #2017101201
+		    
                 }else{
+		    // check consistence of the following nc files
+		    
 		    if (m_isClassificationData) {
                         if (!internal::hasNcDimension(ncid, "numLabels")) 
                             throw std::runtime_error("Cannot classification with regression NC");
@@ -1114,7 +1208,9 @@ namespace data_sets {
 		    // Dust #2017101202
                 }
 
+		
 		// Read in sequence macro information
+		//  number of sequences
                 int nSeq = internal::readNcDimension(ncid, "numSeqs");
                 nSeq     = (int)((real_t)nSeq * fraction);
                 nSeq     = std::max(nSeq, 1);
@@ -1126,40 +1222,60 @@ namespace data_sets {
 		    nSeq = quick_net_test_utt_num;
 		    std::cout << std::endl << "Network checking mode" << std::endl;
 		}
-		
+
+		// Load sequences meta-information and truncate sequences into segments
                 for (int i = 0; i < nSeq; ++i) {
+		    
+		    // length of this sequence
                     int seqLength      = internal::readNcIntArray(ncid, "seqLengths", i);
+		    
+		    // accumulate total length of data across nc files
                     m_totalTimesteps  += seqLength;
 		    
 		    // Dust #2017101203
+		    
+		    // name of this sequence
                     std::string seqTag = internal::readNcStringArray(ncid, "seqTags", i, 
 								     maxSeqTagLength);
+		    
+		    // truncate sequence based on truncSeqLength
+		    // if truncSeqLength == 0, whole sequence is treated as one segment
                     int k = 0;
 		    int rePosInUtt = 0;
                     while (seqLength > 0) {
                         sequence_t seq;
-			// Fill in the information for seq
+			
+			// index of the segment within utterance
                         seq.originalSeqIdx = k;
+			// length of the segment
                         if (truncSeqLength > 0 && seqLength > 1.5 * truncSeqLength) 
                             seq.length         = std::min(truncSeqLength, seqLength);
                         else
                             seq.length = seqLength;
+			// name of the sequence
                         seq.seqTag         = seqTag;
+			// location of the segment in original sequence (frame index)
+			seq.beginInUtt     = rePosInUtt;
+			
 			//seq.txtLength    = txtLength;
-			seq.beginInUtt     = rePosInUtt; 
+			
+			// save segment informaiton
                         sequences.push_back(seq);
+
+			// how many frames remain in the sequence
                         seqLength         -= seq.length;
+			// move the pointer to the start of next segment
 			rePosInUtt        += seq.length;
                         ++k;
-			// Note: if this utterance is cut into several pieces, beginInUtt
-			// logs the relative position of this piece in the utterance
+			
                     }
                 }
 
-		// Read in sequence data
+		// For each segment, read in input/output data and save them into cache
                 for (std::vector<sequence_t>::iterator seq = sequences.begin(); 
 		     seq != sequences.end(); ++seq) {
-		    
+
+		    // global maxSeqLength and minSeqLength of segments
                     m_minSeqLength = std::min(m_minSeqLength, seq->length);
                     m_maxSeqLength = std::max(m_maxSeqLength, seq->length);
 		    //m_maxTxtLength = std::max(m_maxTxtLength, seq->txtLength);
@@ -1170,18 +1286,36 @@ namespace data_sets {
 			internal::readNcPatternArray(ncid, "inputs", inputsBegin, seq->length,
 						     m_inputPatternSize);
 
-		    // also prepare the external input data
+		    // If inputs in data.nc is frame index, pre-process the frame index
 		    if (m_exInputType == DATASET_EXINPUT_TYPE_1){
 			if (m_inputPatternSize != 1)
 			    throw std::runtime_error("input is not the index for ExInput");
-			// When the input index is in increasing order
-			// exInputStartPos and EndPos are used to load data from external files
-			seq->exInputStartPos = inputs[0];   
+
+			// Inputs is a sequence of frame index: [1, 1, 1, 2, 2 ... N, N]
+			// the number "n" at the t-th step indicates that the t-th frame
+			// will load the "n"-th frame data from external data
+			//  1st "1": 1st frame will load the "1"st frame from external data
+			//  2nd "1": 2nd frame will load the "1"st frame from external data
+			//  1st "2": 4th frame will load the "2"nd frame from external data
+			// ...
+			//
+			// For normal cases, inputs will be [1, 2, 3, ..., N], i.e., the t-th
+			// frame will load the "t"-th frame from external data
+			// But it can be more flexible: we can control which frame of external
+			// data should be read at the t-th time step
+
+			// Because one segment may be truncated from a sequence,
+			// Original inputs: [1, 1, 1, 2, 2, ..., n, n,  ..., m,m ... N, N]
+			// Segment inputs:  [n,n, ..., m, m], 
+			//   1st frame of segment will use the "n"th frame from external data
+			//   last frame of segment will use the "m"th frame from external data
+			
+			// the first index in [n, n, ..., m, m]
+			seq->exInputStartPos = inputs[0];
+			// the last index in  [n, n, ..., m, m]
 			seq->exInputEndPos   = inputs[seq->length-1] + 1;
 
-			// index is used to load the data in neural network
-			// thus, the index should be shifted and starts from 0
-			// Shift the index
+			// Convert [n, n, ..., m, m] into [0, 0, ..., m-n, m-n]
 			Cpu::real_vector tempVec(inputs.size(), inputs[0]);
 			thrust::transform(inputs.begin(), inputs.end(), tempVec.begin(), 
 					  inputs.begin(), thrust::minus<float>());
@@ -1208,7 +1342,7 @@ namespace data_sets {
 			seq->exInputStartPos = -1;
 			seq->exInputEndPos   = -1;
 		    }
-
+		    // Write inputs into cache
                     m_cacheFile.write((const char*)inputs.data(),
 				      sizeof(real_t) * inputs.size());
                     assert (m_cacheFile.tellp() - seq->inputsBegin == 
@@ -1216,8 +1350,10 @@ namespace data_sets {
 
 		    
                     // Step2. read targets and store them in the cache file
+		    // similar to the input data
                     seq->targetsBegin = m_cacheFile.tellp();
                     if (m_isClassificationData) {
+			// if this is for classification (oboslete)
                         Cpu::int_vector targets = internal::readNcArray<int>(
 							ncid, "targetClasses", targetsBegin,
 							seq->length);
@@ -1229,8 +1365,8 @@ namespace data_sets {
 			    throw std::runtime_error("ExOutput not for the classification task");
 			    
                     }else {
-		
 
+			// Read target data
                         Cpu::real_vector targets = internal::readNcPatternArray(
 							ncid, "targetPatterns", targetsBegin, 
 							seq->length, m_outputPatternSize);
@@ -1266,7 +1402,8 @@ namespace data_sets {
 			    seq->exOutputStartPos = -1;
 			    seq->exOutputEndPos   = -1;
 			}
-			
+
+			// write outputs into cache
                         m_cacheFile.write((const char*)targets.data(),
 					  sizeof(real_t) * targets.size());
                         assert (m_cacheFile.tellp() - seq->targetsBegin == 
@@ -1275,7 +1412,6 @@ namespace data_sets {
 
 		    
 		    //Dust #2017101204
-		    
 		    // Step3. Add 1111: to read auxillary data from external binary data files
 		    if (m_auxDirPath.size()>0){
 			seq->auxDataBegin    = m_cacheFile.tellp();
@@ -1328,7 +1464,7 @@ namespace data_sets {
 		    // Step4. Add 170327: to read external input data
 		    if (m_exInputFlag){
 			if (config.exInputDim() > 0){
-			    // Old internal data reading method
+			    // obsolete method
 			    seq->exInputBegin    = m_cacheFile.tellp();
 			    seq->exInputDim      = m_exInputDim;
 			
@@ -1352,14 +1488,28 @@ namespace data_sets {
 				   (seq->exInputDim * seq->exInputLength * sizeof(real_t)));
 			    
 			}else if (config.exInputDims().size() > 0){
+			    // 
 			    // load multiple files
+
+			    // total dimension of input files
 			    seq->exInputDim    = misFuncs::SumCpuIntVec(m_exInputDims);
+			    // the range of frames to be loaded into cache
+			    // Note: if segment input is [n,n, ..., m, m],
+			    //   seq->exInputEndPos = m, seq->exInputStartPos = n
+			    //   [seq->exInputStartPos, seq->exInputEndPos] specifies the range
+			    //   of data to be loaded from external file.
+			    //   We assume that the index p in [n,n, ..., p, ..., m, m]
+			    //   is n <= p <= m
 			    seq->exInputLength = seq->exInputEndPos - seq->exInputStartPos;
+			    
+			    // memory buffer to load the data
 			    Cpu::real_vector exDataBuf(seq->exInputDim *
 						       (seq->exInputEndPos-seq->exInputStartPos),
 						       0.0);
 			    int cnt = 0;
 			    int dimCnt = 0;
+
+			    // for each input feature file
 			    for (int i = 0; i < m_exInputDirs.size(); i++){
 				std::string fileName = (m_exInputDirs[i] + "/" + seq->seqTag +
 							m_exInputExts[i]); 
@@ -1367,8 +1517,9 @@ namespace data_sets {
 				int stPos, etPos;
 				if (m_exInputType == DATASET_EXINPUT_TYPE_1 ||
 				    m_exInputType == DATASET_EXINPUT_TYPE_2){
-				    // Reading in a specified number of data elements
+				    // the index of the starting datum in external file
 				    stPos = seq->exInputStartPos * m_exInputDims[i];
+				    // the index of the last datum in external file
 				    etPos = seq->exInputEndPos   * m_exInputDims[i];
 				}else{
 				    // Reading in all the data elements
@@ -1379,8 +1530,9 @@ namespace data_sets {
 					fileName, exDataBuf, stPos, etPos,
 					seq->exInputDim, m_exInputDims[i], dimCnt);
 				dimCnt += m_exInputDims[i];
-				
 			    }
+
+			    // Write the external data into cache
 			    // Make sure #externalData = Length * dim
 			    assert(seq->exInputLength * seq->exInputDim == cnt);
 			    seq->exInputBegin    = m_cacheFile.tellp();
@@ -1398,6 +1550,7 @@ namespace data_sets {
 		    }
 
 		    // Step5. To read external output data
+		    // similar method to external input data
 		    if (m_exOutputFlag){
 			// load multiple files
 			seq->exOutputDim    = misFuncs::SumCpuIntVec(m_exOutputDims);
@@ -1445,6 +1598,7 @@ namespace data_sets {
 		    //txtDataBegin += seq->txtLength;
                 }
 
+		// Read mean and std if available in data.nc files
                 if (first_file) {
 		    if (m_exOutputFlag){
 			// mean and var will not encoded in data.nc when external output is used

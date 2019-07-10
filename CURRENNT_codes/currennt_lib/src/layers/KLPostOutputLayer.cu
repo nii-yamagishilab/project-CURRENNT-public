@@ -32,6 +32,7 @@
 #include "KLPostOutputLayer.hpp"
 
 #include "../Configuration.hpp"
+#include "../helpers/JsonClasses.hpp"
 #include "../helpers/getRawPointer.cuh"
 #include "../helpers/NumericLimits.cuh"
 #include "../helpers/min.cuh"
@@ -133,31 +134,6 @@ namespace {
         }
     };
     
-    /*
-    struct ComputeOutputErrorFn
-    {        
-    	int layerSize;
-    	const char   *patTypes;
-	const real_t *mvData;
-    	__host__ __device__ real_t operator() 
-	(const thrust::tuple<const real_t&, const real_t&, int> &t) const        
-    	{   
-	    // unpack the tuple
-	    real_t actualOutput = t.get<0>();
-	    real_t targetOutput = t.get<1>();
-	    int    outputIdx    = t.get<2>();
-	    
-	    // calculate the pattern index
-	    int patIdx          = outputIdx / layerSize;
-	    // check if the pattern is a dummy
-	    if (patTypes[patIdx] == PATTYPE_NONE)
-		return 0;
-
-	    // calculate the error
-	    real_t error = actualOutput - targetOutput;
-	    return error;
-	}
-	};*/
     
 } // anonymous namespace
 } // namespace anonymous
@@ -173,25 +149,23 @@ namespace layers {
         : PostOutputLayer<TDevice>(layerChild, precedingLayer,
 				   precedingLayer.size(), maxSeqLength, layerID)
     {
+	/* Load options */
 	const Configuration &config = Configuration::instance();
 	m_dataType = config.KLDOutputDataType();
-	if(m_dataType != KLDOUTPUTDATATYPE_LOG_UNI && m_dataType != KLDOUTPUTDATATYPE_LINEAR_UNI) {
-	    printf("Please specify --KLDTargetDataType for training kld output layer");
-	    //throw std::runtime_error(std::string("1: log-domain, 2: linear domain data"));
-	}else{
-	    if (m_dataType == KLDOUTPUTDATATYPE_LOG_UNI)
-		printf("Target Data type : log data");
-	    else
-		printf("Target Data type : linear data");
+	
+	if (m_dataType != KLDOUTPUTDATATYPE_LINEAR_UNI && m_dataType != KLDOUTPUTDATATYPE_LOG_UNI){
+	    // Linear-domain spectrum vector or log domain?
+	    m_dataType = (layerChild->HasMember("kld_log_or_linear") ? 
+			  ((*layerChild)["kld_log_or_linear"].GetInt()) : KLDOUTPUTDATATYPE_LOG_UNI);
 	}
 	
-	if (config.datamvPath().size()<1){
-	    printf("Skip reading data.mv for KLD output layer");
-	    //throw std::runtime_error(std::string("KLD output requires mean and var"));
-	}
+	if (m_dataType == KLDOUTPUTDATATYPE_LOG_UNI)
+	    printf("\n\tTarget Data type : log data");
+	else
+	    printf("\n\tTarget Data type : linear data");
 	
 	m_lrFactor = config.lrFactor();
-	printf("KLD scale factor: %f", m_lrFactor);
+	printf("\n\tKLD scale factor: %f", m_lrFactor);
 
 	// initialize the buffer
 	m_errorBuf = this->_actualOutputs();
@@ -239,32 +213,10 @@ namespace layers {
 	       thrust::plus<real_t>()
 	       );
 	    
-	    // Debug
-	    /*Cpu::real_vector target = this->_targets();
-	    Cpu::real_vector output = this->_actualOutputs();
-	    Cpu::real_vector mvData = this->_mvVector();
-	    Cpu::pattype_vector patTyp = this->patTypes();
-	    real_t mse_temp = 0;
-	    for (int outputIdx = 0; outputIdx < n; outputIdx++){
-		int featDim = outputIdx % this->size();
-		int patIdx  = outputIdx / this->size();
-		if (patTyp[patIdx] == PATTYPE_NONE)
-		    continue;
-		
-		real_t mean   = mvData[featDim];
-		real_t var    = mvData[featDim + this->size()];
-		real_t tarLin = var*target[outputIdx] + mean;
-		real_t outLin = var*output[outputIdx] + mean;
-		real_t ratio  = tarLin / outLin;
-		
-		mse_temp += (tarLin * std::log(ratio) - tarLin + outLin) / m_lrFactor;
-		if (mse_temp != mse_temp){
-		    mse_temp = 0;
-		}
-		}*/
 	    return mse;
 	    
 	}else if(m_dataType == KLDOUTPUTDATATYPE_LOG_UNI){
+	    
 	    internal::ComputeKLDFnLog fn;
 	    fn.layerSize = this->size();
 	    fn.patTypes  = helpers::getRawPointer(this->patTypes());
@@ -291,9 +243,7 @@ namespace layers {
 	    return mse;
 	    
 	}else{
-	    // can't be here
-	    printf("Please specify --targetDataType");
-	    throw std::runtime_error(std::string("Only log (2) and linear (1) data for KLD layer"));
+	    throw std::runtime_error(std::string("Error: kld_log_or_linear: 1 or 2 in network.jsn"));
 	}
     }
 
@@ -330,6 +280,7 @@ namespace layers {
 	  this->_outputErrors().begin(),
 	  fn
 	  );*/
+	
 	thrust::copy(m_errorBuf.begin(), m_errorBuf.begin() + n, this->_outputErrors().begin());
     }
 
@@ -339,6 +290,18 @@ namespace layers {
 	if (timeStep == this->curMaxSeqLength())
 	    this->computeBackwardPass(nnState);
     }
+
+
+    template <typename TDevice>
+    void KLPostOutputLayer<TDevice>::exportLayer(const helpers::JsonValue     &layersArray, 
+						     const helpers::JsonAllocator &allocator) const
+    {
+        PostOutputLayer<TDevice>::exportLayer(layersArray, allocator);
+	(*layersArray)[layersArray->Size() - 1].AddMember("kld_log_or_linear", m_dataType, allocator);
+    }
+
+
+    
     // explicit template instantiations
     template class KLPostOutputLayer<Cpu>;
     template class KLPostOutputLayer<Gpu>;
