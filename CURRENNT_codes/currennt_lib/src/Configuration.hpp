@@ -236,6 +236,7 @@ private:
     real_t      m_f0dataStd_signalgen;
     
     unsigned m_truncSeqLength;
+    unsigned m_truncNsegments;
     unsigned m_parallelSequences;
     unsigned m_maxEpochs;
     unsigned m_maxEpochsNoBest;
@@ -270,6 +271,10 @@ private:
     std::string m_autosavePrefix;
     std::string m_continueFile;
     std::string m_cachePath;
+
+    std::string m_fileOrderedLstTrn;
+    std::string m_fileOrderedLstVal;
+    std::string m_fileOrderedLstTst;
     
     std::vector<std::string> m_trainingFiles;
     std::vector<std::string> m_validationFiles;
@@ -479,6 +484,8 @@ public:
      */
     unsigned truncateSeqLength() const;
 
+    unsigned truncateSeqNSegments() const;
+    
     /**
      * Returns the distribution type of the initial weights
      *
@@ -768,8 +775,15 @@ public:
     const std::string& exOutputDirs() const;
     const std::string& exOutputExts() const;
     const std::string& exOutputDims() const;
+    
     const int& exOutputType() const;
     const int& exOutputReso() const;
+
+    const std::string& fileOrderedLstTrn() const;
+    const std::string& fileOrderedLstVal() const;
+    const std::string& fileOrderedLstTst() const;
+
+    
     
     const int& verboseLevel() const;
 

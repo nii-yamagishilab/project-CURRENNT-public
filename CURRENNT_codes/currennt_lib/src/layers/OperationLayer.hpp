@@ -121,6 +121,8 @@ namespace layers{
 	real_t          m_reverse_grad;
 
 	int             m_dimExpand;
+
+	int             m_shiftTime;
 	
 	OperationLayer(
 	    const helpers::JsonValue &layerChild,

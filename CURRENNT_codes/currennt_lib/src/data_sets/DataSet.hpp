@@ -48,28 +48,29 @@ namespace data_sets {
     {
     public:
         struct sequence_t {
-            int         originalSeqIdx;
-            int         length;
-            std::string seqTag;
+            int         originalSeqIdx;        // index of this segment in original sequence
+            int         length;                // length of the segment
+            std::string seqTag;                // name of the original sequence
 
-            std::streampos inputsBegin;
-            std::streampos targetsBegin;
+            std::streampos inputsBegin;        // input data pointer to cache
+            std::streampos targetsBegin;       // target data pointer to cache
 	    
 	    // Add 0620, Wang: support to the txt int data
 	    //int            txtLength;        // length of the txt data for this sequence
 	    //std::streampos txtDataBegin;     //  
 
 	    // Add 1111, support to the auxillary data
-	    int            auxDataDim;
-	    int            auxDataTyp;
-	    std::streampos auxDataBegin;
+	    int            auxDataDim;         // dimension of auxillary data
+	    int            auxDataTyp;         // type of auxillary data
+	    std::streampos auxDataBegin;       // auxillary data pointer to cache
 	    
 	    int            beginInUtt;       // the relative position of the start of the seq
 	                                     // in the utterance
+	    
 	    // Add 170327, support to the external input data
-	    int            exInputDim;       // 
-	    int            exInputLength;    //
-	    int            exInputStartPos;  //
+	    int            exInputDim;       // external-stored input data dimension
+	    int            exInputLength;    // length of external-stored input data
+	    int            exInputStartPos;  // 
 	    int            exInputEndPos;    // 
 	    std::streampos exInputBegin;     //
 
@@ -82,52 +83,72 @@ namespace data_sets {
 	    std::streampos exOutputBegin;     //
         };
 
+	struct seqOrdered_unt{
+	    std::string  seqTag;
+	    int          originalSeqIdx;
+	};
+
+	
     private:
         void _nextFracThreadFn();
         void _shuffleSequences();
         void _shuffleFractions();
         void _addNoise(Cpu::real_vector *v);
+	
         Cpu::real_vector    _loadInputsFromCache(const sequence_t &seq);
         Cpu::real_vector    _loadOutputsFromCache(const sequence_t &seq);
 	Cpu::real_vector    _loadExInputsFromCache(const sequence_t &seq);
 	Cpu::real_vector    _loadExOutputsFromCache(const sequence_t &seq);
         Cpu::int_vector     _loadTargetClassesFromCache(const sequence_t &seq);
+	
         boost::shared_ptr<DataSetFraction> _makeFractionTask(int firstSeqIdx);
         boost::shared_ptr<DataSetFraction> _makeFirstFractionTask();
+
 	
-	// Add 0620: Wang support to the txt input data
-	Cpu::real_vector _loadTxtDataFromCache(const sequence_t &seq);
+	// Obsolete
+	// Cpu::real_vector _loadTxtDataFromCache(const sequence_t &seq);
 	
-	// Add 1111: support to read auxillary data
+	// Interface to load auxillary data
 	Cpu::real_vector    _loadAuxRealDataFromCache(const sequence_t &seq);
 	Cpu::pattype_vector _loadAuxPattypeDataFromCache(const sequence_t &seq);
 	Cpu::int_vector     _loadAuxIntDataFromCache(const sequence_t &seq);
+
+	void _loadAuxDataOptions();
+	void _loadExternalDataOptions();
+	void _loadResolutionOptions();
+	void _setCacheOptions(const std::string cachePath);
+	void _loadTxtList(const std::string fileOrderedLst);
+	void _orderSeq();
 	
     private:
-        bool   m_fractionShuffling;
-        bool   m_sequenceShuffling;
-        bool   m_isClassificationData;
-        real_t m_noiseDeviation;
-        int    m_parallelSequences;
-        int    m_totalSequences;
-        unsigned long int    m_totalTimesteps;
-        int    m_minSeqLength;
-        int    m_maxSeqLength;
-        int    m_inputPatternSize;
-        int    m_outputPatternSize;
+        bool   m_fractionShuffling;          // shuffle fraction?
+        bool   m_sequenceShuffling;          // shuffle sequences?
+        bool   m_isClassificationData;       // for classification
+        real_t m_noiseDeviation;             // std of noise to be added to input data (obsolete)
+        int    m_parallelSequences;          // number of parallelSequences
+        int    m_totalSequences;             // total number of sequences
+	
+        unsigned long int    m_totalTimesteps;  // total number of time steps
+	
+        int    m_minSeqLength;               // minimum sequence length in data corpus
+        int    m_maxSeqLength;               // maximum sequencd length in data corpus
+        int    m_inputPatternSize;           // total dimension of input data vector
+        int    m_outputPatternSize;          // total dimension of output data vector
 
-        Cpu::real_vector m_outputMeans;
+        Cpu::real_vector m_outputMeans;      
         Cpu::real_vector m_outputStdevs;
 	bool             m_outputMVFlag;
-
 	
         std::fstream     m_cacheFile;
         std::string      m_cacheFileName;
 
-        std::vector<sequence_t> m_sequences;
-
+        std::vector<sequence_t>  m_sequences;
+	std::vector<seqOrdered_unt> m_seqOrderVec;
+	
         boost::scoped_ptr<thread_data_t> m_threadData; // just because nvcc hates boost headers
         int    m_curFirstSeqIdx;
+
+	int    m_quick_network_test_num;
 	
 	// Add 0620: Wang support to the txt input data
 	// (Support for the txt data should be merged with the auxillary data)
@@ -185,7 +206,8 @@ namespace data_sets {
 		bool   fracShuf       = false, 
 		bool   seqShuf        = false, 
 		real_t noiseDev       = 0,
-		std::string cachePath = ""
+		std::string cachePath = "",
+		std::string fileOrderedLst = ""
 		);
 
         /**

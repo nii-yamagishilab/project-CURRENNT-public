@@ -286,7 +286,7 @@ namespace {
 	    
 	}
     };
-
+    
     // Change time resolution (for gradient propagation)
     // For upsampling: accumulate the gradients over the duplicated time steps
     // For downsampling: only propagation the gradient to one datum that has been being used
@@ -897,6 +897,43 @@ namespace {
 	}
     };
 
+
+    struct timeShift
+    {
+	int         layerSize;
+	int         parallel;   // parallel number
+	int         shiftNsteps;
+	int*        maxSeqLength;
+	
+	real_t     *sourceData;
+	const char *patTypes;
+
+	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
+	{
+	    
+	    int outputIdx = t.get<1>();
+	    int dimIdx    = outputIdx % layerSize;  // dimension index
+	    int timeIdx   = outputIdx / layerSize;  // time index (regardless of parallel)
+	    int BlockIdx  = timeIdx / parallel;     // time index (considering parallel mode)
+	    int BlockInIdx= timeIdx % parallel;     // index within a parallel block
+
+	    if (patTypes[timeIdx] == PATTYPE_NONE){
+		t.get<0>() = 0;
+		return;
+	    }
+
+	    int shiftedBlockIdx = BlockIdx - shiftNsteps;
+	    if (shiftedBlockIdx < 0 || shiftedBlockIdx>= maxSeqLength[BlockInIdx]){
+		t.get<0>() = 0;
+	    }else{
+		t.get<0>() =
+		    sourceData[(shiftedBlockIdx * parallel + BlockInIdx) * layerSize + dimIdx];
+	    }
+	    return;
+	}
+    };
+
+    
     
 }
 }
@@ -1281,10 +1318,25 @@ namespace layers{
 		m_dimExpand = (int)std::ceil(((float)this->size())/this->precedingLayer().size());
 		printf("\tdimension expand: %d", m_dimExpand);
 		if (m_dimExpand < 1)
-		    throw std::runtime_error("dim_expand layer should be wider than previous layer");
+		    throw std::runtime_error("dim_expand layer size should > previous layer");
 	    }
 	}
 
+
+	/* ------ time shift ------- */
+	m_shiftTime = (layerChild->HasMember("time_shift")?
+		       static_cast<int>((*layerChild)["time_shift"].GetDouble()) : 0);
+	if (m_shiftTime){
+	    if (this->size() != this->precedingLayer().size()){
+		throw std::runtime_error("Error: layer size != previous layer ");
+	    }else{
+		// buffer to store the length of input sequences
+		m_seqLengthBuffH.resize(this->parallelSequences(), 0);
+		m_seqLengthBuffD = m_seqLengthBuffH;
+		
+		printf("\ttime shift by %d steps", m_shiftTime);
+	    }
+	}
 	
 	
 	/* ------ print the information ------ */
@@ -1461,6 +1513,9 @@ namespace layers{
 	if (m_dimExpand)
 	    (*layersArray)[layersArray->Size() - 1].AddMember("dim_expand", m_dimExpand, allocator);
 	
+	if (m_shiftTime)
+	    (*layersArray)[layersArray->Size() - 1].AddMember("time_shift", m_dimExpand, allocator);
+	
 	if (m_changeTimeRes > 0)
 	    (*layersArray)[layersArray->Size() - 1].AddMember("changeResolution",
 							      m_changeTimeRes,
@@ -1586,6 +1641,14 @@ namespace layers{
 	    }
 	    m_segBoundaryD = m_segBoundaryH;
 	    
+	}else if (m_shiftTime){
+	    
+	    // load the sequence length 
+	    for (int i = 0; i<fraction.numSequences(); i++)
+		m_seqLengthBuffH[i] = misFuncs::getResoLength(fraction.seqInfo(i).length,
+							      this->getResolution(), 1);
+	    m_seqLengthBuffD = m_seqLengthBuffH;
+
 	}
 	
     }
@@ -1882,6 +1945,28 @@ namespace layers{
 		fn1.expandRatio = m_dimExpand;
 		fn1.patTypes    = helpers::getRawPointer(this->patTypes());
 		fn1.sourceData  = helpers::getRawPointer(this->precedingLayer().outputs());
+		
+		thrust::for_each(
+		  thrust::make_zip_iterator(
+		    thrust::make_tuple(this->outputs().begin(),
+				       thrust::counting_iterator<int>(0))),
+		  thrust::make_zip_iterator(
+		    thrust::make_tuple(this->outputs().begin()     + this->size() * timeLength,
+				 thrust::counting_iterator<int>(0) + this->size() * timeLength)),
+		  fn1);
+	    }
+	    
+	}else if (m_shiftTime){
+	    
+	    {
+	    	internal::timeShift fn1;
+		fn1.layerSize   = this->size();
+		fn1.parallel    = this->parallelSequences();
+		fn1.shiftNsteps = m_shiftTime;
+		
+		fn1.maxSeqLength = helpers::getRawPointer(m_seqLengthBuffD);
+		fn1.patTypes     = helpers::getRawPointer(this->patTypes());
+		fn1.sourceData   = helpers::getRawPointer(this->precedingLayer().outputs());
 		
 		thrust::for_each(
 		  thrust::make_zip_iterator(
@@ -2200,6 +2285,10 @@ namespace layers{
 	}else if (m_dimExpand){
 
 	    throw std::runtime_error("Error: dimExpanded not implemented for online mode");
+	    
+	}else if (m_shiftTime){
+
+	    throw std::runtime_error("Error: shift_time cannot be used for online training");
 	    
 	}else{
 	
@@ -2547,6 +2636,31 @@ namespace layers{
 	}else if (m_F02UV){
 	    thrust::fill(this->precedingLayer().outputErrors().begin(),
 			 this->precedingLayer().outputErrors().end(), 0.0);
+	    
+	}else if (m_shiftTime){
+	    
+	    {
+	    	internal::timeShift fn1;
+		fn1.layerSize   = this->size();
+		fn1.parallel    = this->parallelSequences();
+		fn1.shiftNsteps = m_shiftTime * -1;
+		
+		fn1.maxSeqLength = helpers::getRawPointer(m_seqLengthBuffD);
+		fn1.patTypes     = helpers::getRawPointer(this->patTypes());
+		fn1.sourceData   = helpers::getRawPointer(this->outputErrors());
+		
+		thrust::for_each(
+		  thrust::make_zip_iterator(
+		    thrust::make_tuple(
+		       this->precedingLayer().outputErrors().begin(),
+		       thrust::counting_iterator<int>(0))),
+		  thrust::make_zip_iterator(
+		    thrust::make_tuple(
+		       this->precedingLayer().outputErrors().begin() + this->size() * timeLength,
+		       thrust::counting_iterator<int>(0)             + this->size() * timeLength)),
+		  fn1);
+	    }
+
 	}else{
 	    
 	    if (m_outDupRate > 1){
@@ -2713,6 +2827,9 @@ namespace layers{
 		  fn1);
 	    }
 
+	    
+	}else if (m_shiftTime){
+	    throw std::runtime_error("Error: shift_time cannot be used for online training");
 	    
 	}else{
 	    

@@ -738,7 +738,8 @@ void NeuralNetwork<TDevice>::__InitializeNetworkLayerIdx(const helpers::JsonDocu
 
 	m_wavNetCoreFirstIdx    = -1;     // Idx of the first waveNet core module (for waveNet)
 	m_dftLayerIdx           = -1;     // index of DFT error layer
-
+	m_interWeaveIdx         = -1;
+	
 	m_waveNetMemSaveFlag    = NETWORK_WAVENET_SAVE_NO;
 	
 	// get a total number of layers
@@ -820,6 +821,10 @@ void NeuralNetwork<TDevice>::__InitializeNetworkLayerIdx(const helpers::JsonDocu
 	    }else if (layerType.compare(0, 5, "inter") == 0){
 		// intermetric layers
 		m_interMetricLayers.push_back(counter);
+		
+	    }else if (layerType == "mutual_weave"){
+		// inter weave layer index
+		m_interWeaveIdx = counter;
 		
 	    }else{
 		// do nothing
@@ -1271,6 +1276,11 @@ void NeuralNetwork<TDevice>::__LinkNetworkLayers()
 		m_layers[m_dftLayerIdx]->linkTargetLayer(*(m_layers[i].get()));
 	}
 
+	// Link the target layer with inter_weave layer
+	if (m_interWeaveIdx > 0){
+	    m_layers[m_interWeaveIdx]->linkTargetLayer(*(m_layers.back().get()));
+	}
+	
 	// Link the source layer for sse_muti or sse_cos layers
 	if (m_layers[m_totalNumLayers-1]->type() == "sse_multi" ||
 	    m_layers[m_totalNumLayers-1]->type() == "sse_cos"){

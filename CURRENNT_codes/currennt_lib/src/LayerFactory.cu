@@ -77,6 +77,8 @@
 #include "layers/InterMetricSoftmax.hpp"
 #include "layers/RandomShuffleLayer.hpp"
 #include "layers/SseCosPostOutputLayer.hpp"
+#include "layers/InterWeaveLayer.hpp"
+#include "layers/MutualInforPostOutputLayer.hpp"
 #include <stdexcept>
 
 
@@ -193,6 +195,9 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
     else if (layerType == "self_attention")
     	return new SelfAttentionLayer<TDevice>(layerChild, weightsSection,
 					       *precedingLayer, maxSeqLength, layerID);
+    else if (layerType == "mutual_weave")
+    	return new InterWeaveLayer<TDevice>(layerChild, weightsSection, *precedingLayer,
+					    maxSeqLength, layerID);
     
     else if (layerType == "sse"                       || layerType == "weightedsse"  || 
 	     layerType == "rmse"                      || layerType == "ce"  || 
@@ -200,7 +205,7 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
 	     layerType == "multiclass_classification" || layerType == "mdn" || 
 	     layerType == "kld"                       || layerType == "dft" ||
 	     layerType == "featsse"                   || layerType == "sse_multi" ||
-	     layerType == "sse_cos") {
+	     layerType == "sse_cos"                   || layerType == "mutual_infor") {
         //layers::TrainableLayer<TDevice>* precedingTrainableLayer = 
 	// dynamic_cast<layers::TrainableLayer<TDevice>*>(precedingLayer);
         //if (!precedingTrainableLayer)
@@ -253,7 +258,10 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
 	    return new SseCosPostOutputLayer<TDevice>(layerChild,
 						      *precedingLayer, maxSeqLength,
 						      layerID);	
-
+	else if (layerType == "mutual_infor")
+	    return new MutualInforPostOutputLayer<TDevice>(layerChild,
+							   *precedingLayer, maxSeqLength,
+							   layerID);	
         else // if (layerType == "multiclass_classification")
     	    return new MulticlassClassificationLayer<TDevice>(layerChild,
 							      *precedingLayer, maxSeqLength,

@@ -896,6 +896,8 @@ boost::shared_ptr<data_sets::DataSet> loadDataSet(data_set_type dsType)
     std::string auxDataExt   = "";
     int         auxDataDim   = -1;
     int         auxDataTyp   = -1;
+
+    std::string fileOrderedList = "";
     
     Configuration config = Configuration::instance();
 
@@ -909,6 +911,7 @@ boost::shared_ptr<data_sets::DataSet> loadDataSet(data_set_type dsType)
         seqShuf        = Configuration::instance().shuffleSequences();
         noiseDev       = Configuration::instance().inputNoiseSigma();
         truncSeqLength = Configuration::instance().truncateSeqLength();
+	fileOrderedList= Configuration::instance().fileOrderedLstTrn();
         break;
 
     case DATA_SET_VALIDATION:
@@ -916,18 +919,21 @@ boost::shared_ptr<data_sets::DataSet> loadDataSet(data_set_type dsType)
         filenames      = Configuration::instance().validationFiles();
         fraction       = Configuration::instance().validationFraction();
         truncSeqLength = Configuration::instance().truncateSeqLength();
+	fileOrderedList= Configuration::instance().fileOrderedLstVal();
         break;
 
     case DATA_SET_TEST:
         type           = "test set";
         filenames      = Configuration::instance().testFiles();
         fraction       = Configuration::instance().testFraction();
+	fileOrderedList= Configuration::instance().fileOrderedLstTst();
         break;
 
     default:
         type           = "feed forward input set";
         filenames      = Configuration::instance().feedForwardInputFiles();
         noiseDev       = Configuration::instance().inputNoiseSigma();
+	fileOrderedList= Configuration::instance().fileOrderedLstTst();
         break;
     }
 
@@ -952,7 +958,7 @@ boost::shared_ptr<data_sets::DataSet> loadDataSet(data_set_type dsType)
 		Configuration::instance().parallelSequences(), 
 		fraction,   truncSeqLength, 
 		fracShuf,   seqShuf,
-		noiseDev,   cachePath);
+		noiseDev,   cachePath,  fileOrderedList);
     
     printf("done.\n");
     printf("Loaded fraction:  %d%%\n",    (int)(fraction*100));
@@ -961,6 +967,8 @@ boost::shared_ptr<data_sets::DataSet> loadDataSet(data_set_type dsType)
 	                                  ds->maxSeqLength());
     printf("Total timesteps:  %lu\n",     ds->totalTimesteps());
 
+    if (fileOrderedList != "")
+	printf("Utterances ordered by list:  %s\n", fileOrderedList.c_str());
     // Note: Auxillary configuration will be used in DataSet.cpp.
     //       They are just shown here
     if (auxDataDir.size()>0){

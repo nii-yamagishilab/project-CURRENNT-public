@@ -244,6 +244,9 @@ Configuration::Configuration(int argc, const char *argv[])
 	("waveNetMemSave",
 	 po::value(&m_waveNetSaveMemFlag)->default_value(1),
 	 std::string("Use memory-save mode for WaveNet in generation? (default yes)").c_str())
+	("SoftmaxTemperature",
+	 po::value(&m_softmaxTemperature) ->default_value(1),
+	 "Temperature for softmax. Only used for generation")
 	;
     
     po::options_description trainingOptions("Training options");
@@ -502,6 +505,9 @@ Configuration::Configuration(int argc, const char *argv[])
         ("truncate_seq",      
 	 po::value(&m_truncSeqLength)    ->default_value(0),         
 	 "enables training sequence truncation to given maximum length (0 to disable)")
+        ("truncate_seq_n_segments",      
+	 po::value(&m_truncNsegments)    ->default_value(0),         
+	 "truncate sequence into n segments with roughly equal length (0 to disable)")	
         ("input_noise_sigma", 
 	 po::value(&m_inputNoiseSigma)   ->default_value((real_t)0), 
 	 "sets the standard deviation of the input noise for training sets")
@@ -637,9 +643,15 @@ Configuration::Configuration(int argc, const char *argv[])
 	("ExtInputReso",
 	 po::value(&m_exInputReso) ->default_value(-1),
 	 "External Input resolution configuration")
-	("SoftmaxTemperature",
-	 po::value(&m_softmaxTemperature) ->default_value(1),
-	 "Temperature for softmax. Only used for generation")
+	("file_ordered_lst_trn",
+	 po::value(&m_fileOrderedLstTrn) ->default_value(""),
+	 "Training files will be ordered according to the text file list")
+	("file_ordered_lst_val",
+	 po::value(&m_fileOrderedLstVal) ->default_value(""),
+	 "Validation files will be ordered according to the text file list")
+	("file_ordered_lst_tst",
+	 po::value(&m_fileOrderedLstTst) ->default_value(""),
+	 "Test set files will be ordered according to the text file list")
         ;
 
     po::options_description weightsInitializationOptions("Weight initialization options");
@@ -1669,4 +1681,19 @@ const int& Configuration::ARmodelSpecialGenMode() const{
 
 const int& Configuration::quickTestNetwork() const{
     return m_quickTestNetwork;
+}
+
+
+const std::string& Configuration::fileOrderedLstTrn() const{
+    return m_fileOrderedLstTrn;
+}
+const std::string& Configuration::fileOrderedLstVal() const{
+    return m_fileOrderedLstVal;
+}
+const std::string& Configuration::fileOrderedLstTst() const{
+    return m_fileOrderedLstTst;
+}
+
+unsigned Configuration::truncateSeqNSegments() const{
+    return m_truncNsegments;
 }

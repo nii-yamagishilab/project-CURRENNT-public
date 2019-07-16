@@ -26,6 +26,8 @@
 #include <boost/filesystem.hpp>
 #include <boost/thread.hpp>
 #include <boost/function.hpp>
+#include <boost/algorithm/string.hpp>
+#include <boost/lexical_cast.hpp>
 
 #include <thrust/functional.h>
 #include <thrust/fill.h>
@@ -492,6 +494,7 @@ namespace data_sets {
 	    assert (m_cacheFile.tellg() - seq.inputsBegin == v.size() * sizeof(real_t));
 	    return v;
 	    }*/
+	
 	Cpu::real_vector v(seq.length * m_inputPatternSize);
 	m_cacheFile.seekg(seq.inputsBegin);
 	m_cacheFile.read((char*)v.data(), sizeof(real_t) * v.size());
@@ -559,6 +562,7 @@ namespace data_sets {
         assert (m_cacheFile.tellg() - seq.auxDataBegin == v.size() * sizeof(real_t));
         return v;
     }
+    
     Cpu::pattype_vector DataSet::_loadAuxPattypeDataFromCache(const sequence_t &seq)
     {
         Cpu::pattype_vector v(seq.length * m_auxDataDim);
@@ -567,6 +571,7 @@ namespace data_sets {
         assert (m_cacheFile.tellg() - seq.auxDataBegin == v.size() * sizeof(char));
         return v;
     }
+    
     Cpu::int_vector DataSet::_loadAuxIntDataFromCache(const sequence_t &seq)
     {
         Cpu::int_vector v(seq.length * m_auxDataDim);
@@ -577,6 +582,9 @@ namespace data_sets {
     }
     
 
+
+
+    
     boost::shared_ptr<DataSetFraction> DataSet::_makeFractionTask(int firstSeqIdx)
     {
 	// This function load data into DataFrac
@@ -971,51 +979,12 @@ namespace data_sets {
         return _makeFractionTask(0);
     }
 
-    DataSet::DataSet()
-        : m_fractionShuffling(false)
-        , m_sequenceShuffling(false)
-        , m_noiseDeviation   (0)
-        , m_parallelSequences(0)
-        , m_totalSequences   (0)
-        , m_totalTimesteps   (0)
-        , m_minSeqLength     (0)
-        , m_maxSeqLength     (0)
-        , m_inputPatternSize (0)
-        , m_outputPatternSize(0)
-        , m_curFirstSeqIdx   (-1)
-	, m_exInputFlag      (false)
-	, m_exOutputFlag     (false)
-	, m_auxDirPath       ("")
-	, m_outputMVFlag     (false)
-    {
-    }
 
-    DataSet::DataSet(const std::vector<std::string> &ncfiles, 
-		     int parSeq, 
-		     real_t fraction, int truncSeqLength, 
-		     bool fracShuf,   bool seqShuf, 
-		     real_t noiseDev, std::string cachePath
-		     )
-        : m_fractionShuffling(fracShuf)
-        , m_sequenceShuffling(seqShuf)
-        , m_noiseDeviation   (noiseDev)
-        , m_parallelSequences(parSeq)
-        , m_totalTimesteps   (0)
-        , m_minSeqLength     (std::numeric_limits<int>::max())
-        , m_maxSeqLength     (std::numeric_limits<int>::min())
-        , m_curFirstSeqIdx   (-1)
-	, m_outputMVFlag     (false)
+    // Load auxillary data options
+    void DataSet::_loadAuxDataOptions()
     {
-        int ret;
-        int ncid;
-	int quick_net_test_utt_num = 0;
+	const Configuration &config = Configuration::instance();
 	
-        if (fraction <= 0 || fraction > 1)
-            throw std::runtime_error("Invalid fraction");
-
-	/* --- Preparation --- */
-	// Add 1111: Prepare the auxillary data 
-	static Configuration config = Configuration::instance();
 	// path to load auxillary data
 	m_auxDirPath         = config.auxillaryDataDir();
 	// file extenion of auxillary data fil
@@ -1025,11 +994,13 @@ namespace data_sets {
 	// type of auxillary datum (char, int, or float)
 	m_auxDataTyp         = config.auxillaryDataTyp();
 
-	// mode to test the network?
-	quick_net_test_utt_num = config.quickTestNetwork();
+    }
 
+    // Load external data options
+    void DataSet::_loadExternalDataOptions()
+    {
+	const Configuration &config = Configuration::instance();
 	
-	// Add 170327: Prepare the external input data
 	if (config.exInputDir().size() || config.exInputDirs().size()){
 	    if (config.exInputDim() > 0){
 		// Obsolete 
@@ -1058,7 +1029,7 @@ namespace data_sets {
 		m_exInputFlag = true;
 
 		// data type: see Macro definition on the top of this page
-		if (config.exInputType() == 2)
+		if (config.exInputType() == DATASET_EXINPUT_TYPE_2)
 		    m_exInputType = DATASET_EXINPUT_TYPE_2;
 		else
 		    m_exInputType = DATASET_EXINPUT_TYPE_1;
@@ -1098,7 +1069,7 @@ namespace data_sets {
 		throw std::runtime_error("ExOutput options unequal length");
 	    m_exOutputFlag = true;
 	    
-	    if (config.exOutputType() == 2)
+	    if (config.exOutputType() == DATASET_EXINPUT_TYPE_2)
 		m_exOutputType = DATASET_EXINPUT_TYPE_2;
 	    else
 		m_exOutputType = DATASET_EXINPUT_TYPE_1;
@@ -1114,8 +1085,14 @@ namespace data_sets {
 	    m_exOutputReso = -1;
 	}
 
+	// Done
+    }
 
-	// Load the time resolution options
+    // Load resolution options
+    void DataSet::_loadResolutionOptions()
+    {
+	const Configuration &config = Configuration::instance();
+	
 	if (Configuration::instance().resolutions().size()){
 	    Cpu::int_vector temp;
 	    misFuncs::ParseIntOpt(Configuration::instance().resolutions(), temp);
@@ -1130,30 +1107,193 @@ namespace data_sets {
 		    throw std::runtime_error("ExtOutputReso uses a value not in --resolutions");
 	    }
 	    
-	}else
+	}else{
 	    m_resolutionBuf.clear();
+	}
+    }
 
-	
-        // Preparation: load cache data pointer
+    // Preparation: load cache data pointer
+    void DataSet::_setCacheOptions(const std::string cachePath)
+    {
+	const Configuration &config = Configuration::instance();
+
         std::string tmpFileName = "";
-        if (cachePath == "")
+        if (cachePath == ""){
             tmpFileName = (boost::filesystem::temp_directory_path() / 
 			   boost::filesystem::unique_path()).string();
-        else
+        }else{
             tmpFileName = cachePath + "/" + (boost::filesystem::unique_path()).string();
+	}
+	
         std::cerr << std::endl << "using cache file: " << tmpFileName << std::endl << "... ";
+	
         m_cacheFileName = tmpFileName;
+	
         m_cacheFile.open(tmpFileName.c_str(), 
 			 std::fstream::in | std::fstream::out | 
 			 std::fstream::binary | std::fstream::trunc);
+	
         if (!m_cacheFile.good())
             throw std::runtime_error(std::string("Cannot open temporary file '") + 
 				     tmpFileName + "'");
 
+    }
+
+
+    
+    void DataSet::_loadTxtList(const std::string fileOrderedLst)
+    {
+	// Open the File
+	std::ifstream in(fileOrderedLst.c_str());
+
+	// Check if object is valid
+	if(!in) throw std::runtime_error(std::string("Fail to open ") + fileOrderedLst);
+	
+	std::string str;
+	std::vector<std::string> tokens;
+	seqOrdered_unt tmp_seq;
+	
+	while (std::getline(in, str)){
+	    if(str.size() > 0){
+		boost::split(tokens, str, boost::is_any_of(" "));
+		if (tokens.size() == 2){
+		    try{
+			tmp_seq.seqTag = tokens[0];
+			tmp_seq.originalSeqIdx = boost::lexical_cast<int>(tokens[1]);
+			m_seqOrderVec.push_back(tmp_seq);
+		    }catch (boost::bad_lexical_cast&){
+			throw std::runtime_error(std::string("Fail to parse: ") + str);
+		    }
+		}else if (tokens.size() == 1){
+		    tmp_seq.seqTag = tokens[0];
+		    tmp_seq.originalSeqIdx = 0;
+		    m_seqOrderVec.push_back(tmp_seq);
+		}else{
+		    throw std::runtime_error(std::string("Fail to parse: ") + str);
+		}
+	    }
+	}
+	
+	//Close The File
+	in.close();
+	// Done
+    }
+        
+    void DataSet::_orderSeq()
+    {
+	m_totalTimesteps = 0;
+	bool tmp_flag;
+	std::vector<sequence_t> tmp_sequences;
+
+	std::cerr << "\nRe-ordering segments lists" << std::endl;
+	for (std::vector<seqOrdered_unt>::const_iterator fileNameItr = m_seqOrderVec.begin();
+	     fileNameItr != m_seqOrderVec.end(); ++fileNameItr){
+
+	    tmp_flag = false;
+	    for (std::vector<sequence_t>::const_iterator seqItr = m_sequences.begin();
+		 seqItr != m_sequences.end(); ++seqItr){
+		if (seqItr->seqTag == fileNameItr->seqTag &&
+		    seqItr->originalSeqIdx == fileNameItr->originalSeqIdx){
+		    tmp_sequences.push_back((*seqItr));
+		    m_totalTimesteps += seqItr->length;
+		    tmp_flag = true;
+		    break;
+		}
+	    }
+	    if (tmp_flag == false && m_quick_network_test_num == 0){
+		std::cerr << "Unfound segment " << fileNameItr->seqTag << " ";
+		std::cerr << fileNameItr->originalSeqIdx << std::endl;
+	    }else if (tmp_flag == true && m_quick_network_test_num > 0){
+		std::cerr << "Load segment " << fileNameItr->seqTag << " ";
+		std::cerr << fileNameItr->originalSeqIdx << std::endl;
+	    }else{
+		// do nothing
+	    }
+		
+	}
+	m_sequences = tmp_sequences;
+	return;
+    }
+    
+    DataSet::DataSet()
+        : m_fractionShuffling(false)
+        , m_sequenceShuffling(false)
+        , m_noiseDeviation   (0)
+        , m_parallelSequences(0)
+        , m_totalSequences   (0)
+        , m_totalTimesteps   (0)
+        , m_minSeqLength     (0)
+        , m_maxSeqLength     (0)
+        , m_inputPatternSize (0)
+        , m_outputPatternSize(0)
+        , m_curFirstSeqIdx   (-1)
+	, m_exInputFlag      (false)
+	, m_exOutputFlag     (false)
+	, m_auxDirPath       ("")
+	, m_outputMVFlag     (false)
+    {
+    }
+
+    DataSet::DataSet(const std::vector<std::string> &ncfiles, 
+		     int parSeq, 
+		     real_t fraction, int truncSeqLength, 
+		     bool fracShuf,   bool seqShuf, 
+		     real_t noiseDev, std::string cachePath,
+		     std::string fileOrderedLst
+		     )
+        : m_fractionShuffling(fracShuf)
+        , m_sequenceShuffling(seqShuf)
+        , m_noiseDeviation   (noiseDev)
+        , m_parallelSequences(parSeq)
+        , m_totalTimesteps   (0)
+        , m_minSeqLength     (std::numeric_limits<int>::max())
+        , m_maxSeqLength     (std::numeric_limits<int>::min())
+        , m_curFirstSeqIdx   (-1)
+	, m_outputMVFlag     (false)
+    {
+
+	if (fraction <= 0 || fraction > 1)
+            throw std::runtime_error("Invalid fraction");
+
+	/* --------------- Preparation ---------------- */
+	// load the options
+	static Configuration config = Configuration::instance();
+
+	// flag for nc file I/O
+	int ret;
+        int ncid;
+	
+	// quick network testing mode?
+	m_quick_network_test_num = config.quickTestNetwork();
+
+	// truncate sequence into N equal length segments
+	int truncNseg = config.truncateSeqNSegments();
+	
+	// load auxillary data options
+	this->_loadAuxDataOptions();
+
+	// load external data options
+	this->_loadExternalDataOptions();
+
+	// load resolution options
+	this->_loadResolutionOptions();
+	
+	// set cache options
+	this->_setCacheOptions(cachePath);
+	
+	// load the ordered list of file names
+	this->m_seqOrderVec.clear();
+	if (fileOrderedLst != "")
+	    this->_loadTxtList(fileOrderedLst);
+	
+	if (truncNseg > 0){
+	    truncSeqLength = 0;
+	    printf("\nTurn on utterance truncation into %d segments", truncNseg);
+	}
 
 	
-	/* --- Read in the data --- */
 	
+	/* -------------- Read in the data ---------------- */
 	// Read *.nc files
         bool first_file = true;
         for (std::vector<std::string>::const_iterator nc_itr = ncfiles.begin();
@@ -1218,8 +1358,8 @@ namespace data_sets {
                 int targetsBegin = 0;
 
 		// if test the network, only load one utterance
-		if (quick_net_test_utt_num) {
-		    nSeq = quick_net_test_utt_num;
+		if (m_quick_network_test_num > 0) {
+		    nSeq = m_quick_network_test_num;
 		    std::cout << std::endl << "Network checking mode" << std::endl;
 		}
 
@@ -1240,6 +1380,12 @@ namespace data_sets {
 		    
 		    // truncate sequence based on truncSeqLength
 		    // if truncSeqLength == 0, whole sequence is treated as one segment
+
+		    // truncate sequence into N segments of equal length
+		    if (truncNseg > 0)
+			truncSeqLength = seqLength / truncNseg +
+			    ((seqLength % truncNseg) > 0 ? 1 : 0);
+		    
                     int k = 0;
 		    int rePosInUtt = 0;
                     while (seqLength > 0) {
@@ -1248,10 +1394,17 @@ namespace data_sets {
 			// index of the segment within utterance
                         seq.originalSeqIdx = k;
 			// length of the segment
-                        if (truncSeqLength > 0 && seqLength > 1.5 * truncSeqLength) 
-                            seq.length         = std::min(truncSeqLength, seqLength);
-                        else
-                            seq.length = seqLength;
+			if (fileOrderedLst == ""){
+			    if (truncSeqLength > 0 && seqLength > 1.5 * truncSeqLength)
+				seq.length         = std::min(truncSeqLength, seqLength);
+			    else
+				seq.length = seqLength;
+			}else{
+			    if (truncSeqLength > 0 && seqLength > truncSeqLength)
+				seq.length         = std::min(truncSeqLength, seqLength);
+			    else
+				seq.length = seqLength;
+			}
 			// name of the sequence
                         seq.seqTag         = seqTag;
 			// location of the segment in original sequence (frame index)
@@ -1645,14 +1798,28 @@ namespace data_sets {
             first_file = false;
 
 	    // for network test mode, only read one nc file
-	    if (quick_net_test_utt_num) break;
+	    if (m_quick_network_test_num > 0) break;
 	    
         } // nc file loop
 
-        m_totalSequences = m_sequences.size();
-        // sort sequences by length
-        if (Configuration::instance().trainingMode())
-            std::sort(m_sequences.begin(), m_sequences.end(), internal::comp_seqs);
+	
+	if (this->m_seqOrderVec.size()>0){
+	    // sort the sequence according to the ordered file list
+	    this->_orderSeq();
+	    
+	    // turn off shuffling
+	    this->m_sequenceShuffling = false;
+	    this->m_fractionShuffling = false;
+	    
+	}else if (Configuration::instance().trainingMode()){
+	    // otherwise, sort the utterance in length for training
+	    std::sort(m_sequences.begin(), m_sequences.end(), internal::comp_seqs);
+	    
+	}else{
+	    // otherwise, do nothing
+	}
+
+	m_totalSequences = m_sequences.size();
     }
 
     DataSet::~DataSet()

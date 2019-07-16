@@ -74,6 +74,7 @@ namespace {
      Utilities
     ******************************************/
     // copy segment
+    
     /*
     struct CopyPartMiddleOutput
     {
@@ -151,7 +152,8 @@ namespace {
 
         const char *patTypes;
 
-        __host__ __device__ real_t operator() (const thrust::tuple<real_t, real_t, int> &values) const
+        __host__ __device__ real_t operator() (const thrust::tuple<real_t,
+					       real_t, int> &values) const
         {
             // unpack the tuple
             real_t target = values.get<0>();
@@ -253,48 +255,61 @@ namespace layers{
 	, m_state     (UNKNOWN)
 	, m_ganRatio  (0.001)  
     {
-	m_dataOutputDim     = (layerChild->HasMember("dataOutputDim")) ? 
-			       (*layerChild)["dataOutputDim"].GetInt() : (-1);
+	/* ------------ configurations ------------ */
+	// dimension of this layer
+	//  note: m_dataOutput must be equal to this->size().
+	//  it can be different from this->size() in an obsolete configuration
+	m_dataOutputDim     = (layerChild->HasMember("dataOutputDim") ? 
+			       (*layerChild)["dataOutputDim"].GetInt() : (this->size()));
+
+	// weight for GAN training criterion (see *.hpp)
 	m_ganRatio          = (layerChild->HasMember("ganRatio") ? 
 			       static_cast<real_t>((*layerChild)["ganRatio"].GetDouble()) :0.8);
+	
+	// weight to enhance the gradient from discriminator (see *.hpp)
 	m_ganGradEnhance    = (layerChild->HasMember("ganGradMag") ? 
 			       static_cast<real_t>((*layerChild)["ganGradMag"].GetDouble()) :10.0);
 
+	
 	/*m_generatorEpoch    = (layerChild->HasMember("generator_only")) ? 
 			       (*layerChild)["generator_only"].GetInt() : (-1);
 	m_discriminatorEpoch= (layerChild->HasMember("discriminator_only")) ? 
 	(*layerChild)["discriminator_only"].GetInt() : (-1);*/
 
-	if (m_ganRatio > 1.0005 || m_ganRatio < 0.0000){
+	/* ------------- Check ------------------ */
+	if (m_ganRatio > 1.0001 || m_ganRatio < 0.0000)
 	    throw std::runtime_error("ganRatio must be within (0, 1]");
-	}
 	
-	if (m_dataOutputDim > 0 && m_dataOutputDim != this->size()){
+	if (m_dataOutputDim > 0 && m_dataOutputDim != this->size())
 	    throw std::runtime_error("Error dataOutputDim in middleoutput layer");
-	}	
-	
-	m_natPriDim     = this->size();
+
+	if (this->precedingLayer().getSaveMemoryFlag())
+	    throw std::runtime_error("layer before MiddleOutput is reduced in mem");
+
+	// In currennt implementation, m_natPriDim = this->size(), m_natSecDim = 0
+	m_natPriDim  = this->size();
 	if (m_dataOutputDim > 0) {
 	    m_natSecDim     = m_dataOutputDim - m_natPriDim;
 	    if (m_natSecDim){
-		// This part is here secondary output. It is not used now
+		// oboslete
 		m_natSecTarget.reserve(this->outputs().size() / m_natPriDim * m_natSecDim);
 		thrust::fill(m_natSecTarget.begin(), m_natSecTarget.end(), 0.0);
-	    }else
+	    }else{
 		m_natSecTarget.clear();
+	    }
 	}
+
+	// allocate buffer for m_natPriTarget
 	m_natPriTarget  = this->outputs();
-	
+
+	// allocate buffer for target sequence
 	m_stateRandom.resize(this->outputs().size() / m_natPriDim, 0.0);
 
-	// print the information
+	/* ----------------- Print ----------------*/
 	printf("\n\tGAN configure: ganRatio %f, ganGradMag %f\n", m_ganRatio, m_ganGradEnhance);
 	printf("\n\tGAN criterion: (1 - ganRatio) * 0.5 * (synthetic - natural) ^ 2 + ");
 	printf("ganRatio * ganGradMag * Loss_of_discriminator\n");
 	
-	if (this->precedingLayer().getSaveMemoryFlag())
-	    throw std::runtime_error("layer before MiddleOutput is reduced in mem");
-
     }
 
     template <typename TDevice>
@@ -307,8 +322,8 @@ namespace layers{
 						   const int nnState)
     {
 	Layer<TDevice>::loadSequences(fraction, nnState);
-
-	/*
+	
+	/* 
 	if (this->getCurrTrainingEpoch() <= m_generatorEpoch){
 	    m_state = GENERATOR_ONLY;
 	}else if (this->getCurrTrainingEpoch() <= (m_generatorEpoch + m_discriminatorEpoch)){
@@ -317,30 +332,41 @@ namespace layers{
 	    m_state = JOINT_TRAIN;
 	}*/
 
+	// check
+	if (this->_outputs().empty() || m_natPriTarget.empty())
+	    throw std::runtime_error("Error no output buffer in middleoutput");
+
+	// tmp: a temporary CPU-vector buffer to store 1/0 flags
 	cpu_real_vector tmp(m_stateRandom);
+
+	// Note: nnState is decided by NeuralNetwork->updateNNState()
 	if (nnState == NN_STATE_GAN_DIS_GENDATA || nnState == NN_STATE_GAN_DIS_NATDATA){
-	    // This is discriminator-training epoch
+	    
+	    // This is the training step to update discrminator
 	    m_state = DISCRIMINATOR_ONLY;
 
-	    // Set the random 1/0 sequence to mix the natural and generated output
-	    // P > 0.5: use natural   output
-	    //    else: use generated output
 	    if (nnState == NN_STATE_GAN_DIS_NATDATA){
+		// the input to discriminator will be natural data
 		thrust::fill(tmp.begin(), tmp.end(), 1.0);
 	    }else{
+		// the input to discriminator will be generated data
 		thrust::fill(tmp.begin(), tmp.end(), 0.0);
 	    }
-	    //for (int i = 0; i < (this->curMaxSeqLength() * this->parallelSequences()); i++)
-	    //tmp[i] = (GetRandomNumber() > 0.5) ? (1.0) : (0.0);
+	    
+	    // for (int i = 0; i < (this->curMaxSeqLength() * this->parallelSequences()); i++)
+	    // tmp[i] = (GetRandomNumber() > 0.5) ? (1.0) : (0.0);
 	    
 	}else if (nnState == NN_STATE_GAN_GEN || nnState == NN_STATE_GAN_GEN_FEATMAT){
 	    
 	    // This is the genrator-training epoch
 	    m_state = GENERATOR_ONLY;
-	    // use all generated output
+	    
+	    // this layer will load generated output
 	    thrust::fill(tmp.begin(), tmp.end(), 0.0);
 	    
 	}else if (nnState == NN_STATE_GENERATION_STAGE){
+
+	    // this is for generation
 	    printf(" for generation");
 	    m_state = GENERATOR_ONLY;                  // any value is OK
 	    thrust::fill(tmp.begin(), tmp.end(), 0.0); // any value is OK
@@ -349,23 +375,28 @@ namespace layers{
 	    throw std::runtime_error("Error unknown nnState");
 	}
 	m_stateRandom = tmp;
-	
-	if (this->_outputs().empty() || m_natPriTarget.empty())
-	    throw std::runtime_error("Error no output buffer in middleoutput");
 
+	// Load natural data into the buffer m_natPriTarget
 	if (fraction.outputPatternSize() == this->size()){
+	    // when the natural data are included in *.nc files
 	    thrust::copy(fraction.outputs().begin(), fraction.outputs().end(),
 			 m_natPriTarget.begin());
+	    
 	}else if (fraction.externalOutputSize() == this->size()){
+	    // when the natural data are provided in external data files
+	    // load the data using the same method as PostOutputLayer->loadSequences()
+
+	    // A temporary buffer to load data and time step index
 	    this->_dataBuffer().resize(fraction.outputs().size() +
 				       fraction.exOutputData().size(), 0.0);
-	    thrust::copy(fraction.outputs().begin(),
-			 fraction.outputs().end(),
+	    // Load time step index
+	    thrust::copy(fraction.outputs().begin(),      fraction.outputs().end(),
 			 this->_dataBuffer().begin());
-	    thrust::copy(fraction.exOutputData().begin(),
-			 fraction.exOutputData().end(),
+	    // Load data block
+	    thrust::copy(fraction.exOutputData().begin(), fraction.exOutputData().end(),
 			 this->_dataBuffer().begin() + fraction.outputs().size());
-	
+
+	    // Load data according to the time step index
 	    internal::loadExternalData fn1;
 	    fn1.featureDim = fraction.externalOutputSize();
 	    fn1.paralNum   = this->parallelSequences();
@@ -380,67 +411,18 @@ namespace layers{
 		    
 	    int n = this->curMaxSeqLength() * this->parallelSequences() * this->size();
 	    thrust::for_each(
-			thrust::make_zip_iterator(
-				thrust::make_tuple(this->_outputs().begin(),
-						   thrust::counting_iterator<int>(0))),
-			thrust::make_zip_iterator(
-				thrust::make_tuple(this->_outputs().begin()           + n,
-						   thrust::counting_iterator<int>(0) + n)),
-			fn1);
-
+	       thrust::make_zip_iterator(thrust::make_tuple(this->_outputs().begin(),
+							    thrust::counting_iterator<int>(0))),
+	       thrust::make_zip_iterator(thrust::make_tuple(this->_outputs().begin()          + n,
+							    thrust::counting_iterator<int>(0) + n)),
+	       fn1);
+	    // Done
+	    
 	}else{
 	    throw std::runtime_error("MidlleOutputLayer size is not equal to the data dim");
 	}
-	
-	/*
-	// copy the output corresponding to this layer
-	{{
-	   
-	   internal::CopyPartMiddleOutput fn;
-	   fn.source   = helpers::getRawPointer(fraction.outputs());
-	   fn.target   = helpers::getRawPointer(m_natPriTarget);
-	   fn.srcDim   = this->m_dataOutputDim;
-	   fn.srcS     = 0;
-	   fn.copyDim  = m_natPriDim;
-	   fn.tarDim   = m_natPriDim;
-	   fn.tarS     = 0;
-	   fn.patTypes = helpers::getRawPointer(this->patTypes());
-	   
-	   int n = this->curMaxSeqLength() * this->parallelSequences() * m_natPriDim;
-	   thrust::for_each(
-		thrust::make_zip_iterator(
-			thrust::make_tuple(this->m_natPriTarget.begin(), 
-					   thrust::counting_iterator<int>(0))),
-		thrust::make_zip_iterator(
-			thrust::make_tuple(this->m_natPriTarget.begin() + n, 
-					   thrust::counting_iterator<int>(0) + n)),
-		fn);
-	   
-	   //
-	   if (m_natSecDim > 0){
-	       fn.source   = helpers::getRawPointer(fraction.outputs());
-	       fn.target   = helpers::getRawPointer(m_natSecTarget);
-	       fn.srcDim   = this->m_dataOutputDim;
-	       fn.srcS     = m_natPriDim;
-	       fn.copyDim  = m_natSecDim;
-	       fn.tarDim   = m_natSecDim;
-	       fn.tarS     = 0;
-	       fn.patTypes = helpers::getRawPointer(this->patTypes());
-	       
-	       n = this->curMaxSeqLength() * this->parallelSequences() * m_natSecDim;
-	       thrust::for_each(
-		thrust::make_zip_iterator(
-			thrust::make_tuple(this->m_natSecTarget.begin(), 
-					   thrust::counting_iterator<int>(0))),
-		thrust::make_zip_iterator(
-			thrust::make_tuple(this->m_natSecTarget.begin() + n, 
-					   thrust::counting_iterator<int>(0) + n)),
-		fn);
-	   }
-	   }}
-	*/
-	
-	// 
+
+	// Dust 01
     }
 
     template <typename TDevice>
@@ -448,6 +430,8 @@ namespace layers{
     {
 	// by default, use the sse criterion
 	//if (m_state == GEN_OUTPUT_EVALUATE){
+
+	// Calculate MSE error
 	{{
 	    internal::ComputeSseMiddleOutput fn;
 	    fn.layerSize = this->size();
@@ -475,6 +459,11 @@ namespace layers{
     template <typename TDevice>
     void MiddleOutputLayer<TDevice>::computeForwardPass(const int nnState)
     {
+	// Load natural or generated data as the output of this layer (i.e., input
+	//  to the discriminator)
+	
+	// Note: when previous layer is an MDNLayer, MDNLayer->computeForwardPass() will
+	//  generate output given the inferred data distribution
 	internal::InterweaveOutput fn;
 	fn.src1     = helpers::getRawPointer(this->precedingLayer().outputs());
 	fn.src2     = helpers::getRawPointer(m_natPriTarget);
@@ -497,32 +486,7 @@ namespace layers{
 			thrust::make_tuple(this->outputs().begin() + n, 
 					   thrust::counting_iterator<int>(0) + n)),
 		fn);
-	/*
-	if (m_state == JOINT_TRAIN || m_state == DISCRIMINATOR_ONLY){
-	    internal::InterweaveOutput fn;
-	    fn.src1     = helpers::getRawPointer(this->precedingLayer().outputs());
-	    fn.src2     = helpers::getRawPointer(m_natPriTarget);
-	    fn.featDim  = m_natPriDim;
-	    
-	    fn.tart     = helpers::getRawPointer(this->outputs());
-	    fn.random   = helpers::getRawPointer(m_stateRandom);
-	    fn.patTypes = helpers::getRawPointer(this->patTypes());
-	    
-	    int n = this->curMaxSeqLength() * this->parallelSequences() * m_natPriDim;
-	    thrust::for_each(
-		thrust::make_zip_iterator(
-			thrust::make_tuple(this->outputs().begin(), 
-					   thrust::counting_iterator<int>(0))),
-		thrust::make_zip_iterator(
-			thrust::make_tuple(this->outputs().begin() + n, 
-					   thrust::counting_iterator<int>(0) + n)),
-		fn);
-	}else if(m_state == GENERATOR_ONLY){
-	    thrust::fill(this->outputs().begin(), this->outputs().end(), 0.0);
-	}else{
-	    throw std::runtime_error("Unknown trainng state of middleoutputlayer");
-	}
-	*/
+	// Dust 02
     }
 
     template <typename TDevice>
@@ -538,60 +502,19 @@ namespace layers{
     template <typename TDevice>
     void MiddleOutputLayer<TDevice>::computeBackwardPass(const int nnState)
     {
-	/*
-	if (m_state == JOINT_TRAIN){
-	    
-	    internal::InterweaveOutput fn;
-	    fn.src1     = helpers::getRawPointer(this->outputErrors());
-	    fn.src2     = NULL;
-	    fn.featDim  = m_natPriDim;
-	    
-	    fn.tart     = helpers::getRawPointer(this->precedingLayer().outputErrors());
-	    fn.random   = helpers::getRawPointer(m_stateRandom);
-	    fn.patTypes = helpers::getRawPointer(this->patTypes());
-	    
-	    int n = this->curMaxSeqLength() * this->parallelSequences() * m_natPriDim;
-	    thrust::for_each(
-		thrust::make_zip_iterator(
-			thrust::make_tuple(this->outputs().begin(), 
-					   thrust::counting_iterator<int>(0))),
-		thrust::make_zip_iterator(
-			thrust::make_tuple(this->outputs().begin() + n, 
-					   thrust::counting_iterator<int>(0) + n)),
-		fn);
-	    
-	}else if (m_state == GENERATOR_ONLY){
-	    
-	    internal::ComputeOutputErrorFnMiddleOutput fn;
-	    fn.layerSize = this->size();
-	    fn.patTypes  = helpers::getRawPointer(this->patTypes());
+	// Dust 03
 
-	    int n = this->curMaxSeqLength() * this->parallelSequences() * this->size();
-
-	    thrust::transform(
-               thrust::make_zip_iterator(
-		thrust::make_tuple(this->precedingLayer().outputs().begin(),
-				   this->m_natPriTarget.begin(),
-				   thrust::counting_iterator<int>(0))),
-	       thrust::make_zip_iterator(
-		thrust::make_tuple(this->precedingLayer().outputs().begin() + n,
-				   this->m_natPriTarget.begin() + n,
-				   thrust::counting_iterator<int>(0) + n)),
-	       this->precedingLayer().outputErrors().begin(),
-	       fn);
-	    
-	}else if (m_state == DISCRIMINATOR_ONLY){
-	    thrust::fill(this->precedingLayer().outputErrors().begin(),
-			 this->precedingLayer().outputErrors().end(), 0.0);
-	    // undefined state
-	}else{
-	    throw std::runtime_error("Unknown trainng state of middleoutputlayer");	    
-	    }*/
-
+	// Not: when generator is trained, the gradients for discrminator should
+	//  be removed after this step.
+	//  This is conducted in NeuralNetwork->cleanGradientsForDiscriminator()
+	
 	if (m_state == DISCRIMINATOR_ONLY){
+	    // if only discrminator is trained, don't propagate gradients to generator
 	    thrust::fill(this->precedingLayer().outputErrors().begin(),
 			 this->precedingLayer().outputErrors().end(), 0.0);
+	    
 	}else if (m_state == GENERATOR_ONLY){
+	    // if generator is trained, calculate gradients
 	    internal::ComputeOutputErrorWithGAN fn;
 	    fn.layerSize = this->size();
 	    fn.patTypes  = helpers::getRawPointer(this->patTypes());
@@ -654,9 +577,136 @@ namespace layers{
 	(*layersArray)[layersArray->Size() - 1].AddMember("ganGradMag",
 							  m_ganGradEnhance, allocator);
     }
-
     
     template class MiddleOutputLayer<Cpu>;
     template class MiddleOutputLayer<Gpu>;
     
 }
+
+
+
+/* Dust 01
+ // copy the output corresponding to this layer
+	{{
+	   
+	   internal::CopyPartMiddleOutput fn;
+	   fn.source   = helpers::getRawPointer(fraction.outputs());
+	   fn.target   = helpers::getRawPointer(m_natPriTarget);
+	   fn.srcDim   = this->m_dataOutputDim;
+	   fn.srcS     = 0;
+	   fn.copyDim  = m_natPriDim;
+	   fn.tarDim   = m_natPriDim;
+	   fn.tarS     = 0;
+	   fn.patTypes = helpers::getRawPointer(this->patTypes());
+	   
+	   int n = this->curMaxSeqLength() * this->parallelSequences() * m_natPriDim;
+	   thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple(this->m_natPriTarget.begin(), 
+					   thrust::counting_iterator<int>(0))),
+		thrust::make_zip_iterator(
+			thrust::make_tuple(this->m_natPriTarget.begin() + n, 
+					   thrust::counting_iterator<int>(0) + n)),
+		fn);
+	   
+	   //
+	   if (m_natSecDim > 0){
+	       fn.source   = helpers::getRawPointer(fraction.outputs());
+	       fn.target   = helpers::getRawPointer(m_natSecTarget);
+	       fn.srcDim   = this->m_dataOutputDim;
+	       fn.srcS     = m_natPriDim;
+	       fn.copyDim  = m_natSecDim;
+	       fn.tarDim   = m_natSecDim;
+	       fn.tarS     = 0;
+	       fn.patTypes = helpers::getRawPointer(this->patTypes());
+	       
+	       n = this->curMaxSeqLength() * this->parallelSequences() * m_natSecDim;
+	       thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple(this->m_natSecTarget.begin(), 
+					   thrust::counting_iterator<int>(0))),
+		thrust::make_zip_iterator(
+			thrust::make_tuple(this->m_natSecTarget.begin() + n, 
+					   thrust::counting_iterator<int>(0) + n)),
+		fn);
+	   }
+	   }}
+*/
+
+/* Dust 02
+	if (m_state == JOINT_TRAIN || m_state == DISCRIMINATOR_ONLY){
+	    internal::InterweaveOutput fn;
+	    fn.src1     = helpers::getRawPointer(this->precedingLayer().outputs());
+	    fn.src2     = helpers::getRawPointer(m_natPriTarget);
+	    fn.featDim  = m_natPriDim;
+	    
+	    fn.tart     = helpers::getRawPointer(this->outputs());
+	    fn.random   = helpers::getRawPointer(m_stateRandom);
+	    fn.patTypes = helpers::getRawPointer(this->patTypes());
+	    
+	    int n = this->curMaxSeqLength() * this->parallelSequences() * m_natPriDim;
+	    thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple(this->outputs().begin(), 
+					   thrust::counting_iterator<int>(0))),
+		thrust::make_zip_iterator(
+			thrust::make_tuple(this->outputs().begin() + n, 
+					   thrust::counting_iterator<int>(0) + n)),
+		fn);
+	}else if(m_state == GENERATOR_ONLY){
+	    thrust::fill(this->outputs().begin(), this->outputs().end(), 0.0);
+	}else{
+	    throw std::runtime_error("Unknown trainng state of middleoutputlayer");
+	}
+*/
+
+
+/* Dust 03
+   if (m_state == JOINT_TRAIN){
+	    
+	    internal::InterweaveOutput fn;
+	    fn.src1     = helpers::getRawPointer(this->outputErrors());
+	    fn.src2     = NULL;
+	    fn.featDim  = m_natPriDim;
+	    
+	    fn.tart     = helpers::getRawPointer(this->precedingLayer().outputErrors());
+	    fn.random   = helpers::getRawPointer(m_stateRandom);
+	    fn.patTypes = helpers::getRawPointer(this->patTypes());
+	    
+	    int n = this->curMaxSeqLength() * this->parallelSequences() * m_natPriDim;
+	    thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple(this->outputs().begin(), 
+					   thrust::counting_iterator<int>(0))),
+		thrust::make_zip_iterator(
+			thrust::make_tuple(this->outputs().begin() + n, 
+					   thrust::counting_iterator<int>(0) + n)),
+		fn);
+	    
+	}else if (m_state == GENERATOR_ONLY){
+	    
+	    internal::ComputeOutputErrorFnMiddleOutput fn;
+	    fn.layerSize = this->size();
+	    fn.patTypes  = helpers::getRawPointer(this->patTypes());
+
+	    int n = this->curMaxSeqLength() * this->parallelSequences() * this->size();
+
+	    thrust::transform(
+               thrust::make_zip_iterator(
+		thrust::make_tuple(this->precedingLayer().outputs().begin(),
+				   this->m_natPriTarget.begin(),
+				   thrust::counting_iterator<int>(0))),
+	       thrust::make_zip_iterator(
+		thrust::make_tuple(this->precedingLayer().outputs().begin() + n,
+				   this->m_natPriTarget.begin() + n,
+				   thrust::counting_iterator<int>(0) + n)),
+	       this->precedingLayer().outputErrors().begin(),
+	       fn);
+	    
+	}else if (m_state == DISCRIMINATOR_ONLY){
+	    thrust::fill(this->precedingLayer().outputErrors().begin(),
+			 this->precedingLayer().outputErrors().end(), 0.0);
+	    // undefined state
+	}else{
+	throw std::runtime_error("Unknown trainng state of middleoutputlayer");	    
+}*/

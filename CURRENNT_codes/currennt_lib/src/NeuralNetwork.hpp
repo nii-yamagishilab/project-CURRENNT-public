@@ -131,7 +131,6 @@ private:
     // vector of InterMetric layers
     std::vector<int> m_interMetricLayers;
     
-    
     // vector of temporary layer index used in AR dependency building
     std::vector<int> m_tmpLayerIdx;
 
@@ -150,6 +149,8 @@ private:
 
     int m_wavNetCoreFirstIdx;
     int m_dftLayerIdx;
+
+    int m_interWeaveIdx;
     
     network_helpers::networkDepMng m_networkMng;
 
