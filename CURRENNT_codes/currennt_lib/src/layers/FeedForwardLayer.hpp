@@ -42,27 +42,68 @@ namespace layers {
 	typedef typename TDevice::bool_vector bool_vector;
 	typedef typename TDevice::pattype_vector pattype_vector;
 	
-	bool m_batchNorm;            // whether to use batch normalization
-	int  m_batchNormGenUseTrainMV;
-
-	bool m_weightNorm;
-	real_t      m_weightNormVal;
+	bool m_batchNorm;                 // whether to use batch normalization
+	int  m_batchNormGenUseTrainMV;    // whether to use mean and std of training data to normalize
+                                          // the input test data?
+	
+	bool m_weightNorm;                // whether to use weight normalization (not fully test)
+	real_t      m_weightNormVal;      // 
 	real_t      m_weightNormGrad;
-	
-	real_vector m_stats;         // mean and variance of each batch
-	real_vector m_outNormed;     // normed data output without being scaled
-	
-	real_t      m_stdConst;      // const floor for the var
-	real_t      m_batchCnt;
-	// bool        m_trainFlag;  // replaced by m_flagTraining
-	int         m_preEpoch;
-	real_t      m_batchSize;     //
 
-	real_vector m_oneVector;     // all-one vector
-	real_vector m_buff;
+	bool m_layerNorm;                 // layer normalization
+	
+	real_vector m_stats;              // buffer to store mean and std
+	real_vector m_outNormed;          // normed data output without being scaled
+	
+	real_t      m_stdConst;           // const floor for the var
+	real_t      m_batchCnt;           // counter for batch normalization
+	
+	
+	int         m_preEpoch;           // epoch number counter
+	real_t      m_batchSize;          // number of data (frames) in a mini-batch
 
+	real_vector m_oneVector;          // temporary buffer to store a all-one vector
+	real_vector m_buff;               // temporary buffer
+
+
+
+	// common methods to allocate / release memory
 	void __allocateLocalMem();
 	void __clearLocalMem();
+
+	// initialization methods for different operation mode
+	void __batchnorm_ini(const helpers::JsonValue &weightsSection);
+	void __layernorm_ini(const helpers::JsonValue &weightsSection);
+	void __weightnorm_ini(const helpers::JsonValue &weightsSection);
+
+	// forward computation (normal case, given one sequence of input)
+	void __batchnorm_computeForwardPass(const int nnState);
+	void __weightnorm_computeForwardPass(const int nnState);
+	void __layernorm_computeForwardPass(const int nnState);
+	void __computeForwardPass(const int nnState);
+
+	// forward computation (online case, given one frame of input data per step)
+	void __batchnorm_computeForwardPass(const int timeStep, const int nnState,
+					    const int effTimeStart, const int effTimeEnd,
+					    const int shiftIn,      const int shiftOut);
+	void __weightnorm_computeForwardPass(const int timeStep, const int nnState,
+					     const int effTimeStart, const int effTimeEnd,
+					     const int shiftIn,      const int shiftOut);
+	void __layernorm_computeForwardPass(const int timeStep, const int nnState,
+					    const int effTimeStart, const int effTimeEnd,
+					    const int shiftIn,      const int shiftOut);
+	void __computeForwardPass(const int timeStep, const int nnState,
+				  const int effTimeStart, const int effTimeEnd,
+				  const int shiftIn,      const int shiftOut);
+
+
+	// backward computation sub-routines
+	void __batchnorm_computeBackwardPass(const int nnState);
+	void __weightnorm_computeBackwardPass_p1(const int nnState);
+	void __weightnorm_computeBackwardPass_p2(const int nnState);
+	void __layernorm_computeBackwardPass(const int nnState);
+	void __computeBackwardPass_bias(const int nnState);
+
 	
     public:
         /**
