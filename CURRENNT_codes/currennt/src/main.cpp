@@ -933,6 +933,7 @@ boost::shared_ptr<data_sets::DataSet> loadDataSet(data_set_type dsType)
         type           = "feed forward input set";
         filenames      = Configuration::instance().feedForwardInputFiles();
         noiseDev       = Configuration::instance().inputNoiseSigma();
+	truncSeqLength = Configuration::instance().truncateSeqLength();
 	fileOrderedList= Configuration::instance().fileOrderedLstTst();
         break;
     }

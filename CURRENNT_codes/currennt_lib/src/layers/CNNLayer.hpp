@@ -108,7 +108,8 @@ namespace layers {
 
 	int             m_1DCNNOnly;        // whether the CNN is only 1-D
 
-
+	int             m_repeatpadding;    // repeat the elements on the boundary for padding
+	
 	void  __allocateLocalMem();
 	void  __clearLocalMem();
 	

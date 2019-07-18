@@ -1514,7 +1514,7 @@ namespace layers{
 	    (*layersArray)[layersArray->Size() - 1].AddMember("dim_expand", m_dimExpand, allocator);
 	
 	if (m_shiftTime)
-	    (*layersArray)[layersArray->Size() - 1].AddMember("time_shift", m_dimExpand, allocator);
+	    (*layersArray)[layersArray->Size() - 1].AddMember("time_shift", m_shiftTime, allocator);
 	
 	if (m_changeTimeRes > 0)
 	    (*layersArray)[layersArray->Size() - 1].AddMember("changeResolution",

@@ -100,6 +100,9 @@ namespace{
 
 	int     causal;
 	int     outputTanh;
+
+	int     repeatPadding;
+	
         __host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
         {
 	    
@@ -129,12 +132,45 @@ namespace{
 	    for (int shift = -1 * winHS; shift <= ((causal>0)?0:winHS); shift += 1){
 		dTmp = (dimS + winHS) + shift;
 		tTmp = timeIdx + shift * inter * paral;
+
+
+		// For out-of-range elements, repeat the nearst element for padding
+		if (repeatPadding){
+		    // repeat the nearest valid element for padding
+		    if (tTmp < 0 || dTmp < dimS){
+			for (int shift_tmp = shift;
+			     shift_tmp <= ((causal>0)?0:winHS);
+			     shift_tmp += 1){
+			    dTmp = (dimS + winHS) + shift_tmp;
+			    tTmp = timeIdx + shift_tmp * inter * paral;
+			    if (tTmp < 0 && tTmp >= (maxSeqLength * paral) &&
+				patTypes[tTmp] == PATTYPE_NONE &&
+				dTmp < dimS && dTmp >= dimE)
+				break;
+			}
+		    }else if (tTmp >= (maxSeqLength * paral) || patTypes[tTmp] == PATTYPE_NONE ||
+			      dTmp >= dimE){
+			for (int shift_tmp = shift; shift_tmp >= -1*winHS; shift_tmp -= 1){
+			    dTmp = (dimS + winHS) + shift_tmp;
+			    tTmp = timeIdx + shift_tmp * inter * paral;
+			    if (tTmp < 0 && tTmp >= (maxSeqLength * paral) &&
+				patTypes[tTmp] == PATTYPE_NONE &&
+				dTmp < dimS && dTmp >= dimE)
+				break;
+			}
+		    }else{
+			// do nothing if the element is in the range
+		    }
+		}
+
 		
+		// if the element is out of range (still out of range after repeat padding)
 		if (tTmp < 0                       || tTmp >= (maxSeqLength * paral) ||
 		    patTypes[tTmp] == PATTYPE_NONE ||
-		    dTmp < dimS                    || dTmp >= dimE)
+		    dTmp < dimS                    || dTmp >= dimE){
 		    continue;
-
+		}
+		 
 		// accumulate the feature
 		maxValue += dataBuffer[tTmp * winTotalLength + dTmp];
 	    }
@@ -899,6 +935,10 @@ namespace layers {
 	// whether use tanh as activation function
 	m_outputTanh = (layerChild->HasMember("tanhoutput") ? 
 			static_cast<real_t>((*layerChild)["tanhoutput"].GetInt()) : 1);
+
+	// whether repeat the elements on the boundary for padding, rather than zero-padding
+	m_repeatpadding = (layerChild->HasMember("repeat_padding") ? 
+			   (*layerChild)["repeat_padding"].GetInt() : 0);
 	
 	if (m_winWidth_Opt.size() < 1)
 	    throw std::runtime_error("Fail to find window_width in network.jsn");
@@ -1165,6 +1205,9 @@ namespace layers {
 
 	    fn.causal           = this->m_causalFlag;
 	    fn.outputTanh       = this->m_outputTanh;
+
+	    fn.repeatPadding    = this->m_repeatpadding;
+	    
 	    int n =this->precedingLayer().curMaxSeqLength();
 	    n = n*this->precedingLayer().parallelSequences();
 	    n = n*this->size();
@@ -1345,6 +1388,9 @@ namespace layers {
 
 	    fn.causal           = this->m_causalFlag;
 	    fn.outputTanh       = this->m_outputTanh;
+
+	    fn.repeatPadding    = this->m_repeatpadding;
+
 	    int n =this->precedingLayer().curMaxSeqLength();
 	    n = n*this->precedingLayer().parallelSequences();
 	    n = n*this->size();
@@ -1596,7 +1642,11 @@ namespace layers {
 	(*layersArray)[layersArray->Size() - 1].AddMember("causal", m_causalFlag,
 							  allocator);
 	(*layersArray)[layersArray->Size() - 1].AddMember("tanhoutput", m_outputTanh,
-							  allocator);	
+							  allocator);
+	if (m_repeatpadding)
+	    (*layersArray)[layersArray->Size() - 1].AddMember("repeat_padding", m_repeatpadding,
+							      allocator);
+	// done
     }
 
 
