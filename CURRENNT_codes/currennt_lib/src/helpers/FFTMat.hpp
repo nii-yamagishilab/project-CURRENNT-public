@@ -80,17 +80,27 @@ namespace helpers {
 	       int fftLength, int fftBins, int batchSize);
 	~FFTMat();
 
+	// methods for FFT and iFFT
 	void FFT();
 	void iFFT();
+
+	// methods for framing and reverse-framing for gradients collection
 	void frameSignal();
 	void collectGrad(real_t gradScaleFactor);
 
+	// methods for spectral amplitude distances
 	void specAmpGrad(FFTMat<TDevice> &source, FFTMat<TDevice> &target);
 	real_t specAmpDistance(FFTMat<TDevice> &target, FFTMat<TDevice> &diff);
 
+	// methods for phase amplitude distances
 	void specPhaseGrad(FFTMat<TDevice> &source, FFTMat<TDevice> &target);
 	real_t specPhaseDistance(FFTMat<TDevice> &target, FFTMat<TDevice> &diff);
 
+	// methods to drive spectral amplitude to zero
+	void specAmpToZeroGrad();
+	real_t specAmpToZeroDistance();
+	
+	
 	void changeWindowType(const int windowType);
     };
 

@@ -44,11 +44,14 @@ namespace layers {
 	typedef typename Cpu::int_vector          cpu_int_vector;
 	
     private:
-	//    m_beta * waveform_MSE + m_gamma * spectral_amplitude_MSE + m_zeta * phase_MSE
+	//     m_beta * waveform_MSE + m_gamma * spectral_amplitude_MSE + m_zeta * phase_MSE
+	//   + m_eta  * residual_signal_spectral_amplitude
 	
 	real_t             m_beta;              // Weight for waveform MSE
 	real_t             m_gamma;             // Weight for DFT amplitude 
 	real_t             m_zeta;              // Weight for DFT phase
+	real_t             m_eta;               //
+	
 	real_t             m_mseError;          //
 	
 	int                m_preEmphasis;       // Whether preEmphasis the natural speech?
@@ -58,6 +61,7 @@ namespace layers {
 	// Short time STFT part (configurable))
 	real_t             m_specError;
 	real_t             m_phaseError;
+	real_t             m_resError;
 	int                m_fftLength;
 	int                m_fftBinsNum;
 	int                m_frameLength;
@@ -76,11 +80,14 @@ namespace layers {
 	real_vector        m_fftDiffFramed;
 	fft_vector         m_fftDiffSigFFT;
 
-	real_vector         m_fftDiffDataPhase;
+	real_vector        m_fftDiffDataPhase;
+	real_vector        m_fftResData;
 
+	
 	// Long time STFT 
 	real_t             m_specError2;
 	real_t             m_phaseError2;
+	real_t             m_resError2;
 	int                m_fftLength2;
 	int                m_fftBinsNum2;
 	int                m_frameLength2;
@@ -99,11 +106,13 @@ namespace layers {
 	real_vector        m_fftDiffFramed2;
 	fft_vector         m_fftDiffSigFFT2;
 
-	real_vector         m_fftDiffDataPhase2;
-
+	real_vector        m_fftDiffDataPhase2;
+	real_vector        m_fftResData2;
+	
 	// Long time STFT 
 	real_t             m_specError3;
 	real_t             m_phaseError3;
+	real_t             m_resError3;
 	int                m_fftLength3;
 	int                m_fftBinsNum3;
 	int                m_frameLength3;
@@ -123,7 +132,7 @@ namespace layers {
 	fft_vector         m_fftDiffSigFFT3;
 
 	real_vector        m_fftDiffDataPhase3;
-
+	real_vector        m_fftResData3;
 
 	// support for harmonic + noise model
 	int                m_hnm_flag;
@@ -143,6 +152,37 @@ namespace layers {
 	int  __vSize();
 	int  __vMaxSeqLength();
 	int  __vCurMaxSeqLength();
+
+	// methods for waveform pre-emphasis
+	void __preEmphasis(const int timeLength);
+	void __deEmphasis(const int timeLength);
+
+	// methods for flattenning multi-dimensional signal
+	void __flattenMultiDimSignalForward(const int timeLength);
+	void __flattenMultiDimSignalBackward(const int timeLength);
+
+	// obsolete methods for HNM training
+	void __hnmSpecialForward(const int timeLength, const int nnState);
+	void __hnmSpecialBackward(const int timeLength, const int nnState);
+
+	// methods for waveform MSE
+	real_t __waveformMseForward(const int timeLength);
+	void __waveformMseBackward(const int timeLength);
+
+	// methods for spectral, phase errors
+	real_t __specAmpDistance1(const int timeLength);
+	real_t __specAmpDistance2(const int timeLength);
+	real_t __specAmpDistance3(const int timeLength);
+
+	real_t __specPhaDistance1(const int timeLength);
+	real_t __specPhaDistance2(const int timeLength);
+	real_t __specPhaDistance3(const int timeLength);
+
+	real_t __specResAmpDistance1(const int timeLength);
+	real_t __specResAmpDistance2(const int timeLength);
+	real_t __specResAmpDistance3(const int timeLength);
+
+	
 	
     public:
         /**

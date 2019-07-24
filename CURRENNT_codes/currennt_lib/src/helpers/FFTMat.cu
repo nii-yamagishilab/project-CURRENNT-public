@@ -498,6 +498,18 @@ namespace {
     };
 
 
+    struct spectralAmpToZeroDistance
+    {
+	real_t factor;
+	
+	__host__ __device__ real_t operator() (const complex_t &t) const
+	{
+	    return (real_t)(t.x * t.x / factor + t.y * t.y / factor);
+	}
+    };
+
+    
+
     struct collectGrad
     {
 	int fftLength;
@@ -760,6 +772,29 @@ namespace helpers {
 	return distance;
     }
 
+
+
+    template <typename TDevice>
+    real_t FFTMat<TDevice>::specAmpToZeroDistance()
+    {
+	
+	// Spectral-distance averaged over (frameNum * fftBins)
+	real_t distance = 0.0;
+	{{
+		internal::spectralAmpToZeroDistance fn2;
+		
+		fn2.factor = fftTools::fftBinsNum(m_fftLength) * m_validFrameNum;
+		distance = thrust::transform_reduce((*m_fftData).begin(),
+						    (*m_fftData).begin() + (int)fn2.factor,
+						    fn2,
+						    (real_t)0,
+						    thrust::plus<real_t>());
+	}}
+	return distance;
+    }
+
+
+    
     template <typename TDevice>
     real_t FFTMat<TDevice>::specPhaseDistance(FFTMat<TDevice> &target, FFTMat<TDevice> &diff)
     {
@@ -932,6 +967,13 @@ namespace helpers {
 	      }
 	}
 	
+    }
+
+    template <typename TDevice>
+    void FFTMat<TDevice>::specAmpToZeroGrad()
+    {
+	// do nothing because the gradients of spectralAmpToZeroDistance is the FFT(resi)
+	return;
     }
 
     template <typename TDevice>
