@@ -212,6 +212,7 @@ namespace {
 	    }
 	}
     };
+
     struct PrepareGrad
     {
 	int    layerSize;
@@ -1852,6 +1853,9 @@ namespace layers {
 	if (m_batchNorm)
 	    (*layersArray)[layersArray->Size() - 1].AddMember("batchnorm",
 							      (int)m_batchNorm, allocator);
+	if (m_layerNorm)
+	    (*layersArray)[layersArray->Size() - 1].AddMember("layernorm",
+							      (int)m_layerNorm, allocator);
 	if (m_weightNorm)
 	    (*layersArray)[layersArray->Size() - 1].AddMember("weightnorm",
 							      (int)m_weightNorm, allocator);

@@ -554,7 +554,7 @@ int trainerMain(const Configuration &config)
 					    config.trainedParameterCtr());
 
 		printf("Save the network in '%s'... ",
-		       config.trainedNetworkFile().c_str());
+		       config.printWeightPath().c_str());
 		saveNetwork(neuralNetwork,
 			    config.printWeightPath(),// config.trainedNetworkFile(), 
 			    config.learningRate(),   

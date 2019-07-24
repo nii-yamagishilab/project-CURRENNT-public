@@ -79,6 +79,8 @@
 #include "layers/SseCosPostOutputLayer.hpp"
 #include "layers/InterWeaveLayer.hpp"
 #include "layers/MutualInforPostOutputLayer.hpp"
+#include "layers/LayerNorm.hpp"
+#include "layers/BatchNormNew.hpp"
 #include <stdexcept>
 
 
@@ -198,7 +200,31 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
     else if (layerType == "mutual_weave")
     	return new InterWeaveLayer<TDevice>(layerChild, weightsSection, *precedingLayer,
 					    maxSeqLength, layerID);
-    
+    else if (layerType == "layernorm_tanh")
+    	return new LayerNormLayer<TDevice, Tanh>(layerChild, weightsSection,
+						   *precedingLayer, maxSeqLength, layerID);
+    else if (layerType == "layernorm_logistic")
+    	return new LayerNormLayer<TDevice, Logistic>(layerChild, weightsSection,
+						       *precedingLayer, maxSeqLength, layerID);
+    else if (layerType == "layernorm")
+    	return new LayerNormLayer<TDevice, Identity>(layerChild, weightsSection,
+						       *precedingLayer, maxSeqLength, layerID);
+    else if (layerType == "layernorm_relu")
+    	return new LayerNormLayer<TDevice, Relu>(layerChild, weightsSection,
+						   *precedingLayer, maxSeqLength, layerID);
+    else if (layerType == "batchnorm_new_tanh")
+    	return new BatchNormNewLayer<TDevice, Tanh>(layerChild, weightsSection,
+						   *precedingLayer, maxSeqLength, layerID);
+    else if (layerType == "batchnorm_new_logistic")
+    	return new BatchNormNewLayer<TDevice, Logistic>(layerChild, weightsSection,
+						       *precedingLayer, maxSeqLength, layerID);
+    else if (layerType == "batchnorm_new")
+    	return new BatchNormNewLayer<TDevice, Identity>(layerChild, weightsSection,
+						       *precedingLayer, maxSeqLength, layerID);
+    else if (layerType == "batchnorm_new_relu")
+    	return new BatchNormNewLayer<TDevice, Relu>(layerChild, weightsSection,
+						   *precedingLayer, maxSeqLength, layerID);    
+
     else if (layerType == "sse"                       || layerType == "weightedsse"  || 
 	     layerType == "rmse"                      || layerType == "ce"  || 
 	     layerType == "wf"                        || layerType == "binary_classification" ||

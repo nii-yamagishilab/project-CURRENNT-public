@@ -1359,7 +1359,7 @@ namespace data_sets {
 
 		// if test the network, only load one utterance
 		if (m_quick_network_test_num > 0) {
-		    nSeq = m_quick_network_test_num;
+		    nSeq = std::min(nSeq, m_quick_network_test_num);
 		    std::cout << std::endl << "Network checking mode" << std::endl;
 		}
 
