@@ -44,12 +44,16 @@ Building on Linux requires the following:
    1 netcdf http://www.unidata.ucar.edu/software/netcdf/
        The version Xin Wang uses is 4.3.3.1.
        
-       For compatiblity,
-       please configure netCDF by "./configure --disable-netcdf-4" (you can add other options) 
+       For compatiblity, please do
+       $: ./configure --disable-netcdf-4 --prefix=PATH_TO_INSTALL
+       $: make
+       $: make install
 
+       Note that PATH_TO_INSTALL is the your path to store the bin and lib
+       
        After compiling, nc-config can be used to print the configuration of netCDF.
-
-       $ ./nc-config --all
+       
+       $: PATH_TO_INSTALL/nc-config --all
        This netCDF 4.3.3.1 has been built with the following features: 
 
         --cc        -> gcc
@@ -76,13 +80,17 @@ Building on Linux requires the following:
  	--prefix    -> /home/smg/wang/TOOL/bin/netcdf_220
  	--includedir-> /home/smg/wang/TOOL/bin/netcdf_220/include
  	--version   -> netCDF 4.3.3.1
-       
+
+	In my case, /home/smg/wang/TOOL/bin/netcdf_220 is my PATH_TO_INSTALL
+	
    2 Boost  (headers and compiled library) http://www.boost.org
        The version Xin Wang uses is boost_1_59_0.
        Although Boost is head-file library, some of the sub-libraries must be compiled.
        
-       Particularly, "program_options system filesystem random thread" should be compiled,
-        ./bootstrap.sh --with-libraries=program_options,filesystem,system,random,thread)
+       Particularly, "program_options system filesystem random thread" should be compiled.
+       Please do this:
+        $: ./bootstrap.sh --with-libraries=program_options,filesystem,system,random,thread
+	$: ./b2 --prefix=PATH_TO_INSTALL
 
    3 CUDA > 6.5
        The modified CURRENNT can be compiled with CUDA7.0, 8.0, 9.0, and 10.0.
@@ -97,8 +105,9 @@ To build CURRENNT execute:
    $: cp CMakeLists.txt_template CMakeLists.txt
 
    Please configure CMakeLists.txt
-   Change /home/smg/wang/TOOL/bin/boost_220 and /home/smg/wang/TOOL/bin/netcdf_220/lib
-   to the path of boost and netcdf lib on your machine
+   1. Change /home/smg/wang/TOOL/bin/boost_220 to PATH_TO_INSTALL, where you installed boost
+   2. Change /home/smg/wang/TOOL/bin/netcdf_220/lib to PATH_TO_INSTALL/lib, where PATH_TO_INSTALL
+      is the path you installed netcdf
 
 2. Make sure you are in the root directory of CURRENNT_codes:
    $: mkdir build && cd build
