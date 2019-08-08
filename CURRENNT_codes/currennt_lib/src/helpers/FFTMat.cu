@@ -45,7 +45,7 @@
 typedef cufftHandle *cufftHandle_t;
 
 #define FFT_PI_DEFINITION 3.141215
-#define FFT_KLD_FLOOR_NUM 0.00001
+#define FFT_KLD_FLOOR_NUM 0.0000000001
 #define FFT_AMP_MIN_NUM   0.0000001
 
 namespace internal{
@@ -69,6 +69,19 @@ namespace {
 	static int fftSize_local3 = 0;
 	static int batchSize_local3 = 0;
 
+	static cufftHandle cufftHandle_fft4 = 0;
+	static int fftSize_local4 = 0;
+	static int batchSize_local4 = 0;
+	
+	static cufftHandle cufftHandle_fft5 = 0;
+	static int fftSize_local5 = 0;
+	static int batchSize_local5 = 0;
+
+	static cufftHandle cufftHandle_fft6 = 0;
+	static int fftSize_local6 = 0;
+	static int batchSize_local6 = 0;
+
+	
 	if (!cufftHandle_fft){
 	    fftSize_local = fftSize;
 	    batchSize_local = batchSize;
@@ -105,6 +118,42 @@ namespace {
 	}else if (fftSize_local3 == fftSize && batchSize_local3 == batchSize){
 	    return &cufftHandle_fft3;
 	    
+	}else if (!cufftHandle_fft4){
+	    fftSize_local4 = fftSize;
+	    batchSize_local4 = batchSize;
+	    cufftResult res = cufftPlan1d(&cufftHandle_fft4, fftSize_local4,
+					  CUFFT_R2C, batchSize_local4);
+	    if (res != CUFFT_SUCCESS)
+		throw std::runtime_error("Error: could not create cufft plan");
+	    return &cufftHandle_fft4;
+	    
+	}else if (fftSize_local4 == fftSize && batchSize_local4 == batchSize){
+	    return &cufftHandle_fft4;
+	    
+	}else if (!cufftHandle_fft5){
+	    fftSize_local5 = fftSize;
+	    batchSize_local5 = batchSize;
+	    cufftResult res = cufftPlan1d(&cufftHandle_fft5, fftSize_local5,
+					  CUFFT_R2C, batchSize_local5);
+	    if (res != CUFFT_SUCCESS)
+		throw std::runtime_error("Error: could not create cufft plan");
+	    return &cufftHandle_fft5;
+	    
+	}else if (fftSize_local5 == fftSize && batchSize_local5 == batchSize){
+	    return &cufftHandle_fft5;
+	    
+	}else if (!cufftHandle_fft6){
+	    fftSize_local6 = fftSize;
+	    batchSize_local6 = batchSize;
+	    cufftResult res = cufftPlan1d(&cufftHandle_fft6, fftSize_local6,
+					  CUFFT_R2C, batchSize_local6);
+	    if (res != CUFFT_SUCCESS)
+		throw std::runtime_error("Error: could not create cufft plan");
+	    return &cufftHandle_fft6;
+	    
+	}else if (fftSize_local6 == fftSize && batchSize_local6 == batchSize){
+	    return &cufftHandle_fft6;
+	    
 	}else{
 	    throw std::runtime_error("Impossible");
 	}
@@ -136,6 +185,19 @@ namespace {
 	static int fftSize_local3 = 0;
 	static int batchSize_local3 = 0;
 
+	static cufftHandle cufftHandle_ifft4 = 0;
+	static int fftSize_local4 = 0;
+	static int batchSize_local4 = 0;
+	
+	static cufftHandle cufftHandle_ifft5 = 0;
+	static int fftSize_local5 = 0;
+	static int batchSize_local5 = 0;
+
+	static cufftHandle cufftHandle_ifft6 = 0;
+	static int fftSize_local6 = 0;
+	static int batchSize_local6 = 0;
+
+	
 	if (!cufftHandle_ifft){
 	    fftSize_local = fftSize;
 	    batchSize_local = batchSize;
@@ -171,6 +233,42 @@ namespace {
 	    
 	}else if (fftSize_local3 == fftSize && batchSize_local3 == batchSize){
 	    return &cufftHandle_ifft3;
+	    
+	}else if (!cufftHandle_ifft4){
+	    fftSize_local4 = fftSize;
+	    batchSize_local4 = batchSize;
+	    cufftResult res = cufftPlan1d(&cufftHandle_ifft4, fftSize_local4,
+					  CUFFT_C2R, batchSize_local4);
+	    if (res != CUFFT_SUCCESS)
+		throw std::runtime_error("Error: could not create cufft plan");
+	    return &cufftHandle_ifft4;
+	    
+	}else if (fftSize_local4 == fftSize && batchSize_local4 == batchSize){
+	    return &cufftHandle_ifft4;
+	    
+	}else if (!cufftHandle_ifft5){
+	    fftSize_local5 = fftSize;
+	    batchSize_local5 = batchSize;
+	    cufftResult res = cufftPlan1d(&cufftHandle_ifft5, fftSize_local5,
+					  CUFFT_C2R, batchSize_local5);
+	    if (res != CUFFT_SUCCESS)
+		throw std::runtime_error("Error: could not create cufft plan");
+	    return &cufftHandle_ifft5;
+	    
+	}else if (fftSize_local5 == fftSize && batchSize_local5 == batchSize){
+	    return &cufftHandle_ifft5;
+	    
+	}else if (!cufftHandle_ifft6){
+	    fftSize_local6 = fftSize;
+	    batchSize_local6 = batchSize;
+	    cufftResult res = cufftPlan1d(&cufftHandle_ifft6, fftSize_local6,
+					  CUFFT_C2R, batchSize_local6);
+	    if (res != CUFFT_SUCCESS)
+		throw std::runtime_error("Error: could not create cufft plan");
+	    return &cufftHandle_ifft6;
+	    
+	}else if (fftSize_local6 == fftSize && batchSize_local6 == batchSize){
+	    return &cufftHandle_ifft6;
 	    
 	}else{
 	    throw std::runtime_error("Impossible");
@@ -211,6 +309,86 @@ namespace {
 	}
     };
 
+
+    struct FrameMakeEvenSignal
+    {
+	int fftLength;   // dimension of frame (padded)
+	int frameLength;
+	int frameShift;
+	int windowType;  // now only implemented the hann window
+	
+	real_t *rawData;
+
+	__host__ __device__ void operator() (const thrust::tuple<real_t &, int> &t) const
+	{
+	    int frameIdx = t.get<1>() / fftLength;
+	    int framePos = t.get<1>() % fftLength;
+
+	    if (framePos < frameLength){
+		// real data in each frame
+
+		// Hann window by default
+		if (windowType == FFTMAT_WINDOW_SQUARE)
+		    t.get<0>() = rawData[frameIdx * frameShift + framePos];
+		else
+		    t.get<0>() = rawData[frameIdx * frameShift + framePos] *
+			0.5 * (1 - cos(2.0 * FFT_PI_DEFINITION * framePos / (frameLength - 1)));
+
+		if (framePos > 0)
+		    t.get<0>() = t.get<0>() * 0.5;
+		
+	    }else if (framePos < fftLength && framePos > (fftLength - frameLength)){
+
+		// mirror the signal
+		framePos = fftLength - framePos;
+		if (windowType == FFTMAT_WINDOW_SQUARE)
+		    t.get<0>() = rawData[frameIdx * frameShift + framePos];
+		else
+		    t.get<0>() = rawData[frameIdx * frameShift + framePos] *
+			0.5 * (1 - cos(2.0 * FFT_PI_DEFINITION * framePos / (frameLength - 1)));
+		
+		t.get<0>() = t.get<0>() * 0.5;
+		
+	    }else{
+		t.get<0>() = 0.0;
+	    }
+	    
+	}
+    };
+
+
+    struct GradFromMirrorToOriginal
+    {
+	int fftLength;   // dimension of frame (padded)
+	int frameLength;
+	int frameShift;
+	int windowType;  // now only implemented the hann window
+	
+	real_t *rawGradData;
+
+	__host__ __device__ void operator() (const thrust::tuple<real_t &, int> &t) const
+	{
+	    int frameIdx = t.get<1>() / fftLength;
+	    int framePos = t.get<1>() % fftLength;
+
+	    if (framePos > 0 && framePos < frameLength){
+
+		// dimension of the mirrored part
+		int mirFramePos = fftLength - framePos;
+
+		t.get<0>() = (t.get<0>() + rawGradData[frameIdx * fftLength + mirFramePos]) * 0.5;
+		
+	    }else{
+		// do nothing for no-mirrored part
+		// note that the mirror gradients will be cleaned later by cleanDummyGradients
+	    }
+	    
+	}
+    };
+
+
+
+    
     struct cleanDummyGradients
     {
 	int fftLength;   // dimension of frame (padded)
@@ -693,6 +871,33 @@ namespace helpers {
 	    
     }
 
+    template <typename TDevice>
+    void FFTMat<TDevice>::frameSignalRealSpec()
+    {
+	if (m_fftLength < 2 * m_frameLength)
+	    throw std::runtime_error("FFTLength < 2*frameLength for real-valued spectrum");
+	
+	// calculate the even part of the signal
+	{{
+	    internal::FrameMakeEvenSignal fn1;
+	    fn1.fftLength   = m_fftLength;
+	    fn1.frameLength = m_frameLength;
+	    fn1.frameShift  = m_frameShift;
+	    fn1.windowType  = m_windowType;
+	    fn1.rawData     = getRawPointer(*m_rawData);
+	    thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_framedData).begin(), 
+					   thrust::counting_iterator<int>(0))),
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_framedData).end(),  
+					   thrust::counting_iterator<int>(0) +
+					   m_framedData->size())),
+		fn1);
+	}}
+    }
+
+    
     
     template <>
     void FFTMat<Gpu>::FFT()
@@ -1029,6 +1234,7 @@ namespace helpers {
 	}
 	
     }
+    
     template <typename TDevice>
     void FFTMat<TDevice>::collectGrad(real_t gradScaleFactor)
     {
@@ -1062,13 +1268,13 @@ namespace helpers {
 	// gradients w.r.t framed signals
 	{{
 	    internal::collectGrad fn1;
-	    fn1.fftLength   = m_fftLength;
-	    fn1.frameLength = m_frameLength;
-	    fn1.frameShift  = m_frameShift;
-	    fn1.frameNum    = m_framedData->size() / m_fftLength;
-	    fn1.windowType  = m_windowType;
-	    fn1.gradData    = getRawPointer(*m_framedData);
-	    fn1.gradScale   = gradScaleFactor / (fftTools::fftBinsNum(m_fftLength) * m_validFrameNum);
+	    fn1.fftLength  = m_fftLength;
+	    fn1.frameLength= m_frameLength;
+	    fn1.frameShift = m_frameShift;
+	    fn1.frameNum   = m_framedData->size() / m_fftLength;
+	    fn1.windowType = m_windowType;
+	    fn1.gradData   = getRawPointer(*m_framedData);
+	    fn1.gradScale  = gradScaleFactor / (fftTools::fftBinsNum(m_fftLength) * m_validFrameNum);
 		
 	    thrust::for_each(
 		thrust::make_zip_iterator(
@@ -1082,6 +1288,34 @@ namespace helpers {
 
 	}}
     }
+
+
+    template <typename TDevice>
+    void FFTMat<TDevice>::collectGradRealSpec(real_t gradScaleFactor)
+    {
+	// collect gradients from the mirrorred signal to the original signal
+	{{
+	    internal::GradFromMirrorToOriginal fn1;
+	    fn1.fftLength   = m_fftLength;
+	    fn1.frameLength = m_frameLength;
+	    fn1.frameShift  = m_frameShift;
+	    fn1.windowType  = m_windowType;
+	    fn1.rawGradData = getRawPointer(*m_framedData);
+	    thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_framedData).begin(), 
+					   thrust::counting_iterator<int>(0))),
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_framedData).end(),  
+					   thrust::counting_iterator<int>(0) +
+					   m_framedData->size())),
+		fn1);
+	}}
+	
+	// do normal gradients collection
+	this->collectGrad(gradScaleFactor);
+    }
+
     
     template class FFTMat<Cpu>;
     template class FFTMat<Gpu>;

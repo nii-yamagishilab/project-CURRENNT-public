@@ -45,12 +45,13 @@ namespace layers {
 	
     private:
 	//     m_beta * waveform_MSE + m_gamma * spectral_amplitude_MSE + m_zeta * phase_MSE
-	//   + m_eta  * residual_signal_spectral_amplitude
+	//   + m_eta  * residual_signal_spectral_amplitude + m_kappa * real_spectrum_amp
 	
 	real_t             m_beta;              // Weight for waveform MSE
 	real_t             m_gamma;             // Weight for DFT amplitude 
 	real_t             m_zeta;              // Weight for DFT phase
-	real_t             m_eta;               //
+	real_t             m_eta;               // Weight for residual spectrum amplitude
+	real_t             m_kappa;             // Weight for realvalued-spectrum ampltiude
 	
 	real_t             m_mseError;          //
 	
@@ -62,14 +63,16 @@ namespace layers {
 	real_t             m_specError;
 	real_t             m_phaseError;
 	real_t             m_resError;
-	int                m_fftLength;
-	int                m_fftBinsNum;
+	real_t             m_realSpecError;
+	
 	int                m_frameLength;
 	int                m_frameShift;
 	int                m_frameNum;
 	int                m_windowType;
 	int                m_windowTypePhase;
-	
+	int                m_fftLength;
+	int                m_fftBinsNum;
+		
 	real_vector        m_fftSourceFramed;
 	fft_vector         m_fftSourceSigFFT;
 
@@ -82,12 +85,25 @@ namespace layers {
 
 	real_vector        m_fftDiffDataPhase;
 	real_vector        m_fftResData;
+	
+	int                m_fftLengthRealSpec;
+	int                m_fftBinsNumRealSpec;
 
+	real_vector        m_fftSourceFramedRealSpec;
+	fft_vector         m_fftSourceSigFFTRealSpec;
+
+	real_vector        m_fftTargetFramedRealSpec;
+	fft_vector         m_fftTargetSigFFTRealSpec;
+
+	real_vector        m_fftDiffDataRealSpec;
+	real_vector        m_fftDiffFramedRealSpec;
+	fft_vector         m_fftDiffSigFFTRealSpec;	
 	
 	// Long time STFT 
 	real_t             m_specError2;
 	real_t             m_phaseError2;
 	real_t             m_resError2;
+	real_t             m_realSpecError2;
 	int                m_fftLength2;
 	int                m_fftBinsNum2;
 	int                m_frameLength2;
@@ -108,11 +124,27 @@ namespace layers {
 
 	real_vector        m_fftDiffDataPhase2;
 	real_vector        m_fftResData2;
+
+
+	int                m_fftLengthRealSpec2;
+	int                m_fftBinsNumRealSpec2;
+
+	real_vector        m_fftSourceFramedRealSpec2;
+	fft_vector         m_fftSourceSigFFTRealSpec2;
+
+	real_vector        m_fftTargetFramedRealSpec2;
+	fft_vector         m_fftTargetSigFFTRealSpec2;
+
+	real_vector        m_fftDiffDataRealSpec2;
+	real_vector        m_fftDiffFramedRealSpec2;
+	fft_vector         m_fftDiffSigFFTRealSpec2;
+
 	
 	// Long time STFT 
 	real_t             m_specError3;
 	real_t             m_phaseError3;
 	real_t             m_resError3;
+	real_t             m_realSpecError3;
 	int                m_fftLength3;
 	int                m_fftBinsNum3;
 	int                m_frameLength3;
@@ -134,7 +166,22 @@ namespace layers {
 	real_vector        m_fftDiffDataPhase3;
 	real_vector        m_fftResData3;
 
-	// support for harmonic + noise model
+
+	int                m_fftLengthRealSpec3;
+	int                m_fftBinsNumRealSpec3;
+
+	real_vector        m_fftSourceFramedRealSpec3;
+	fft_vector         m_fftSourceSigFFTRealSpec3;
+
+	real_vector        m_fftTargetFramedRealSpec3;
+	fft_vector         m_fftTargetSigFFTRealSpec3;
+
+	real_vector        m_fftDiffDataRealSpec3;
+	real_vector        m_fftDiffFramedRealSpec3;
+	fft_vector         m_fftDiffSigFFTRealSpec3;
+
+	
+	// support for harmonic + noise model (not used anymore)
 	int                m_hnm_flag;
 	int                m_noiseTrain_epoch;
 	Layer<TDevice>*    m_noiseOutputLayer;
@@ -182,7 +229,10 @@ namespace layers {
 	real_t __specResAmpDistance2(const int timeLength);
 	real_t __specResAmpDistance3(const int timeLength);
 
-	
+	real_t __specRealAmpDistance1(const int timeLength);
+	real_t __specRealAmpDistance2(const int timeLength);
+	real_t __specRealAmpDistance3(const int timeLength);
+       
 	
     public:
         /**

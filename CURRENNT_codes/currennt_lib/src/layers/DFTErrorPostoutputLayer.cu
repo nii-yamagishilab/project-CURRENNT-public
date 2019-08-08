@@ -379,6 +379,9 @@ namespace layers{
 	m_eta          = (layerChild->HasMember("eta") ? 
 			  static_cast<real_t>((*layerChild)["eta"].GetDouble()) : 0.0);
 
+	m_kappa        = (layerChild->HasMember("kappa") ? 
+			  static_cast<real_t>((*layerChild)["kappa"].GetDouble()) : 0.0);
+
 	// Type of spectral amplitude distance (see ../helpers/FFTMat.hpp):
 	//  FFTMAT_SPECTYPE_MSE: MSE of log-spectra
 	//  FFTMAT_SPECTYPE_KLD: KLD of spectra
@@ -472,6 +475,20 @@ namespace layers{
 		m_fftDiffDataPhase = m_fftDiffData;
 	    if (m_eta > 0.0)
 		m_fftResData = m_fftDiffData;
+	    if (m_kappa > 0.0){
+		// for real-valued spectrum
+		m_fftLengthRealSpec  = m_fftLength * 2; 
+		m_fftBinsNumRealSpec = helpers::fftTools::fftBinsNum(m_fftLengthRealSpec);
+		m_fftSourceFramedRealSpec.resize(m_frameNum * m_fftLengthRealSpec, 0.0);
+		m_fftTargetFramedRealSpec.resize(m_frameNum * m_fftLengthRealSpec, 0.0);
+		m_fftDiffFramedRealSpec = m_fftTargetFramedRealSpec;
+		m_fftSourceSigFFTRealSpec.resize(m_frameNum * m_fftBinsNumRealSpec, tmp);
+		m_fftTargetSigFFTRealSpec.resize(m_frameNum * m_fftBinsNumRealSpec, tmp);
+		m_fftDiffSigFFTRealSpec = m_fftTargetSigFFTRealSpec;
+		m_fftDiffDataRealSpec   = this->outputs();
+	    }
+		
+	    
 	    
 	    /* --------   second FFT ------------ */
 	    m_fftLength2        = (layerChild->HasMember("fftLength2") ? 
@@ -503,6 +520,19 @@ namespace layers{
 		m_fftDiffDataPhase2 = m_fftDiffData2;
 	    if (m_eta > 0.0)
 		m_fftResData2 = m_fftDiffData2;
+	    if (m_kappa > 0.0){
+		// for real-valued spectrum
+		m_fftLengthRealSpec2  = m_fftLength2 * 2; 
+		m_fftBinsNumRealSpec2 = helpers::fftTools::fftBinsNum(m_fftLengthRealSpec2);
+		m_fftSourceFramedRealSpec2.resize(m_frameNum2 * m_fftLengthRealSpec2, 0.0);
+		m_fftTargetFramedRealSpec2.resize(m_frameNum2 * m_fftLengthRealSpec2, 0.0);
+		m_fftDiffFramedRealSpec2 = m_fftTargetFramedRealSpec2;
+		m_fftSourceSigFFTRealSpec2.resize(m_frameNum2 * m_fftBinsNumRealSpec2, tmp);
+		m_fftTargetSigFFTRealSpec2.resize(m_frameNum2 * m_fftBinsNumRealSpec2, tmp);
+		m_fftDiffSigFFTRealSpec2 = m_fftTargetSigFFTRealSpec2;
+		m_fftDiffDataRealSpec2   = this->outputs();
+	    }
+
 	    
 	    /* --------   third FFT ------------ */
 	    m_fftLength3        = (layerChild->HasMember("fftLength3") ? 
@@ -535,6 +565,19 @@ namespace layers{
 		m_fftDiffDataPhase3 = m_fftDiffData3;
 	    if (m_eta > 0.0)
 		m_fftResData3 = m_fftDiffData3;
+	    if (m_kappa > 0.0){
+		// for real-valued spectrum
+		m_fftLengthRealSpec3  = m_fftLength3 * 2; 
+		m_fftBinsNumRealSpec3 = helpers::fftTools::fftBinsNum(m_fftLengthRealSpec3);
+		m_fftSourceFramedRealSpec3.resize(m_frameNum3 * m_fftLengthRealSpec3, 0.0);
+		m_fftTargetFramedRealSpec3.resize(m_frameNum3 * m_fftLengthRealSpec3, 0.0);
+		m_fftDiffFramedRealSpec3 = m_fftTargetFramedRealSpec3;
+		m_fftSourceSigFFTRealSpec3.resize(m_frameNum3 * m_fftBinsNumRealSpec3, tmp);
+		m_fftTargetSigFFTRealSpec3.resize(m_frameNum3 * m_fftBinsNumRealSpec3, tmp);
+		m_fftDiffSigFFTRealSpec3 = m_fftTargetSigFFTRealSpec3;
+		m_fftDiffDataRealSpec3   = this->outputs();
+	    }
+
 	}else{
 	    m_fftSourceFramed.clear();
 	    m_fftTargetFramed.clear();
@@ -545,6 +588,14 @@ namespace layers{
 	    m_fftDiffData.clear();
 	    m_fftDiffDataPhase.clear();
 	    m_fftResData.clear();
+
+	    m_fftSourceFramedRealSpec.clear();
+	    m_fftSourceSigFFTRealSpec.clear();
+	    m_fftTargetFramedRealSpec.clear();
+	    m_fftTargetSigFFTRealSpec.clear();
+	    m_fftDiffDataRealSpec.clear();
+	    m_fftDiffFramedRealSpec.clear();
+	    m_fftDiffSigFFTRealSpec.clear();
 	    
 	    m_fftSourceFramed2.clear();
 	    m_fftTargetFramed2.clear();
@@ -555,6 +606,14 @@ namespace layers{
 	    m_fftDiffData2.clear();
 	    m_fftDiffDataPhase2.clear();
 	    m_fftResData2.clear();
+
+	    m_fftSourceFramedRealSpec2.clear();
+	    m_fftSourceSigFFTRealSpec2.clear();
+	    m_fftTargetFramedRealSpec2.clear();
+	    m_fftTargetSigFFTRealSpec2.clear();
+	    m_fftDiffDataRealSpec2.clear();
+	    m_fftDiffFramedRealSpec2.clear();
+	    m_fftDiffSigFFTRealSpec2.clear();
 	    
 	    m_fftSourceFramed3.clear();
 	    m_fftTargetFramed3.clear();
@@ -565,6 +624,14 @@ namespace layers{
 	    m_fftDiffData3.clear();
 	    m_fftDiffDataPhase3.clear();
 	    m_fftResData3.clear();
+
+	    m_fftSourceFramedRealSpec3.clear();
+	    m_fftSourceSigFFTRealSpec3.clear();
+	    m_fftTargetFramedRealSpec3.clear();
+	    m_fftTargetSigFFTRealSpec3.clear();
+	    m_fftDiffDataRealSpec3.clear();
+	    m_fftDiffFramedRealSpec3.clear();
+	    m_fftDiffSigFFTRealSpec3.clear();
 	}
 
 	
@@ -595,6 +662,7 @@ namespace layers{
 		m_f0DataS = config.f0dataStd_signalgen();
 	    printf("\n\tDFT errir layers receives F0 mean-%f std-%f", m_f0DataM, m_f0DataS);
 	}
+
 	
 	if (m_modeMultiDimSignal != DFTMODEFORMULTIDIMSIGNAL_NONE)
 	    m_modeChangeDataBuf = this->outputs();
@@ -1261,6 +1329,158 @@ namespace layers{
 	
 	return specResError3;
     }
+
+
+    template <typename TDevice>
+    real_t DFTPostoutputLayer<TDevice>::__specRealAmpDistance1(const int timeLength)
+    {
+	
+	helpers::FFTMat<TDevice> sourceSig(
+			&this->_actualOutputs(), &this->m_fftSourceFramedRealSpec,
+			&this->m_fftSourceSigFFTRealSpec,
+			m_frameLength, m_frameShift, m_windowType,
+			m_fftLengthRealSpec, m_fftBinsNumRealSpec,
+			m_frameNum, this->__vMaxSeqLength(), timeLength,
+			m_specDisType);
+
+	helpers::FFTMat<TDevice> targetSig(
+			&this->_targets(), &this->m_fftTargetFramedRealSpec,
+			&this->m_fftTargetSigFFTRealSpec,
+			m_frameLength, m_frameShift, m_windowType,
+			m_fftLengthRealSpec, m_fftBinsNumRealSpec,
+			m_frameNum, this->__vMaxSeqLength(), timeLength,
+			m_specDisType);
+
+	helpers::FFTMat<TDevice> fftDiffSig(
+			&this->m_fftDiffDataRealSpec, &this->m_fftDiffFramedRealSpec,
+			&this->m_fftDiffSigFFTRealSpec,
+			m_frameLength, m_frameShift, m_windowType,
+			m_fftLengthRealSpec, m_fftBinsNumRealSpec,
+			m_frameNum, this->__vMaxSeqLength(), timeLength,
+			m_specDisType);
+	
+	// step1. framing and windowing
+	sourceSig.frameSignalRealSpec();
+	targetSig.frameSignalRealSpec();
+		
+	// step2. fft
+	sourceSig.FFT();
+	targetSig.FFT();
+		
+	// amplitude distance
+	real_t specError = sourceSig.specAmpDistance(targetSig, fftDiffSig);
+	// compute complex-valued grad vector
+	fftDiffSig.specAmpGrad(sourceSig, targetSig);
+	// inverse DFT
+	fftDiffSig.iFFT();
+	// de-framing/windowing
+	fftDiffSig.collectGradRealSpec(m_kappa);
+	
+	// Gradients should be in m_fftDiffData		    
+	// Done
+	return specError;
+    }
+
+    template <typename TDevice>
+    real_t DFTPostoutputLayer<TDevice>::__specRealAmpDistance2(const int timeLength)
+    {
+	
+	helpers::FFTMat<TDevice> sourceSig(
+			&this->_actualOutputs(), &this->m_fftSourceFramedRealSpec2,
+			&this->m_fftSourceSigFFTRealSpec2,
+			m_frameLength2, m_frameShift2, m_windowType2,
+			m_fftLengthRealSpec2, m_fftBinsNumRealSpec2,
+			m_frameNum2, this->__vMaxSeqLength(), timeLength,
+			m_specDisType);
+
+	helpers::FFTMat<TDevice> targetSig(
+			&this->_targets(), &this->m_fftTargetFramedRealSpec2,
+			&this->m_fftTargetSigFFTRealSpec2,
+			m_frameLength2, m_frameShift2, m_windowType2,
+			m_fftLengthRealSpec2, m_fftBinsNumRealSpec2,
+			m_frameNum2, this->__vMaxSeqLength(), timeLength,
+			m_specDisType);
+
+	helpers::FFTMat<TDevice> fftDiffSig(
+			&this->m_fftDiffDataRealSpec2, &this->m_fftDiffFramedRealSpec2,
+			&this->m_fftDiffSigFFTRealSpec2,
+			m_frameLength2, m_frameShift2, m_windowType2,
+			m_fftLengthRealSpec2, m_fftBinsNumRealSpec2,
+			m_frameNum2, this->__vMaxSeqLength(), timeLength,
+			m_specDisType);
+	
+	// step1. framing and windowing
+	sourceSig.frameSignalRealSpec();
+	targetSig.frameSignalRealSpec();
+		
+	// step2. fft
+	sourceSig.FFT();
+	targetSig.FFT();
+		
+	// amplitude distance
+	real_t specError2 = sourceSig.specAmpDistance(targetSig, fftDiffSig);
+	// compute complex-valued grad vector
+	fftDiffSig.specAmpGrad(sourceSig, targetSig);
+	// inverse DFT
+	fftDiffSig.iFFT();
+	// de-framing/windowing
+	fftDiffSig.collectGradRealSpec(m_kappa);
+	
+	// Gradients should be in m_fftDiffData		    
+	// Done
+	return specError2;
+    }
+
+    template <typename TDevice>
+    real_t DFTPostoutputLayer<TDevice>::__specRealAmpDistance3(const int timeLength)
+    {
+	
+	helpers::FFTMat<TDevice> sourceSig(
+			&this->_actualOutputs(), &this->m_fftSourceFramedRealSpec3,
+			&this->m_fftSourceSigFFTRealSpec3,
+			m_frameLength3, m_frameShift3, m_windowType3,
+			m_fftLengthRealSpec3, m_fftBinsNumRealSpec3,
+			m_frameNum3, this->__vMaxSeqLength(), timeLength,
+			m_specDisType);
+
+	helpers::FFTMat<TDevice> targetSig(
+			&this->_targets(), &this->m_fftTargetFramedRealSpec3,
+			&this->m_fftTargetSigFFTRealSpec3,
+			m_frameLength3, m_frameShift3, m_windowType3,
+			m_fftLengthRealSpec3, m_fftBinsNumRealSpec3,
+			m_frameNum3, this->__vMaxSeqLength(), timeLength,
+			m_specDisType);
+
+	helpers::FFTMat<TDevice> fftDiffSig(
+			&this->m_fftDiffDataRealSpec3, &this->m_fftDiffFramedRealSpec3,
+			&this->m_fftDiffSigFFTRealSpec3,
+			m_frameLength3, m_frameShift3, m_windowType3,
+			m_fftLengthRealSpec3, m_fftBinsNumRealSpec3,
+			m_frameNum3, this->__vMaxSeqLength(), timeLength,
+			m_specDisType);
+	
+	// step1. framing and windowing
+	sourceSig.frameSignalRealSpec();
+	targetSig.frameSignalRealSpec();
+		
+	// step2. fft
+	sourceSig.FFT();
+	targetSig.FFT();
+		
+	// amplitude distance
+	real_t specError3 = sourceSig.specAmpDistance(targetSig, fftDiffSig);
+	// compute complex-valued grad vector
+	fftDiffSig.specAmpGrad(sourceSig, targetSig);
+	// inverse DFT
+	fftDiffSig.iFFT();
+	// de-framing/windowing
+	fftDiffSig.collectGradRealSpec(m_kappa);
+	
+	// Gradients should be in m_fftDiffData		    
+	// Done
+	return specError3;
+    }
+    
     
     // NN forward
     template <typename TDevice>
@@ -1322,7 +1542,7 @@ namespace layers{
 	    //   2. calculate distances
 	    //   3. calculate gradients and save them to the buffer
 	    // 
-	    if (m_gamma > 0.0 || m_zeta > 0.0 || m_eta > 0.0){
+	    if (m_gamma > 0.0 || m_zeta > 0.0 || m_eta > 0.0 || m_kappa > 0.0){
 
 		// FFT configuration 1
 		if (true){
@@ -1335,6 +1555,9 @@ namespace layers{
 
 		    if (m_eta > 0.0)
 			m_resError = this->__specResAmpDistance1(timeLength);
+
+		    if (m_kappa > 0.0)
+			m_realSpecError = this->__specRealAmpDistance1(timeLength);
 		}
 				    
 		// FFT configuration 2
@@ -1348,6 +1571,9 @@ namespace layers{
 		    
 		    if (m_eta > 0.0)
 			m_resError2 = this->__specResAmpDistance2(timeLength);
+		    
+		    if (m_kappa > 0.0)
+			m_realSpecError2 = this->__specRealAmpDistance2(timeLength);
 		}
 
 		// FFT configuration 3
@@ -1361,6 +1587,9 @@ namespace layers{
 		    
 		    if (m_eta > 0.0)
 			m_resError3 = this->__specResAmpDistance3(timeLength);
+		    
+		    if (m_kappa > 0.0)
+			m_realSpecError3 = this->__specRealAmpDistance3(timeLength);
 		}
 	    }
 	}
@@ -1396,7 +1625,7 @@ namespace layers{
 	// Gradients from spectral amplitude and phase
 	//  gradients have been calculated in computeForwardPass()
 	//  here, gradients are simply accumulated into the gradient buffer
-	if (m_gamma > 0.0 || m_zeta > 0.0 || m_eta > 0.0){
+	if (m_gamma > 0.0 || m_zeta > 0.0 || m_eta > 0.0 || m_kappa > 0.0){
 	    
 	    // FFT1
 	    if (true){
@@ -1418,6 +1647,14 @@ namespace layers{
 				      this->precedingLayer().outputErrors().begin(),
 				      this->precedingLayer().outputErrors().begin(),
 				      thrust::plus<real_t>());
+
+		if (m_kappa > 0.0)
+		    thrust::transform(m_fftDiffDataRealSpec.begin(),
+				      m_fftDiffDataRealSpec.begin() + timeLength * this->__vSize(),
+				      this->precedingLayer().outputErrors().begin(),
+				      this->precedingLayer().outputErrors().begin(),
+				      thrust::plus<real_t>());
+		
 	    }
 	    
 	    // FFT2
@@ -1439,6 +1676,12 @@ namespace layers{
 				      this->precedingLayer().outputErrors().begin(),
 				      this->precedingLayer().outputErrors().begin(),
 				      thrust::plus<real_t>());
+		if (m_kappa > 0.0)
+		    thrust::transform(m_fftDiffDataRealSpec2.begin(),
+				      m_fftDiffDataRealSpec2.begin() + timeLength * this->__vSize(),
+				      this->precedingLayer().outputErrors().begin(),
+				      this->precedingLayer().outputErrors().begin(),
+				      thrust::plus<real_t>());
 	    }
 
 	    // FFT3
@@ -1457,6 +1700,12 @@ namespace layers{
 		if (m_eta > 0.0)
 		    thrust::transform(m_fftResData3.begin(),
 				      m_fftResData3.begin() + timeLength * this->__vSize(),
+				      this->precedingLayer().outputErrors().begin(),
+				      this->precedingLayer().outputErrors().begin(),
+				      thrust::plus<real_t>());
+		if (m_kappa > 0.0)
+		    thrust::transform(m_fftDiffDataRealSpec3.begin(),
+				      m_fftDiffDataRealSpec3.begin() + timeLength * this->__vSize(),
 				      this->precedingLayer().outputErrors().begin(),
 				      this->precedingLayer().outputErrors().begin(),
 				      thrust::plus<real_t>());
@@ -1500,7 +1749,8 @@ namespace layers{
 	    (*layersArray)[layersArray->Size() - 1].AddMember("phaseDisType", m_phaseDisType,
 							      allocator);
 	if (m_preEmphasis)
-	    (*layersArray)[layersArray->Size() - 1].AddMember("preEmphasisNaturalWav", m_preEmphasis,
+	    (*layersArray)[layersArray->Size() - 1].AddMember("preEmphasisNaturalWav",
+							      m_preEmphasis,
 							      allocator);
 	
 	if (m_gamma > 0.0){
@@ -1510,6 +1760,8 @@ namespace layers{
 		(*layersArray)[layersArray->Size() - 1].AddMember("zeta", m_zeta, allocator);
 	    if (m_eta > 0.0)
 		(*layersArray)[layersArray->Size() - 1].AddMember("eta", m_eta, allocator);
+	    if (m_kappa > 0.0)
+		(*layersArray)[layersArray->Size() - 1].AddMember("kappa", m_kappa, allocator);
 	    
 	    (*layersArray)[layersArray->Size() - 1].AddMember("fftLength", m_fftLength,
 							      allocator);
@@ -1597,9 +1849,15 @@ namespace layers{
 		std::cerr << m_resError << ", " << m_resError2 << ", ";
 		std::cerr << m_resError3 << ", ";
 	    }
+	    if (m_kappa > 0.0){
+		std::cerr << m_realSpecError << ", " << m_realSpecError2 << ", ";
+		std::cerr << m_realSpecError3 << ", ";
+	    }
 	}
 	return (m_specError + m_specError2 + m_specError3 +
-		m_phaseError + m_phaseError2 + m_phaseError3);
+		m_phaseError + m_phaseError2 + m_phaseError3 + 
+		m_resError + m_resError2 + m_resError3 +
+		m_realSpecError + m_realSpecError2 + m_realSpecError3);
 	    
     }
 
@@ -1618,7 +1876,7 @@ namespace layers{
 		    throw std::runtime_error("noiseOutputLayer layer size != DFT layer size");
 		
 		m_noiseOutputLayer = &targetLayer;
-		printf("\n\tDFT layer get noise output from %s", m_noiseOutputLayer->name().c_str());
+		printf("\n\tDFTlayer get noise output from %s",m_noiseOutputLayer->name().c_str());
 	    }
 	    
 	    // for F0 input layer

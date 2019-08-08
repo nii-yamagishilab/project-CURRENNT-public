@@ -184,8 +184,8 @@ namespace{
 					 + freqDim] * f0S + f0M;
 		
 		// for harmonics, multiply the freq
-		if (dimIdx >= phaseCandNum)    
-		    freq = freq * (dimIdx - phaseCandNum + 2);
+		//if (dimIdx >= phaseCandNum)    
+		//    freq = freq * (dimIdx - phaseCandNum + 2);
 		
 
 		// for voiced segment
@@ -207,6 +207,9 @@ namespace{
 			//freq = freq;
 		    }
 		    
+		    if (dimIdx >= phaseCandNum)    
+			freq = freq * (dimIdx - phaseCandNum + 2);
+
 		    // get the phase noise
 		    if (dimIdx < phaseCandNum){
 			phaseNoiseValue = phaseNoise[timeIdxPhy*(hnmNum+1)];

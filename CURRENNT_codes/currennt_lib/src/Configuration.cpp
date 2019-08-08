@@ -735,7 +735,7 @@ Configuration::Configuration(int argc, const char *argv[])
 
     if (vm.count("version")){
 	//std::cout << "2018/09/24: FFT3,2,1, equal noise intensity" << std::endl;
-	std::cout << "2019/02/06" << std::endl;
+	//std::cout << "2019/02/06" << std::endl;
 	exit(0);
     }
     

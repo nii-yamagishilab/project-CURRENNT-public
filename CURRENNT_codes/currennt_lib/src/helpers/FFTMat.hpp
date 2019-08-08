@@ -88,6 +88,11 @@ namespace helpers {
 	void frameSignal();
 	void collectGrad(real_t gradScaleFactor);
 
+	// methods for real-valued spectrum, framing and reverse-framing for gradients collection
+	void frameSignalRealSpec();
+	void collectGradRealSpec(real_t gradScaleFactor);
+
+	
 	// methods for spectral amplitude distances
 	void specAmpGrad(FFTMat<TDevice> &source, FFTMat<TDevice> &target);
 	real_t specAmpDistance(FFTMat<TDevice> &target, FFTMat<TDevice> &diff);
