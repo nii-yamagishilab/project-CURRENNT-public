@@ -305,6 +305,16 @@ namespace{
 	    }
         }
     };
+
+
+    struct cleanImagPart
+    {
+	__host__ __device__ void operator() (complex_t &t) const
+	{
+	    t.y = 0;
+	}
+    };
+
     
 }
 }
@@ -1366,7 +1376,15 @@ namespace layers{
 	// step2. fft
 	sourceSig.FFT();
 	targetSig.FFT();
-		
+
+	// theoretically, imaginary part should be zero
+	thrust::for_each(m_fftSourceSigFFTRealSpec.begin(),
+			 m_fftSourceSigFFTRealSpec.end(),
+			 internal::cleanImagPart());
+	thrust::for_each(m_fftTargetSigFFTRealSpec.begin(),
+			 m_fftTargetSigFFTRealSpec.end(),
+			 internal::cleanImagPart());
+	
 	// amplitude distance
 	real_t specError = sourceSig.specAmpDistance(targetSig, fftDiffSig);
 	// compute complex-valued grad vector
@@ -1417,6 +1435,14 @@ namespace layers{
 	sourceSig.FFT();
 	targetSig.FFT();
 		
+	// theoretically, imaginary part should be zero
+	thrust::for_each(m_fftSourceSigFFTRealSpec2.begin(),
+			 m_fftSourceSigFFTRealSpec2.end(),
+			 internal::cleanImagPart());
+	thrust::for_each(m_fftTargetSigFFTRealSpec2.begin(),
+			 m_fftTargetSigFFTRealSpec2.end(),
+			 internal::cleanImagPart());
+
 	// amplitude distance
 	real_t specError2 = sourceSig.specAmpDistance(targetSig, fftDiffSig);
 	// compute complex-valued grad vector
@@ -1466,7 +1492,12 @@ namespace layers{
 	// step2. fft
 	sourceSig.FFT();
 	targetSig.FFT();
-		
+
+	// theoretically, imaginary part should be zero
+	thrust::for_each(m_fftSourceSigFFTRealSpec3.begin(),
+			 m_fftSourceSigFFTRealSpec3.end(),
+			 internal::cleanImagPart());
+
 	// amplitude distance
 	real_t specError3 = sourceSig.specAmpDistance(targetSig, fftDiffSig);
 	// compute complex-valued grad vector

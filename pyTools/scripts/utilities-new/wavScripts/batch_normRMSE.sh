@@ -1,11 +1,20 @@
 #!/bin/sh
 
+### usage:
+#   sh batch_normRMSE.sh PATH_TO_DIRECTORY_OF_WAVEFORM
+# normalized waveforms will be in the input directory
+# 
+# note: 
+# 1. make sure sox and sv56demo is in your path
+# 2. make sure that SCRIPT_DIR points to the directory that contains batch_normRMSE.sh
+###
+
 LEV=26
 
 DATA_DIR=$1
 TEMP=$2
 
-SCRIPT_DIR=/work/smg/wang/GIT/TEAM/project-CURRENNT-public/pyTools/scripts/utilities-new/wavScripts
+SCRIPT_DIR=/work/smg/wang/CODE/git_local/team/project-CURRENNT-public/pyTools/scripts/utilities-new/wavScripts
 
 cd ${DATA_DIR}
 ls ./ | grep wav | grep -v "norm.wav" | parallel sh ${SCRIPT_DIR}/sub_normRMSE.sh {} ${SCRIPT_DIR} ${TEMP}
@@ -20,8 +29,8 @@ do
     OUTPUT=${basename}_norm.wav
 
     SOX=sox
-    SV56=/work/smg/wang/TOOL/bin/sv56demo
-    SCALE=/work/smg/wang/GIT/TEAM/project-CURRENNT-public/pyTools/scripts/utilities-new/wavScripts/03_scale.py
+    SV56=sv56demo
+    SCALE=${SCRIPT_DIR}/03_scale.py
     
     RAWORIG=${OUTPUT}.raw
     RAWNORM=${OUTPUT}.raw.norm

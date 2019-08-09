@@ -27,11 +27,12 @@ def read_log_err(file_path, train_num, val_num):
     data_str = []
     with open(file_path, 'r') as file_ptr:
         for line in file_ptr:
-            try:
-                tmp = int(line[0])
-                data_str.append(line)
-            except ValueError:
-                pass
+            if not line.count('skip'):
+                try:
+                    tmp = int(line[0])
+                    data_str.append(line)
+                except ValueError:
+                    pass
 
     row = len(data_str)
     col = len(np.fromstring(data_str[0], dtype=np.float32, sep=','))
