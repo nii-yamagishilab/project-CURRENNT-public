@@ -45,7 +45,8 @@
 typedef cufftHandle *cufftHandle_t;
 
 #define FFT_PI_DEFINITION 3.141215
-#define FFT_KLD_FLOOR_NUM 0.0000000001
+//#define FFT_KLD_FLOOR_NUM 0.0000000001
+#define FFT_KLD_FLOOR_NUM 0.00001
 #define FFT_AMP_MIN_NUM   0.0000001
 
 namespace internal{
