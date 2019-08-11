@@ -48,7 +48,7 @@ typedef cufftHandle *cufftHandle_t;
 //#define FFT_KLD_FLOOR_NUM 0.0000000001
 #define FFT_KLD_FLOOR_NUM 0.00001
 #define FFT_AMP_MIN_NUM   0.0000001
-
+#define FFT_REAL_SPECTRUM_SHIFT 0.00001
 namespace internal{
 namespace {
 
@@ -358,6 +358,31 @@ namespace {
     };
 
 
+    struct FrameDeltaShift
+    {
+	int fftLength;   // dimension of frame (padded)	
+	real_t *frameData;
+
+	// for 1 to N frames
+	__host__ __device__ void operator() (const thrust::tuple<real_t &, int> &t) const
+	{
+	    int frameIdx = t.get<1>();
+	    real_t tmp_sum = 0.0;
+
+	    // force x[0] = 0 (assume the left side of the analysis window is 0)
+	    frameData[frameIdx * fftLength] = 0.0;
+	    
+	    // sum_n=1^M abs(x[n])
+	    for (int frame_idx = 0; frame_idx < fftLength; frame_idx ++)
+		tmp_sum += abs(frameData[frameIdx * fftLength + frame_idx]);
+	    
+	    // shift the x[0] + const
+	    frameData[frameIdx * fftLength] += (tmp_sum + FFT_REAL_SPECTRUM_SHIFT);
+	}
+    };
+    
+
+    
     struct GradFromMirrorToOriginal
     {
 	int fftLength;   // dimension of frame (padded)
@@ -387,6 +412,43 @@ namespace {
 	}
     };
 
+
+    struct GradFromDeltaShiftedSignal_nonZeroPosition
+    {
+	int fftLength;   // dimension of frame (padded)
+	real_t *framedData;
+	real_t *rawGradData;
+
+	__host__ __device__ void operator() (const thrust::tuple<real_t &, int> &t) const
+	{
+	    int frameIdx = t.get<1>() / fftLength;
+	    int framePos = t.get<1>() % fftLength;
+
+	    if (framePos > 0){
+		// for x[n>0], the gradients depends on the sign
+		if (framedData[t.get<1>()] > 0.0){
+		    t.get<0>() = t.get<0>() + rawGradData[frameIdx * fftLength];
+		}else if (framedData[t.get<1>()] < 0.0){
+		    t.get<0>() = t.get<0>() - rawGradData[frameIdx * fftLength];
+		}else{
+		    // do nothing
+		}
+	    }
+	}
+    };
+
+    struct GradFromDeltaShiftedSignal_zeroPosition
+    {
+	int fftLength;   // dimension of frame (padded)
+	real_t *rawGradData;
+
+	__host__ __device__ void operator() (const thrust::tuple<real_t &, int> &t) const
+	{
+	    int frameIdx = t.get<1>();
+	    // set the gradients for x[0] = 0 because x[0] is set to 0
+	    rawGradData[frameIdx * fftLength] = 0.0;
+	}
+    };
 
 
     
@@ -779,7 +841,7 @@ namespace helpers {
 	, m_batchSize       (batchSize)
 	, m_signalBufLength (signalBufLength)
 	, m_signalLength    (signalLength)
-	, m_disType     (specDisType)
+	, m_disType         (specDisType)
 	  
     {
 	// m_windowType is not implemented for windows other than Hann
@@ -813,7 +875,7 @@ namespace helpers {
 	, m_frameLength  (-1)
 	, m_signalLength (-1)
 	, m_batchSize    (batchSize)
-	, m_disType  (0)
+	, m_disType      (0)
     {
 	// check?
     }
@@ -873,7 +935,7 @@ namespace helpers {
     }
 
     template <typename TDevice>
-    void FFTMat<TDevice>::frameSignalRealSpec()
+    void FFTMat<TDevice>::frameSignalRealSpec(const int realspec_type)
     {
 	if (m_fftLength < 2 * m_frameLength)
 	    throw std::runtime_error("FFTLength < 2*frameLength for real-valued spectrum");
@@ -886,6 +948,7 @@ namespace helpers {
 	    fn1.frameShift  = m_frameShift;
 	    fn1.windowType  = m_windowType;
 	    fn1.rawData     = getRawPointer(*m_rawData);
+
 	    thrust::for_each(
 		thrust::make_zip_iterator(
 			thrust::make_tuple((*m_framedData).begin(), 
@@ -896,6 +959,25 @@ namespace helpers {
 					   m_framedData->size())),
 		fn1);
 	}}
+
+	// if this is delta-shifted real-spectrum
+	if (realspec_type == FFTMAT_REALSPEC_TYPE_SHIFT){{
+	    internal::FrameDeltaShift fn1;
+	    fn1.fftLength   = m_fftLength;
+	    fn1.frameData   = getRawPointer(*m_framedData);
+	    
+	    thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_framedData).begin(), 
+					   thrust::counting_iterator<int>(0))),
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_framedData).begin() + m_validFrameNum,  
+					   thrust::counting_iterator<int>(0) +
+					   m_validFrameNum)),
+		fn1);	
+
+	}}
+	
     }
 
     
@@ -1292,8 +1374,46 @@ namespace helpers {
 
 
     template <typename TDevice>
-    void FFTMat<TDevice>::collectGradRealSpec(real_t gradScaleFactor)
+    void FFTMat<TDevice>::collectGradRealSpec(real_t gradScaleFactor, const int realspec_type,
+					      FFTMat<TDevice> &source)
     {
+
+	// collect gradients caused by the delta-shifted operation
+	if (realspec_type == FFTMAT_REALSPEC_TYPE_SHIFT){{
+
+	    {{
+	    internal::GradFromDeltaShiftedSignal_nonZeroPosition fn1;
+	    fn1.fftLength   = m_fftLength;
+	    fn1.rawGradData = getRawPointer(*m_framedData);
+	    fn1.framedData  = getRawPointer(*(source.m_framedData));
+	    
+	    thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_framedData).begin(), 
+					   thrust::counting_iterator<int>(0))),
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_framedData).end(),  
+					   thrust::counting_iterator<int>(0) +
+					   m_framedData->size())),
+		fn1);
+	    }}
+	    
+	    {{
+	    internal::GradFromDeltaShiftedSignal_zeroPosition fn2;
+	    fn2.fftLength   = m_fftLength;
+	    fn2.rawGradData = getRawPointer(*m_framedData);
+	    thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_framedData).begin(), 
+					   thrust::counting_iterator<int>(0))),
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_framedData).begin() + m_validFrameNum,
+					   thrust::counting_iterator<int>(0) +
+					   m_validFrameNum)),
+		fn2);
+	    }}
+	}}
+	
 	// collect gradients from the mirrorred signal to the original signal
 	{{
 	    internal::GradFromMirrorToOriginal fn1;

@@ -40,6 +40,9 @@
 #define FFTMAT_WINDOW_HANN 0
 #define FFTMAT_WINDOW_SQUARE 1
 
+#define FFTMAT_REALSPEC_TYPE_NORMAL 0
+#define FFTMAT_REALSPEC_TYPE_SHIFT  1
+
 namespace helpers {
 
     template <typename TDevice>
@@ -89,8 +92,9 @@ namespace helpers {
 	void collectGrad(real_t gradScaleFactor);
 
 	// methods for real-valued spectrum, framing and reverse-framing for gradients collection
-	void frameSignalRealSpec();
-	void collectGradRealSpec(real_t gradScaleFactor);
+	void frameSignalRealSpec(const int realspec_type);
+	void collectGradRealSpec(real_t gradScaleFactor, const int realspec_type,
+				 FFTMat<TDevice> &source);
 
 	
 	// methods for spectral amplitude distances

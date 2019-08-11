@@ -392,6 +392,10 @@ namespace layers{
 	m_kappa        = (layerChild->HasMember("kappa") ? 
 			  static_cast<real_t>((*layerChild)["kappa"].GetDouble()) : 0.0);
 
+	// Type of real-valued spectrum
+	m_realSpecType = (layerChild->HasMember("kappa_realspec_type") ? 
+			  ((*layerChild)["kappa_realspec_type"].GetInt()) : FFTMAT_REALSPEC_TYPE_NORMAL);
+	
 	// Type of spectral amplitude distance (see ../helpers/FFTMat.hpp):
 	//  FFTMAT_SPECTYPE_MSE: MSE of log-spectra
 	//  FFTMAT_SPECTYPE_KLD: KLD of spectra
@@ -1370,8 +1374,8 @@ namespace layers{
 			m_specDisType);
 	
 	// step1. framing and windowing
-	sourceSig.frameSignalRealSpec();
-	targetSig.frameSignalRealSpec();
+	sourceSig.frameSignalRealSpec(m_realSpecType);
+	targetSig.frameSignalRealSpec(m_realSpecType);
 		
 	// step2. fft
 	sourceSig.FFT();
@@ -1392,7 +1396,7 @@ namespace layers{
 	// inverse DFT
 	fftDiffSig.iFFT();
 	// de-framing/windowing
-	fftDiffSig.collectGradRealSpec(m_kappa);
+	fftDiffSig.collectGradRealSpec(m_kappa, m_realSpecType, sourceSig);
 	
 	// Gradients should be in m_fftDiffData		    
 	// Done
@@ -1428,8 +1432,8 @@ namespace layers{
 			m_specDisType);
 	
 	// step1. framing and windowing
-	sourceSig.frameSignalRealSpec();
-	targetSig.frameSignalRealSpec();
+	sourceSig.frameSignalRealSpec(m_realSpecType);
+	targetSig.frameSignalRealSpec(m_realSpecType);
 		
 	// step2. fft
 	sourceSig.FFT();
@@ -1450,7 +1454,7 @@ namespace layers{
 	// inverse DFT
 	fftDiffSig.iFFT();
 	// de-framing/windowing
-	fftDiffSig.collectGradRealSpec(m_kappa);
+	fftDiffSig.collectGradRealSpec(m_kappa, m_realSpecType, sourceSig);
 	
 	// Gradients should be in m_fftDiffData		    
 	// Done
@@ -1486,8 +1490,8 @@ namespace layers{
 			m_specDisType);
 	
 	// step1. framing and windowing
-	sourceSig.frameSignalRealSpec();
-	targetSig.frameSignalRealSpec();
+	sourceSig.frameSignalRealSpec(m_realSpecType);
+	targetSig.frameSignalRealSpec(m_realSpecType);
 		
 	// step2. fft
 	sourceSig.FFT();
@@ -1505,7 +1509,7 @@ namespace layers{
 	// inverse DFT
 	fftDiffSig.iFFT();
 	// de-framing/windowing
-	fftDiffSig.collectGradRealSpec(m_kappa);
+	fftDiffSig.collectGradRealSpec(m_kappa, m_realSpecType, sourceSig);
 	
 	// Gradients should be in m_fftDiffData		    
 	// Done
@@ -1791,8 +1795,11 @@ namespace layers{
 		(*layersArray)[layersArray->Size() - 1].AddMember("zeta", m_zeta, allocator);
 	    if (m_eta > 0.0)
 		(*layersArray)[layersArray->Size() - 1].AddMember("eta", m_eta, allocator);
-	    if (m_kappa > 0.0)
+	    if (m_kappa > 0.0){
 		(*layersArray)[layersArray->Size() - 1].AddMember("kappa", m_kappa, allocator);
+		if (m_realSpecType != FFTMAT_REALSPEC_TYPE_NORMAL)
+		    (*layersArray)[layersArray->Size() - 1].AddMember("kappa_realspec_type", m_realSpecType, allocator);
+	    }
 	    
 	    (*layersArray)[layersArray->Size() - 1].AddMember("fftLength", m_fftLength,
 							      allocator);
