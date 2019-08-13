@@ -358,7 +358,7 @@ namespace layers{
 
 	m_specDisType   = (layerChild->HasMember("specDisType") ? 
 			   static_cast<real_t>((*layerChild)["specDisType"].GetInt()) :
-			   FFTMAT_SPECTYPE_MSE);
+			   FFTMAT_SPECTYPE_AMP_LOG_MSE);
 
 	if (m_gamma > 0.0){
 
@@ -1127,7 +1127,7 @@ namespace layers{
 	if (m_beta > 0.0)
 	    (*layersArray)[layersArray->Size() - 1].AddMember("beta", m_beta, allocator);
 
-	if (m_specDisType != FFTMAT_SPECTYPE_MSE)
+	if (m_specDisType != FFTMAT_SPECTYPE_AMP_LOG_MSE)
 	    (*layersArray)[layersArray->Size() - 1].AddMember("specDisType", m_specDisType,
 							      allocator);
 	

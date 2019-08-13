@@ -49,6 +49,8 @@ typedef cufftHandle *cufftHandle_t;
 #define FFT_KLD_FLOOR_NUM 0.00001
 #define FFT_AMP_MIN_NUM   0.0000001
 #define FFT_REAL_SPECTRUM_SHIFT 0.00001
+#define FFT_SPEC_LOG_MSE_CONST 1.0
+
 namespace internal{
 namespace {
 
@@ -466,7 +468,7 @@ namespace {
 	}
     };
 
-    struct L2Distance
+    struct SpecAmpDistance_AMP_LOG_MSE
     {
 	__host__ __device__ void operator() (const thrust::tuple<complex_t &,
 					     complex_t &, complex_t &> &t) const
@@ -489,8 +491,29 @@ namespace {
 	}
     };
 
+    struct SpecAmpDistance_AMP_RATIO
+    {
+	__host__ __device__ void operator() (const thrust::tuple<complex_t &,
+					     complex_t &, complex_t &> &t) const
+	{
+	    // t.get<0>() source
+	    // t.get<1>() target
+	    // t.get<2>() buffer to store diff
 
-    struct SpecKLD
+	    // To save memory space, t.get<2>().x to store diff^2
+	    // t.get<2>().y = [ (Re(src)^2 + Im(src)^2) / (Re(tar)^2 + Im(tar)^2)-1.0 ]
+	    t.get<2>().y = ((t.get<0>().x * t.get<0>().x +
+			     t.get<0>().y * t.get<0>().y +
+			     FFT_KLD_FLOOR_NUM) /
+			    (t.get<1>().x * t.get<1>().x +
+			     t.get<1>().y * t.get<1>().y +
+			     FFT_KLD_FLOOR_NUM) - 1.0);
+	    t.get<2>().x = t.get<2>().y * t.get<2>().y;
+
+	}
+    };
+
+    struct SpecAmpDistance_AMP_KLD
     {
 	__host__ __device__ void operator() (const thrust::tuple<complex_t &,
 					     complex_t &, complex_t &> &t) const
@@ -511,6 +534,67 @@ namespace {
 
 	}
     };
+
+    struct SpecAmpDistance_AMP_MSE
+    {
+	__host__ __device__ void operator() (const thrust::tuple<complex_t &,
+					     complex_t &, complex_t &> &t) const
+	{
+	    // t.get<0>() source
+	    // t.get<1>() target
+	    // t.get<2>() buffer to store diff
+
+	    // To save memory space, t.get<2>().x to store diff^2
+	    // t.get<2>().y = [ (Re(src)^2 + Im(src)^2) - (Re(tar)^2 + Im(tar)^2) ]
+	    t.get<2>().y = ((t.get<0>().x * t.get<0>().x +
+			     t.get<0>().y * t.get<0>().y) -
+			    (t.get<1>().x * t.get<1>().x +
+			     t.get<1>().y * t.get<1>().y));
+	    
+	    // t.get<2>().x = [ (Re(src)^2 + Im(src)^2) - (Re(tar)^2 + Im(tar)^2) ] ^ 2
+	    t.get<2>().x = t.get<2>().y * t.get<2>().y;
+
+	}
+    };
+
+    struct SpecAmpDistance_SPEC_MSE
+    {
+	__host__ __device__ void operator() (const thrust::tuple<complex_t &,
+					     complex_t &, complex_t &> &t) const
+	{
+	    // t.get<0>() source
+	    // t.get<1>() target
+	    // t.get<2>() buffer to store diff
+
+	    // t.get<2>().y is not used to store intermediate results
+	    t.get<2>().y = 0;
+
+	    // [Re(src) - Re(tar)]^2 + [Im(src) - Im(tar)]^2 
+	    t.get<2>().x = (t.get<0>().x - t.get<1>().x) * (t.get<0>().x - t.get<1>().x) +
+		(t.get<0>().y - t.get<1>().y) * (t.get<0>().y - t.get<1>().y);
+
+	}
+    };
+
+    struct SpecAmpDistance_SPEC_LOG_MSE
+    {
+	__host__ __device__ void operator() (const thrust::tuple<complex_t &,
+					     complex_t &, complex_t &> &t) const
+	{
+	    // t.get<0>() source
+	    // t.get<1>() target
+	    // t.get<2>() buffer to store diff
+
+	    // [Re(src) - Re(tar)]^2 + [Im(src) - Im(tar)]^2 + const
+	    t.get<2>().y = (t.get<0>().x - t.get<1>().x) * (t.get<0>().x - t.get<1>().x) +
+		(t.get<0>().y - t.get<1>().y) * (t.get<0>().y - t.get<1>().y) + FFT_SPEC_LOG_MSE_CONST;
+
+	    // log[ [Re(src) - Re(tar)]^2 + [Im(src) - Im(tar)]^2 + const ]
+	    t.get<2>().x = helpers::safeLog(t.get<2>().y);
+	    
+	}
+    };
+    
     
     struct phaseDistance
     {
@@ -642,7 +726,7 @@ namespace {
 	}
     };
 
-    struct L2DistanceGrad
+    struct SpecAmpDistance_AMP_LOG_MSE_Grad
     {
 	__host__ __device__ void operator() (const thrust::tuple<complex_t &,
 					     complex_t &, complex_t &> &t) const
@@ -663,7 +747,27 @@ namespace {
     };
 
 
-    struct SpecKLDGrad
+    struct SpecAmpDistance_AMP_RATIO_Grad
+    {
+	__host__ __device__ void operator() (const thrust::tuple<complex_t &,
+					     complex_t &, complex_t &> &t) const
+	{
+	    // t.get<0>() source
+	    // t.get<1>() target
+	    // t.get<2>() buffer to store diff
+
+	    real_t spec = (t.get<1>().x * t.get<1>().x +
+			   t.get<1>().y * t.get<1>().y +
+			   FFT_KLD_FLOOR_NUM);
+	    
+	    t.get<2>().x = t.get<2>().y * t.get<0>().x / spec;
+	    t.get<2>().y = t.get<2>().y * t.get<0>().y / spec;
+
+
+	}
+    };
+
+    struct SpecAmpDistance_AMP_KLD_Grad
     {
 	__host__ __device__ void operator() (const thrust::tuple<complex_t &,
 					     complex_t &, complex_t &> &t) const
@@ -681,6 +785,60 @@ namespace {
 	}
     };
 
+
+    struct SpecAmpDistance_AMP_MSE_Grad
+    {
+	__host__ __device__ void operator() (const thrust::tuple<complex_t &,
+					     complex_t &, complex_t &> &t) const
+	{
+	    // t.get<0>() source
+	    // t.get<1>() target
+	    // t.get<2>().y to store diff
+
+	    // t.get<2>().y stores (Re(src)^2 + Im(src)^2) - (Re(tar)^2 + Im(tar)^2)
+	    // [ (Re(src)^2 + Im(src)^2) - (Re(tar)^2 + Im(tar)^2) ] * Re(src)
+	    // [ (Re(src)^2 + Im(src)^2) - (Re(tar)^2 + Im(tar)^2) ] * Im(src)
+	    t.get<2>().x = t.get<2>().y * t.get<0>().x;
+	    t.get<2>().y = t.get<2>().y * t.get<0>().y;
+	}
+    };
+
+    
+    struct SpecAmpDistance_SPEC_MSE_Grad
+    {
+	__host__ __device__ void operator() (const thrust::tuple<complex_t &,
+					     complex_t &, complex_t &> &t) const
+	{
+	    // t.get<0>() source
+	    // t.get<1>() target
+	    // t.get<2>().y to store diff
+
+	    // Re(src) - Re(tar)
+	    t.get<2>().x = t.get<0>().x - t.get<1>().x;
+	    // Im(src) - Im(tar)
+	    t.get<2>().y = t.get<0>().y - t.get<1>().y;
+	}
+    };
+
+    
+    struct SpecAmpDistance_SPEC_LOG_MSE_Grad
+    {
+	__host__ __device__ void operator() (const thrust::tuple<complex_t &,
+					     complex_t &, complex_t &> &t) const
+	{
+	    // t.get<0>() source
+	    // t.get<1>() target
+	    // t.get<2>().y to store diff
+
+	    // t.get<2>().y stores [Re(src) - Re(tar)]^2 + [Im(src) - Im(tar)]^2 + const
+	    // Re(src) - Re(tar) /  (Re(src)^2 + Im(src)^2) - (Re(tar)^2 + Im(tar)^2)
+	    t.get<2>().x = (t.get<0>().x - t.get<1>().x) / t.get<2>().y;
+	    // Im(src) - Im(tar) / (Re(src)^2 + Im(src)^2) - (Re(tar)^2 + Im(tar)^2)
+	    t.get<2>().y = (t.get<0>().y - t.get<1>().y) / t.get<2>().y;
+	}
+    };
+    
+    
     struct PhaseGrad
     {
 	__host__ __device__ void operator() (const thrust::tuple<complex_t &,
@@ -1013,11 +1171,70 @@ namespace helpers {
     {
 	// calculate the spectral-distrince
 	if (this->m_fftData->size() != target.m_fftData->size())
-	    throw std::runtime_error("FFTL2Distance error: input fft data unequal size");
-	
-	if (m_disType == FFTMAT_SPECTYPE_KLD){
+	    throw std::runtime_error("Spectral distance error: input fft data unequal size");
+
+	if (m_disType == FFTMAT_SPECTYPE_AMP_RATIO){
 	    {
-		internal::SpecKLD fn1;
+		internal::SpecAmpDistance_AMP_RATIO fn1;
+		thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_fftData).begin(),
+					   (*(target.m_fftData)).begin(),
+					   (*(diff.m_fftData)).begin())),
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_fftData).end(),
+					   (*(target.m_fftData)).end(),
+					   (*(diff.m_fftData)).end())),
+		fn1);
+	    }
+	    
+	}else if (m_disType == FFTMAT_SPECTYPE_SPEC_MSE){
+	    {
+		internal::SpecAmpDistance_SPEC_MSE fn1;
+		thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_fftData).begin(),
+					   (*(target.m_fftData)).begin(),
+					   (*(diff.m_fftData)).begin())),
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_fftData).end(),
+					   (*(target.m_fftData)).end(),
+					   (*(diff.m_fftData)).end())),
+		fn1);
+	    }
+
+	}else if (m_disType == FFTMAT_SPECTYPE_SPEC_LOG_MSE){
+	    {
+		internal::SpecAmpDistance_SPEC_LOG_MSE fn1;
+		thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_fftData).begin(),
+					   (*(target.m_fftData)).begin(),
+					   (*(diff.m_fftData)).begin())),
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_fftData).end(),
+					   (*(target.m_fftData)).end(),
+					   (*(diff.m_fftData)).end())),
+		fn1);
+	    }
+	    
+	}else if (m_disType == FFTMAT_SPECTYPE_AMP_MSE){
+	    {
+		internal::SpecAmpDistance_AMP_MSE fn1;
+		thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_fftData).begin(),
+					   (*(target.m_fftData)).begin(),
+					   (*(diff.m_fftData)).begin())),
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_fftData).end(),
+					   (*(target.m_fftData)).end(),
+					   (*(diff.m_fftData)).end())),
+		fn1);
+	    }	    
+	}else if (m_disType == FFTMAT_SPECTYPE_AMP_KLD){
+	    {
+		internal::SpecAmpDistance_AMP_KLD fn1;
 		thrust::for_each(
 		thrust::make_zip_iterator(
 			thrust::make_tuple((*m_fftData).begin(),
@@ -1031,7 +1248,7 @@ namespace helpers {
 	    }
 	}else{
 	    {
-		internal::L2Distance fn1;
+		internal::SpecAmpDistance_AMP_LOG_MSE fn1;
 		thrust::for_each(
 		thrust::make_zip_iterator(
 			thrust::make_tuple((*m_fftData).begin(),
@@ -1088,7 +1305,7 @@ namespace helpers {
     {
 	// calculate the spectral-distrince
 	if (this->m_fftData->size() != target.m_fftData->size())
-	    throw std::runtime_error("FFTL2Distance error: input fft data unequal size");
+	    throw std::runtime_error("Phase distance error: input fft data unequal size");
 	
 	// Phase-distance averaged over (frameNum * fftBins)
 	real_t distance = 0.0;
@@ -1225,9 +1442,70 @@ namespace helpers {
     {
 
 	// calculate the gradient at each frequency bin and each time step
-	if (m_disType == FFTMAT_SPECTYPE_KLD){
+	if (m_disType == FFTMAT_SPECTYPE_AMP_RATIO){
 	    {
-		internal::SpecKLDGrad fn1;
+		internal::SpecAmpDistance_AMP_RATIO_Grad fn1;
+		thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*(source.m_fftData)).begin(),
+					   (*(target.m_fftData)).begin(),
+					   (*m_fftData).begin())),
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*(source.m_fftData)).end(),
+					   (*(target.m_fftData)).end(),
+					   (*m_fftData).end())),
+		fn1);
+	    }
+
+	}else if (m_disType == FFTMAT_SPECTYPE_SPEC_MSE){
+	    {
+		internal::SpecAmpDistance_SPEC_MSE_Grad fn1;
+		thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*(source.m_fftData)).begin(),
+					   (*(target.m_fftData)).begin(),
+					   (*m_fftData).begin())),
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*(source.m_fftData)).end(),
+					   (*(target.m_fftData)).end(),
+					   (*m_fftData).end())),
+		fn1);
+	    }
+	    
+	}else if (m_disType == FFTMAT_SPECTYPE_SPEC_LOG_MSE){
+	    {
+		internal::SpecAmpDistance_SPEC_LOG_MSE_Grad fn1;
+		thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*(source.m_fftData)).begin(),
+					   (*(target.m_fftData)).begin(),
+					   (*m_fftData).begin())),
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*(source.m_fftData)).end(),
+					   (*(target.m_fftData)).end(),
+					   (*m_fftData).end())),
+		fn1);
+	    }
+	    
+	}else if (m_disType == FFTMAT_SPECTYPE_AMP_MSE){
+	    {
+		internal::SpecAmpDistance_AMP_MSE_Grad fn1;
+		thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*(source.m_fftData)).begin(),
+					   (*(target.m_fftData)).begin(),
+					   (*m_fftData).begin())),
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*(source.m_fftData)).end(),
+					   (*(target.m_fftData)).end(),
+					   (*m_fftData).end())),
+		fn1);
+	    } 
+
+	
+	}else if (m_disType == FFTMAT_SPECTYPE_AMP_KLD){
+	    {
+		internal::SpecAmpDistance_AMP_KLD_Grad fn1;
 		thrust::for_each(
 		thrust::make_zip_iterator(
 			thrust::make_tuple((*(source.m_fftData)).begin(),
@@ -1241,7 +1519,7 @@ namespace helpers {
 	    }
 	}else{
 	      {
-		  internal::L2DistanceGrad fn1;
+		  internal::SpecAmpDistance_AMP_LOG_MSE_Grad fn1;
 		  thrust::for_each(
 		thrust::make_zip_iterator(
 			thrust::make_tuple((*(source.m_fftData)).begin(),

@@ -391,21 +391,23 @@ namespace layers{
 
 	m_kappa        = (layerChild->HasMember("kappa") ? 
 			  static_cast<real_t>((*layerChild)["kappa"].GetDouble()) : 0.0);
-
-	// Type of real-valued spectrum
-	m_realSpecType = (layerChild->HasMember("kappa_realspec_type") ? 
-			  ((*layerChild)["kappa_realspec_type"].GetInt()) : FFTMAT_REALSPEC_TYPE_NORMAL);
 	
 	// Type of spectral amplitude distance (see ../helpers/FFTMat.hpp):
-	//  FFTMAT_SPECTYPE_MSE: MSE of log-spectra
-	//  FFTMAT_SPECTYPE_KLD: KLD of spectra
 	m_specDisType   = (layerChild->HasMember("specDisType") ? 
 			   static_cast<real_t>((*layerChild)["specDisType"].GetInt()) :
-			   FFTMAT_SPECTYPE_MSE);
+			   FFTMAT_SPECTYPE_AMP_LOG_MSE);
 
 	m_phaseDisType  = (layerChild->HasMember("phaseDisType") ? 
 			   static_cast<real_t>((*layerChild)["phaseDisType"].GetInt()) :
 			   FFTMAT_PHASETYPE_COS);
+	// Type of real-valued spectrum
+	m_realSpecType    = (layerChild->HasMember("kappa_realspec_type") ? 
+			     ((*layerChild)["kappa_realspec_type"].GetInt()) :
+			     FFTMAT_REALSPEC_TYPE_NORMAL);
+	
+	m_realSpecDisType = (layerChild->HasMember("realSpecDisType") ? 
+			   static_cast<real_t>((*layerChild)["realSpecDisType"].GetInt()) :
+			   FFTMAT_SPECTYPE_AMP_LOG_MSE);
 	
 	// Reserved option
 	//  if the target signal is multi-dimensional, we can convert the multi-dimensional
@@ -1355,7 +1357,7 @@ namespace layers{
 			m_frameLength, m_frameShift, m_windowType,
 			m_fftLengthRealSpec, m_fftBinsNumRealSpec,
 			m_frameNum, this->__vMaxSeqLength(), timeLength,
-			m_specDisType);
+			m_realSpecDisType);
 
 	helpers::FFTMat<TDevice> targetSig(
 			&this->_targets(), &this->m_fftTargetFramedRealSpec,
@@ -1363,7 +1365,7 @@ namespace layers{
 			m_frameLength, m_frameShift, m_windowType,
 			m_fftLengthRealSpec, m_fftBinsNumRealSpec,
 			m_frameNum, this->__vMaxSeqLength(), timeLength,
-			m_specDisType);
+			m_realSpecDisType);
 
 	helpers::FFTMat<TDevice> fftDiffSig(
 			&this->m_fftDiffDataRealSpec, &this->m_fftDiffFramedRealSpec,
@@ -1371,7 +1373,7 @@ namespace layers{
 			m_frameLength, m_frameShift, m_windowType,
 			m_fftLengthRealSpec, m_fftBinsNumRealSpec,
 			m_frameNum, this->__vMaxSeqLength(), timeLength,
-			m_specDisType);
+			m_realSpecDisType);
 	
 	// step1. framing and windowing
 	sourceSig.frameSignalRealSpec(m_realSpecType);
@@ -1413,7 +1415,7 @@ namespace layers{
 			m_frameLength2, m_frameShift2, m_windowType2,
 			m_fftLengthRealSpec2, m_fftBinsNumRealSpec2,
 			m_frameNum2, this->__vMaxSeqLength(), timeLength,
-			m_specDisType);
+			m_realSpecDisType);
 
 	helpers::FFTMat<TDevice> targetSig(
 			&this->_targets(), &this->m_fftTargetFramedRealSpec2,
@@ -1421,7 +1423,7 @@ namespace layers{
 			m_frameLength2, m_frameShift2, m_windowType2,
 			m_fftLengthRealSpec2, m_fftBinsNumRealSpec2,
 			m_frameNum2, this->__vMaxSeqLength(), timeLength,
-			m_specDisType);
+			m_realSpecDisType);
 
 	helpers::FFTMat<TDevice> fftDiffSig(
 			&this->m_fftDiffDataRealSpec2, &this->m_fftDiffFramedRealSpec2,
@@ -1429,7 +1431,7 @@ namespace layers{
 			m_frameLength2, m_frameShift2, m_windowType2,
 			m_fftLengthRealSpec2, m_fftBinsNumRealSpec2,
 			m_frameNum2, this->__vMaxSeqLength(), timeLength,
-			m_specDisType);
+			m_realSpecDisType);
 	
 	// step1. framing and windowing
 	sourceSig.frameSignalRealSpec(m_realSpecType);
@@ -1471,7 +1473,7 @@ namespace layers{
 			m_frameLength3, m_frameShift3, m_windowType3,
 			m_fftLengthRealSpec3, m_fftBinsNumRealSpec3,
 			m_frameNum3, this->__vMaxSeqLength(), timeLength,
-			m_specDisType);
+			m_realSpecDisType);
 
 	helpers::FFTMat<TDevice> targetSig(
 			&this->_targets(), &this->m_fftTargetFramedRealSpec3,
@@ -1479,7 +1481,7 @@ namespace layers{
 			m_frameLength3, m_frameShift3, m_windowType3,
 			m_fftLengthRealSpec3, m_fftBinsNumRealSpec3,
 			m_frameNum3, this->__vMaxSeqLength(), timeLength,
-			m_specDisType);
+			m_realSpecDisType);
 
 	helpers::FFTMat<TDevice> fftDiffSig(
 			&this->m_fftDiffDataRealSpec3, &this->m_fftDiffFramedRealSpec3,
@@ -1487,7 +1489,7 @@ namespace layers{
 			m_frameLength3, m_frameShift3, m_windowType3,
 			m_fftLengthRealSpec3, m_fftBinsNumRealSpec3,
 			m_frameNum3, this->__vMaxSeqLength(), timeLength,
-			m_specDisType);
+			m_realSpecDisType);
 	
 	// step1. framing and windowing
 	sourceSig.frameSignalRealSpec(m_realSpecType);
@@ -1777,7 +1779,7 @@ namespace layers{
 	if (m_beta > 0.0)
 	    (*layersArray)[layersArray->Size() - 1].AddMember("beta", m_beta, allocator);
 
-	if (m_specDisType != FFTMAT_SPECTYPE_MSE)
+	if (m_specDisType != FFTMAT_SPECTYPE_AMP_LOG_MSE)
 	    (*layersArray)[layersArray->Size() - 1].AddMember("specDisType", m_specDisType,
 							      allocator);
 	if (m_phaseDisType != FFTMAT_PHASETYPE_COS)
@@ -1799,6 +1801,8 @@ namespace layers{
 		(*layersArray)[layersArray->Size() - 1].AddMember("kappa", m_kappa, allocator);
 		if (m_realSpecType != FFTMAT_REALSPEC_TYPE_NORMAL)
 		    (*layersArray)[layersArray->Size() - 1].AddMember("kappa_realspec_type", m_realSpecType, allocator);
+		if (m_realSpecDisType != FFTMAT_SPECTYPE_AMP_LOG_MSE)
+		    (*layersArray)[layersArray->Size() - 1].AddMember("realSpecDisType", m_specDisType, allocator);
 	    }
 	    
 	    (*layersArray)[layersArray->Size() - 1].AddMember("fftLength", m_fftLength,
