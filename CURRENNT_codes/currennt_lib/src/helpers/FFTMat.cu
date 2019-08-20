@@ -47,6 +47,7 @@ typedef cufftHandle *cufftHandle_t;
 #define FFT_PI_DEFINITION 3.141215
 //#define FFT_KLD_FLOOR_NUM 0.0000000001
 #define FFT_KLD_FLOOR_NUM 0.00001
+#define FFT_IS_FLOOR_NUM 0.00001
 #define FFT_AMP_MIN_NUM   0.0000001
 #define FFT_REAL_SPECTRUM_SHIFT 0.00001
 #define FFT_SPEC_LOG_MSE_CONST 1.0
@@ -513,6 +514,33 @@ namespace {
 	}
     };
 
+
+    struct SpecAmpDistance_AMP_IS
+    {
+	__host__ __device__ void operator() (const thrust::tuple<complex_t &,
+					     complex_t &, complex_t &> &t) const
+	{
+	    // t.get<0>() source
+	    // t.get<1>() target
+	    // t.get<2>() buffer to store diff
+
+	    real_t source_amp = sqrt(t.get<0>().x * t.get<0>().x +
+				     t.get<0>().y * t.get<0>().y +
+				     FFT_IS_FLOOR_NUM);
+	    
+	    real_t target_amp = sqrt(t.get<1>().x * t.get<1>().x +
+				     t.get<1>().y * t.get<1>().y +
+				     FFT_IS_FLOOR_NUM);
+	    
+	    // To save memory space, t.get<2>().x to store diff^2
+	    // t.get<2>().y=sqrt(Re(src)^2 + Im(src)^2)/sqrt(Re(tar)^2 + Im(tar)^2)
+	    t.get<2>().y = target_amp / source_amp;
+	    t.get<2>().x = t.get<2>().y - helpers::safeLog(t.get<2>().y) - 1.0;
+
+	}
+    };
+
+    
     struct SpecAmpDistance_AMP_KLD
     {
 	__host__ __device__ void operator() (const thrust::tuple<complex_t &,
@@ -763,6 +791,24 @@ namespace {
 	    t.get<2>().x = t.get<2>().y * t.get<0>().x / spec;
 	    t.get<2>().y = t.get<2>().y * t.get<0>().y / spec;
 
+
+	}
+    };
+
+    struct SpecAmpDistance_AMP_IS_Grad
+    {
+	__host__ __device__ void operator() (const thrust::tuple<complex_t &,
+					     complex_t &, complex_t &> &t) const
+	{
+	    // t.get<0>() source
+	    // t.get<1>() target
+	    // t.get<2>() buffer to store diff
+
+	    real_t spec = t.get<0>().x * t.get<0>().x +
+		t.get<0>().y * t.get<0>().y + FFT_IS_FLOOR_NUM;
+	    
+	    t.get<2>().x = t.get<0>().x / spec * (1.0 - t.get<2>().y);
+	    t.get<2>().y = t.get<0>().y / spec * (1.0 - t.get<2>().y);
 
 	}
     };
@@ -1173,7 +1219,22 @@ namespace helpers {
 	if (this->m_fftData->size() != target.m_fftData->size())
 	    throw std::runtime_error("Spectral distance error: input fft data unequal size");
 
-	if (m_disType == FFTMAT_SPECTYPE_AMP_RATIO){
+	if (m_disType == FFTMAT_SPECTYPE_AMP_IS){
+	    {
+		internal::SpecAmpDistance_AMP_IS fn1;
+		thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_fftData).begin(),
+					   (*(target.m_fftData)).begin(),
+					   (*(diff.m_fftData)).begin())),
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_fftData).end(),
+					   (*(target.m_fftData)).end(),
+					   (*(diff.m_fftData)).end())),
+		fn1);
+	    }
+	    
+	}else if (m_disType == FFTMAT_SPECTYPE_AMP_RATIO){
 	    {
 		internal::SpecAmpDistance_AMP_RATIO fn1;
 		thrust::for_each(
@@ -1442,7 +1503,22 @@ namespace helpers {
     {
 
 	// calculate the gradient at each frequency bin and each time step
-	if (m_disType == FFTMAT_SPECTYPE_AMP_RATIO){
+	if (m_disType == FFTMAT_SPECTYPE_AMP_IS){
+	    {
+		internal::SpecAmpDistance_AMP_IS_Grad fn1;
+		thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*(source.m_fftData)).begin(),
+					   (*(target.m_fftData)).begin(),
+					   (*m_fftData).begin())),
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*(source.m_fftData)).end(),
+					   (*(target.m_fftData)).end(),
+					   (*m_fftData).end())),
+		fn1);
+	    }
+	    
+	}else if (m_disType == FFTMAT_SPECTYPE_AMP_RATIO){
 	    {
 		internal::SpecAmpDistance_AMP_RATIO_Grad fn1;
 		thrust::for_each(
