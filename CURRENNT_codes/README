@@ -44,15 +44,6 @@ Building on Linux requires the following:
    1 netcdf http://www.unidata.ucar.edu/software/netcdf/
        The version Xin Wang uses is 4.3.3.1.
        
-<<<<<<< HEAD
-       For compatiblity,
-       1. please configure netCDF by "./configure --disable-netcdf-4" (you can add other options) 
-       2. please then "make & make install "
-       After compiling, nc-config can be used to print the configuration of netCDF.
-
-       $ ./nc-config --all
-       This netCDF 4.3.3.1 has been built with the following features. 
-=======
        For compatiblity, please do
        $: ./configure --disable-netcdf-4 --prefix=PATH_TO_INSTALL
        $: make
@@ -64,7 +55,6 @@ Building on Linux requires the following:
        
        $: PATH_TO_INSTALL/nc-config --all
        This netCDF 4.3.3.1 has been built with the following features: 
->>>>>>> 48c2342c742d64e4699609d17e0e26325933b647
 
         --cc        -> gcc
 	--cflags    ->  -I/home/smg/wang/TOOL/bin/netcdf_220/include 
@@ -97,17 +87,11 @@ Building on Linux requires the following:
        The version Xin Wang uses is boost_1_59_0.
        Although Boost is head-file library, some of the sub-libraries must be compiled.
        
-<<<<<<< HEAD
-       Particularly, "program_options system filesystem random thread" should be compiled,
-        ./bootstrap.sh --with-libraries=program_options,filesystem,system,random,thread
-	./b2 
-=======
        Particularly, "program_options system filesystem random thread" should be compiled.
        Please do this:
         $: ./bootstrap.sh --with-libraries=program_options,filesystem,system,random,thread
 	$: ./b2 --prefix=PATH_TO_INSTALL
 
->>>>>>> 48c2342c742d64e4699609d17e0e26325933b647
    3 CUDA > 6.5
        The modified CURRENNT can be compiled with CUDA7.0, 8.0, 9.0, and 10.0.
        This version of CURRENNT has coverd the issues mentioned in
