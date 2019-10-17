@@ -109,6 +109,8 @@ namespace{
         
     struct sinWaveGenerator_accum
     {
+	bool flagPhaseMatch;
+	
 	int inputRes;
 	int outputRes;
 	int signalDim;
@@ -171,15 +173,17 @@ namespace{
 	    real_t delta_1 = 0.0;
 	    real_t delta_2 = 0.0;
 	    real_t phaseNoiseValue = 0.0;
-	    
-	    for (int timeIdx = 0; timeIdx < seqLength; timeIdx++){
 
+	    // Generate sine waveform step by step
+	    for (int timeIdx = 0; timeIdx < seqLength; timeIdx++){
+		
+		// Time step index (with parallel utterances into consideration)
 		timeIdxPhy = timeIdx * parallel + paraBlock;
 		
 		if (patTypes[timeIdxPhy] == PATTYPE_NONE)
 		    continue;
 	
-		// read and denormalize the raw data
+		// read and denormalize the raw F0 data
 		real_t freq = sourceData[(timeIdxPhy / timeReso - inputShiftTime) * prelayerSize
 					 + freqDim] * f0S + f0M;
 		
@@ -187,7 +191,6 @@ namespace{
 		//if (dimIdx >= phaseCandNum)    
 		//    freq = freq * (dimIdx - phaseCandNum + 2);
 		
-
 		// for voiced segment
 		if ((freqOpt == NN_OPE_FREGEN_F0_QF0 && freq > 1.0)  ||
 		    (freqOpt == NN_OPE_FREGEN_F0_LF0 && freq > 10.0) ||
@@ -206,37 +209,55 @@ namespace{
 			// input is linear
 			//freq = freq;
 		    }
-		    
+
+		    // if harmonic, increase the F0 value by (dimIdx - phaseCandNum + 2)
 		    if (dimIdx >= phaseCandNum)    
 			freq = freq * (dimIdx - phaseCandNum + 2);
 
-		    // get the phase noise
+		    // get the phase noise if necessary
 		    if (dimIdx < phaseCandNum){
+			// phase noise for the fundamental component
 			phaseNoiseValue = phaseNoise[timeIdxPhy*(hnmNum+1)];
 		    }else{
-			phaseNoiseValue = phaseNoise[timeIdxPhy*(hnmNum+1) +dimIdx -phaseCandNum];
+			// phase noise for the harmonics
+			phaseNoiseValue = phaseNoise[timeIdxPhy*(hnmNum+1) + dimIdx - phaseCandNum + 1];
 		    }
 
-		    // accumulate the phase + phase nosise
+		    // accumulate phase + phase nosise
 		    spPhase += (2.0 * PI_DEFINITION * freq / freqSR + phaseNoiseValue);		    
 		    if (spPhase > 2.0 * PI_DEFINITION)
 			spPhase = spPhase - 2.0 * PI_DEFINITION;
 		    else if (spPhase < -2.0 * PI_DEFINITION)
 			spPhase = spPhase + 2.0 * PI_DEFINITION;
 
-		    // store the signal value
+		    // sine wavefor value of current time step
 		    sigValue = sin(spPhase) * f0Mag;
-		    if (dimIdx < phaseCandNum)
-			genSignalBuff[timeIdxPhy * phaseCandNum + dimIdx] = sigValue;
-		    else
-			HmnBuff[timeIdxPhy * hnmNum + (dimIdx - phaseCandNum)] = sigValue;
+		    
+		    // store the signal value
 
+		    if (flagPhaseMatch){
+			// when phase matching is used, phase candidates of fundammental components
+			// and harmonics are saved in separate buffers
+			if (dimIdx < phaseCandNum){
+			    // fundamental component
+			    genSignalBuff[timeIdxPhy * phaseCandNum + dimIdx] = sigValue;
+			}else{
+			    // save harmonics in the specific buffer HmnBuff when necessary
+			    HmnBuff[timeIdxPhy * hnmNum + (dimIdx - phaseCandNum)] = sigValue;
+			}
+		    }else{
+			// when phase mathcing is not used, fundamental compoennt
+			// and harmonics are saved in the save buffer
+			genSignalBuff[timeIdxPhy * signalDim + dimIdx] = sigValue;
+		    }
+		    
 		    // if necessary, set the noise in voiced regions to zero
 		    if (noNoiseInSince)
 			if (dimIdx < (hnmNum + 1))
 			    addtiveNoise[timeIdxPhy * (hnmNum + 1) + dimIdx] = 0.0;
 			
 		}else{
+		    
 		    // for unvoiced segment, keep the initial phase, set data = 0
 		    spPhase = initPhase;
 
@@ -520,6 +541,7 @@ namespace layers{
 	    else
 		throw std::runtime_error("Unknown F0 input type (frequencyOpt)");
 	    printf("Denormalize F0 using mean/std: %f %f.", m_freqDataM, m_freqDataS);
+	    printf("\n\tSine wave sampling rate %f", m_freqSR);
 	    printf("\n\tSine wave magnitude %f", m_freqSignalMag);
 	    printf("\n\tSine wave harmonics %d", m_freqHmn);
 	    if (m_freqBins)
@@ -675,7 +697,6 @@ namespace layers{
 						const int nnState)
     {
 	TrainableLayer<TDevice>::loadSequences(fraction, nnState);
-	
     }
     
     template <typename TDevice>
@@ -693,8 +714,16 @@ namespace layers{
 	int timeLengthTotal = timeLength * this->parallelSequences();
 	int signalDimTotal  = this->size() * this->parallelSequences();
 
+	/* -------- Preparation -------- */
+	
+	// Reinitialize the data buffer
+	// output buffer
 	thrust::fill(this->outputs().begin(), this->outputs().end(), 0.0);
-		
+	// buffer to store phase candicates
+	thrust::fill(this->m_freqSignalBuff.begin(), this->m_freqSignalBuff.end(), 0.0);
+	// buffer to store hamornics
+	thrust::fill(this->m_freqHmnBuff.begin(), this->m_freqHmnBuff.end(), 0.0);
+	
 	// generate additive noise
 	thrust::counting_iterator<unsigned int> index_sequence_begin(0);
 	if (m_noiseType == NN_SIGGEN_LAYER_NOISE_GAUSSIAN){
@@ -743,25 +772,25 @@ namespace layers{
 	    
 	}	
 
-	// generate signal
+	/* ------- generate signal ------ */
 	if (m_freqDim < 0){
-	    
-	    // generating only random noise
+	    // If only random noise is to be generated
 	    thrust::copy(m_noiseInput.begin(),
 			 m_noiseInput.begin() + timeLength * this->size(),
 			 this->outputs().begin());
 	    
 	}else{
-	
-	    if (m_freqBins == 0){
+	    // If sine-based excitation is to be generated
 	    
-		// Directly generate multiple signals with different initial phase
+	    if (m_freqBins == 0){
+		// If phase matching is not necessary
 	    
 		internal::sinWaveGenerator_accum fn1;
+		fn1.flagPhaseMatch = false;
 		fn1.inputRes      = this->precedingLayer().getResolution();
 		fn1.outputRes     = this->getResolution();
 		fn1.signalDim     = this->size();
-		fn1.hnmNum        = 0;
+		fn1.hnmNum        = this->m_freqHmn;
 		fn1.prelayerSize  = this->precedingLayer().size();
 		
 		fn1.inputShiftTime  = 0;
@@ -780,14 +809,21 @@ namespace layers{
 		fn1.addtiveNoiseMag= this->m_noiseMag;
 		fn1.noNoiseInSince = m_noNoiseInSine;
 		fn1.parallel       = this->parallelSequences();
+
+		// output buffer to store sine waveforms
 		fn1.genSignalBuff  = helpers::getRawPointer(this->outputs());
+		// input buffer with F0 values
 		fn1.sourceData     = helpers::getRawPointer(this->precedingLayer().outputs());
+		// time flag
 		fn1.patTypes       = helpers::getRawPointer(this->patTypes());
+		// input buffer of phase noise
 		fn1.phaseNoise     = helpers::getRawPointer(this->m_phaseNoise);
+		// buffer of additive noise
 		fn1.addtiveNoise   = helpers::getRawPointer(this->m_noiseInput);
+		// buffer of hamonics
+		fn1.HmnBuff        = NULL;
 		fn1.signalStatic   = NULL;
 		fn1.targetData     = NULL;
-		fn1.HmnBuff        = NULL;
 
 		fn1.equalNoiseSinePower = m_equalNoiseSinePower;
 		fn1.seqLength      = timeLength;
@@ -803,7 +839,7 @@ namespace layers{
 		    fn1);
 	       
 	       
-	    
+		// Add noise to sine
 		thrust::transform(m_noiseInput.begin(),
 				  m_noiseInput.begin() + timeLengthTotal * this->size(),
 				  this->outputs().begin(),
@@ -813,11 +849,11 @@ namespace layers{
 	    
 	    }else{
 
-		// Generate the phase-matched signal as output
+		// If phase matching is necessary
 		
-		// Step1. generate candidate signals
-		
+		// Step1. generate sine signals with different initial phase
 		internal::sinWaveGenerator_accum fn1;
+		fn1.flagPhaseMatch = true;		
 		fn1.inputRes      = this->precedingLayer().getResolution();
 		fn1.outputRes     = this->getResolution();
 		fn1.signalDim     = m_freqBins + m_freqHmn;
@@ -869,8 +905,9 @@ namespace layers{
 				     thrust::counting_iterator<int>(0) + m_freqErrorBuff.size())),
 		 fn1);
 
+
+		// Step2. calculate correlation with target waveform (during training)
 		if (this->flagTrainingMode()){
-		    // Step2. calculate correlation
 		    internal::signalCorr fn2;
 		    fn2.signalDim = m_freqBins + m_freqHmn;
 		    fn2.hnmNum    = m_freqHmn;

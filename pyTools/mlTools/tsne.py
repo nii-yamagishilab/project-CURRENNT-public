@@ -23,7 +23,8 @@ def Hbeta(D = Math.array([]), beta = 1.0):
     """Compute the perplexity and the P-row for a specific value of the precision of a Gaussian distribution."""
     # Compute P-row and corresponding perplexity
     P = Math.exp(-D.copy() * beta);
-    sumP = sum(P);
+    sumP = sum(P) + Math.finfo(Math.double).eps;
+        
     H = Math.log(sumP) + beta * Math.sum(D * P) / sumP;
     P = P / sumP;
     return H, P;

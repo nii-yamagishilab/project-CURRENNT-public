@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 LEV=26
 
@@ -8,19 +8,28 @@ TEMP=$3
 
 if [ -e ${file_name} ];
 then
-    echo ${file_name}
+    # basename
     basename=`basename ${file_name} .wav`
+    # input file name
     INPUT=${file_name}
+    # final output file name
     OUTPUT=${basename}_norm.wav
-
-    SOX=sox
-    SV56=/work/smg/wang/TOOL/bin/sv56demo
-    SCALE=${SCRIPT_DIR}/03_scale.py
-    
+    # raw data name
     RAWORIG=${OUTPUT}.raw
+    # normed raw data name
     RAWNORM=${OUTPUT}.raw.norm
+    # 16bit wav
     BITS16=${OUTPUT}.16bit.wav
 
+    SOX=sox
+    SV56=sv56demo
+    SCALE=${SCRIPT_DIR}/03_scale.py
+    
+    if ! type "${SOX}" &> /dev/null; then
+	echo "${SOX} not in path"
+	exit
+    fi
+    
     SAMP=`${SOX} --i -r ${INPUT}`
     BITS=`${SOX} --i -b ${INPUT}`
 
@@ -36,9 +45,14 @@ then
 	${SOX} ${INPUT} ${RAWORIG}
     fi
 
-    if [ ! -z "${SV56}" ] && [ -e "${SV56}" ];
+    if ! type "${SV56}" &> /dev/null;
     then
-    
+	echo "convert but not normed ${INPUT} because ${SV56} is not in path"
+	# convert but not normed
+	${SOX} -t raw -b 16 -e signed -c 1 -r ${SAMP} ${RAWORIG} ${OUTPUT}
+	rm ${RAWORIG}
+    else
+	echo "convert and normed ${INPUT}"
 	# norm the waveform
 	${SV56} -q -sf ${SAMP} -lev -${LEV} ${RAWORIG} ${RAWNORM} > log_sv56 2>log_sv56
 
@@ -47,15 +61,16 @@ then
 
 	rm ${RAWNORM}
 	rm ${RAWORIG}
-    else
-	# convert but not normed
-	${SOX} -t raw -b 16 -e signed -c 1 -r ${SAMP} ${RAWORIG} ${OUTPUT}
-	rm ${RAWORIG}
     fi
 
     if [ "${TEMP}" = "delete_origin" ];
     then
-	rm ${INPUT}
+	echo " normalized waveforms saved to ${INPUT}"
+	mv ${OUTPUT} ${INPUT}
+    else
+	echo " normalized waveforms saved to ${OUTPUT}"
     fi
+else
+    echo "not found ${file_name}"
 fi
 

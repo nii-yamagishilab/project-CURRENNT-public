@@ -89,7 +89,7 @@ def colormap_self(N, opt = 1, order = []):
         
 
 if __name__ == "__main__":
-    print "colorbag"
+    print("colorbag")
     fig = plt.figure(figsize=(10, 10))
     num = 6
     for x in np.arange(num):

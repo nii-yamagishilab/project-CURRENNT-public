@@ -54,4 +54,4 @@ def cm2inch(*tupl):
 
 
 if __name__ == "__main__":
-    print "cm2inch"
+    print("cm2inch")

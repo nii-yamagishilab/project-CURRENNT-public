@@ -9,17 +9,34 @@
 # 2. make sure that SCRIPT_DIR points to the directory that contains batch_normRMSE.sh
 ###
 
+# level of amplitude normalization, 26 by default
 LEV=26
 
+# input directory
 DATA_DIR=$1
+
+# argument, which can be delete_origin
 TEMP=$2
 
-SCRIPT_DIR=/work/smg/wang/CODE/git_local/team/project-CURRENNT-public/pyTools/scripts/utilities-new/wavScripts
 
-cd ${DATA_DIR}
-ls ./ | grep wav | grep -v "norm.wav" | parallel sh ${SCRIPT_DIR}/sub_normRMSE.sh {} ${SCRIPT_DIR} ${TEMP}
+SCRIPT_DIR=`readlink -f $0 | xargs -I{} dirname {} `
+if [ -e ${SCRIPT_DIR}/sub_normRMSE.sh ];
+then
+    cd ${DATA_DIR}
+    ls ./ | grep wav | grep -v "norm.wav" | parallel bash ${SCRIPT_DIR}/sub_normRMSE.sh {} ${SCRIPT_DIR} ${TEMP}
+else
+    echo "${SCRIPT_DIR}/sub_normRMSE.sh not found"
+fi
 
 exit
+
+
+
+
+
+
+
+
 
 for file_name in `ls ./ | grep wav`
 do
