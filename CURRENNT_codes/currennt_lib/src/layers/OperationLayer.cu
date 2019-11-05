@@ -844,7 +844,7 @@ namespace {
     };
 
 
-    // Duplicate the result to every frame of the utterance
+    // 
     struct dimensionExpand
     {
 	int     previousDim;
@@ -869,7 +869,7 @@ namespace {
 	}
     };
 
-    // Duplicate the result to every frame of the utterance
+    // 
     struct dimensionExpandGrad
     {
 	int     previousDim;
@@ -933,7 +933,85 @@ namespace {
 	}
     };
 
+    struct dimension_change
+    {
+	int      curLayerSize;
+	int      preLayerSize;
+	int      parallel;
+	
+	long int preDataLen;
+	
+	real_t     *sourceData;
+	const char *patTypes;
+	const char *prePatTypes;
+	
+	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
+	{
+	    
+	    int outputIdx = t.get<1>();
+	    int dimIdx    = outputIdx % curLayerSize;  // dimension index
+	    int timeIdx   = outputIdx / curLayerSize;  // time index (regardless of parallel)
+	    int BlockIdx  = timeIdx / parallel;     // time index (considering parallel mode)
+	    int BlockInIdx= timeIdx % parallel;     // index within a parallel block
+
+	    if (patTypes[timeIdx] == PATTYPE_NONE){
+		t.get<0>() = 0;
+		return;
+	    }
+
+	    int preRelativeIdx = BlockIdx * curLayerSize + dimIdx;
+	    int preBlockIdx = preRelativeIdx / preLayerSize;
+	    int preDimIdx = preRelativeIdx % preLayerSize;
+	    int preTimeIdx = preBlockIdx * parallel + BlockInIdx;
+	    
+	    if (preTimeIdx >= preDataLen || prePatTypes[preTimeIdx] == PATTYPE_NONE){
+		t.get<0>() = 0;
+	    }else{
+		t.get<0>() = sourceData[preTimeIdx * preLayerSize + preDimIdx];
+	    }
+	    return;
+	}
+    };
     
+    struct dimension_change_grad
+    {
+	int      curLayerSize;
+	int      preLayerSize;
+	int      parallel;
+	
+	long int curDataLen;
+	
+	real_t     *gradBuffer;
+	const char *patTypes;
+	const char *prePatTypes;
+	
+	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
+	{
+	    
+	    int outputIdx = t.get<1>();
+	    int dimIdx    = outputIdx % preLayerSize;  // dimension index
+	    int timeIdx   = outputIdx / preLayerSize;  // time index (regardless of parallel)
+	    int BlockIdx  = timeIdx / parallel;     // time index (considering parallel mode)
+	    int BlockInIdx= timeIdx % parallel;     // index within a parallel block
+
+	    if (prePatTypes[timeIdx] == PATTYPE_NONE){
+		t.get<0>() = 0;
+		return;
+	    }
+
+	    int curRelativeIdx = BlockIdx * preLayerSize + dimIdx;
+	    int curBlockIdx = curRelativeIdx / curLayerSize;
+	    int curDimIdx = curRelativeIdx % curLayerSize;
+	    int curTimeIdx = curBlockIdx * parallel + BlockInIdx;
+	    
+	    if (curTimeIdx >= curDataLen || patTypes[curTimeIdx] == PATTYPE_NONE){
+		t.get<0>() = 0;
+	    }else{
+		t.get<0>() = gradBuffer[curTimeIdx * curLayerSize + curDimIdx];
+	    }
+	    return;
+	}
+    };
     
 }
 }
@@ -1338,6 +1416,13 @@ namespace layers{
 	    }
 	}
 	
+
+	/* ------ dimension change ------ */
+	m_dimChange = (layerChild->HasMember("dimension_change")?
+		       static_cast<int>((*layerChild)["dimension_change"].GetDouble()) : 0);
+	if (m_dimChange){
+	    printf("\tChange dimension from %d to %d", this->precedingLayer().size(), this->size());
+	}
 	
 	/* ------ print the information ------ */
 
@@ -1345,7 +1430,7 @@ namespace layers{
 	if (m_noiseSize > 0){
 	    if (this->size() != (this->precedingLayer().size() + m_noiseSize))
 		throw std::runtime_error("Error, noiseDim + preLayerSize = operator layerSize");
-	}else if (m_freqDim >= 0 || m_dimExpand){
+	}else if (m_freqDim >= 0 || m_dimExpand || m_dimChange){
 	    // free to choose the layer size
 	}else{
 	    if (this->size() != this->precedingLayer().size())
@@ -1519,6 +1604,10 @@ namespace layers{
 	if (m_changeTimeRes > 0)
 	    (*layersArray)[layersArray->Size() - 1].AddMember("changeResolution",
 							      m_changeTimeRes,
+							      allocator);
+	if (m_dimChange > 0)
+	    (*layersArray)[layersArray->Size() - 1].AddMember("dimension_change",
+							      m_dimChange,
 							      allocator);
     }
 
@@ -1977,6 +2066,29 @@ namespace layers{
 				 thrust::counting_iterator<int>(0) + this->size() * timeLength)),
 		  fn1);
 	    }
+	}else if (m_dimChange){
+	    
+	    {
+	    	internal::dimension_change fn1;
+		fn1.curLayerSize = this->size();
+		fn1.preLayerSize = this->precedingLayer().size();
+		fn1.parallel     = this->parallelSequences();
+		
+		fn1.patTypes     = helpers::getRawPointer(this->patTypes());
+		fn1.prePatTypes  = helpers::getRawPointer(this->precedingLayer().patTypes());
+		fn1.sourceData   = helpers::getRawPointer(this->precedingLayer().outputs());
+		fn1.preDataLen   = (this->precedingLayer().outputs().size() /
+				    this->precedingLayer().size());
+		
+		thrust::for_each(
+		  thrust::make_zip_iterator(
+		    thrust::make_tuple(this->outputs().begin(),
+				       thrust::counting_iterator<int>(0))),
+		  thrust::make_zip_iterator(
+		    thrust::make_tuple(this->outputs().begin()     + this->size() * timeLength,
+				 thrust::counting_iterator<int>(0) + this->size() * timeLength)),
+		  fn1);		
+	    }
 	    
 	}else{
 	    // normal mode
@@ -2289,6 +2401,10 @@ namespace layers{
 	}else if (m_shiftTime){
 
 	    throw std::runtime_error("Error: shift_time cannot be used for online training");
+	    
+	}else if (m_dimChange) {
+
+	    throw std::runtime_error("Error: dimension change cannot be used for online training");
 	    
 	}else{
 	
@@ -2661,6 +2777,30 @@ namespace layers{
 		  fn1);
 	    }
 
+	}else if (m_dimChange){
+
+	    {
+		internal::dimension_change_grad fn1;
+		fn1.curLayerSize = this->size();
+		fn1.preLayerSize = this->precedingLayer().size();
+		fn1.parallel     = this->parallelSequences();
+		
+		fn1.patTypes     = helpers::getRawPointer(this->patTypes());
+		fn1.prePatTypes  = helpers::getRawPointer(this->precedingLayer().patTypes());
+		fn1.gradBuffer   = helpers::getRawPointer(this->outputErrors());
+		fn1.curDataLen   = timeLength;
+		
+		thrust::for_each(
+		  thrust::make_zip_iterator(
+		    thrust::make_tuple(this->precedingLayer().outputErrors().begin(),
+				       thrust::counting_iterator<int>(0))),
+		  thrust::make_zip_iterator(
+		    thrust::make_tuple(this->precedingLayer().outputErrors().end(),
+				       (thrust::counting_iterator<int>(0) +
+					this->precedingLayer().outputErrors().size()))),
+		  fn1);		
+	    }
+	    
 	}else{
 	    
 	    if (m_outDupRate > 1){
@@ -2830,6 +2970,9 @@ namespace layers{
 	    
 	}else if (m_shiftTime){
 	    throw std::runtime_error("Error: shift_time cannot be used for online training");
+	    
+	}else if (m_dimChange){
+	    throw std::runtime_error("Error: dimension_change cannot be used for online training");
 	    
 	}else{
 	    

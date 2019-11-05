@@ -58,28 +58,40 @@
 namespace internal{
 namespace{
 
+    // Conduct transformation a*x+b
     struct trans_ax_b
     {
-	real_t *abData;	
-	int dataDim;
+	real_t *abData;	  // data buffer to store a*x + b 
+	int     dataDim;  // dimension of the data
 
-	int abShiftT;
+	int     abShiftT; // shift to use a and b (default to 0). Prepared for AR model
 	
-	const char *patTypes;
+	const char *patTypes; //
 
 	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
 	{
+
+	    // index of the current data cell
 	    int outputIdx = t.get<1>();
+	    // frame index
 	    int timeIdx   = outputIdx / dataDim;
+	    // dimension index
 	    int dimIdx    = outputIdx % dataDim;
 
 	    // skip dummy frame (for parallel sentence processing)
 	    if (patTypes != NULL && patTypes[timeIdx] == PATTYPE_NONE)
 		return;
 	    
-	    // In each frame of abData, [A_1st_dim, A_2nd_dim ..., B_1st_dim, B_2nd_dim ...]
-	    t.get<0>() = t.get<0>() * abData[(timeIdx-abShiftT) * 2 * dataDim + dataDim + dimIdx] +
-		abData[(timeIdx-abShiftT) * 2 * dataDim + dimIdx];
+	    // In each frame of abData, [B_1st_dim, B_2nd_dim ..., A_1st_dim, A_2nd_dim ...]
+	    // (timeIdx-abShiftT) * 2 * dataDim -> points to the frame
+	    //                        + dataDim -> points to the memory address of A
+	    //                        + dataIdx -> points to the memory address of A[dimIdx]
+	    
+	    // (timeIdx-abShiftT) * 2 * dataDim -> points to the memory address of B
+	    //                        + dataIdx -> points to the memory address of B[dimIdx]
+	    
+	    t.get<0>() = (t.get<0>() * abData[(timeIdx-abShiftT) * 2 * dataDim + dataDim + dimIdx] +
+			  abData[(timeIdx-abShiftT) * 2 * dataDim + dimIdx]);
 
 	}
     };
@@ -87,15 +99,15 @@ namespace{
 
     struct trans_ax_b_grad
     {
-	real_t *abData;
-	real_t *abError;
-	real_t *xData;
-	real_t *xError;
+	real_t *abData;     // data buffer for [A, B]
+	real_t *abError;    // gradient buffer for [A, B]
+	real_t *xData;      // data buffer for x
+	real_t *xError;     // gradient buffer for x
 	
-	bool abFromSkipLayer;
-	bool xFromSkipLayer;
+	bool abFromSkipLayer; // if [A,B] are sent from a skip layer
+	bool xFromSkipLayer;  // if x is given by a skip layer
 	
-	int dataDim;	
+	int dataDim;	      // data dimension
 	const char *patTypes;
 
 	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
@@ -123,9 +135,11 @@ namespace{
 		// \p E/ \p a = \p E / \p y * x
 		// \p E/ \p b = \p E / \p y 
 		if (abFromSkipLayer){
+		    // if [A, B] are the output of a skip layer, accumulate the gradients
 		    abError[timeIdx*dataDim*2+dimIdx+dataDim] += t.get<0>() * xData[outputIdx];
 		    abError[timeIdx*dataDim*2+dimIdx] += t.get<0>();
 		}else{
+		    // if [A, B] are from a conventional layer, update the gradients
 		    abError[timeIdx*dataDim*2+dimIdx+dataDim] = t.get<0>() * xData[outputIdx];
 		    abError[timeIdx*dataDim*2+dimIdx] = t.get<0>();
 		}
