@@ -1755,8 +1755,14 @@ namespace layers{
     {
 	int timeLength = this->curMaxSeqLength() * this->parallelSequences();
 
+
+	
 	if (m_lastShot == NN_OPE_LAST_SHOT_MODE1 || m_lastShot == NN_OPE_LAST_SHOT_MODE2 ||
 	    m_lastShot == NN_OPE_LAST_SHOT_MODE5 || m_lastShot == NN_OPE_LAST_SHOT_MODE6){
+	    /* Last shot mode:
+	       extract one hidden feature from a sequence
+	     */
+	    
 	    // use last shot mode
 	    internal::lastShotForward fn1;
 	    fn1.featureDim = this->size();
@@ -1853,6 +1859,11 @@ namespace layers{
 		  m_lastShot == NN_OPE_LAST_SHOT_MODE7 || m_lastShot == NN_OPE_LAST_SHOT_MODE8 ||
 		  m_lastShot == NN_OPE_LAST_SHOT_MODE10){
 	    
+	    /* Last shot mode:
+	       Extract one hidden feature per segment.
+	       Segment boundary must be provided
+	     */
+
 	    // use last shot mode based on segmental boundary
 	    internal::lastShotForwardSegBoundary fn1;
 	    fn1.featureDim  = this->size();
@@ -1873,6 +1884,9 @@ namespace layers{
 	       fn1);
 	    	    
 	}else if (m_dropoutRate > 0){
+	    /*
+	      Dropout on the output of previous layer
+	     */
 	    // inverted dropout data
 	    int n = timeLength * this->size();	    
 	    if (nnState == NN_STATE_GAN_NOGAN_TRAIN){
@@ -1915,7 +1929,10 @@ namespace layers{
 	    
 	    
 	}else if (m_changeTimeRes){
-	    
+
+	    /*
+	      Change time resolution by duplicating or down-sampling
+	     */
 	    internal::timeResolutionChange fn1;
 	    fn1.inputRes  = this->precedingLayer().getResolution();
 	    fn1.outputRes = this->getResolution();
@@ -1935,7 +1952,10 @@ namespace layers{
 	       fn1);
 	    
 	}else if (m_freqDim >= 0){
-
+	    /*
+	      Obsolete
+	      This function has been moved to SigGenLayer.cu
+	     */
 
 	    // generate noise for unvoiced segments
 	    thrust::counting_iterator<unsigned int> index_sequence_begin(0);
@@ -1986,7 +2006,10 @@ namespace layers{
 	       
 	    
 	}else if (m_F02UV){
-	    // convert the input F0 into U/V
+	    /*
+	      convert the input F0 into U/V 
+	      The default F0 threshold is defined by NN_OPE_F02UV_THRESHOLD
+	    */
 	    thrust::fill(this->outputErrors().begin(), this->outputErrors().end(), 0.0);
 	    {
 		internal::normF0ToUV fn1;
@@ -2004,7 +2027,10 @@ namespace layers{
 	    }
 	    
 	}else if (m_positional_code_mode >= 0){
-	    // generate the positional code
+	    /*
+	      Generate the positional code based on sin/cos
+	     */
+	    
 	    {
 	    	internal::positionalCode fn1;
 		fn1.featureDim = this->size();
@@ -2046,6 +2072,7 @@ namespace layers{
 	    }
 	    
 	}else if (m_shiftTime){
+
 	    
 	    {
 	    	internal::timeShift fn1;
