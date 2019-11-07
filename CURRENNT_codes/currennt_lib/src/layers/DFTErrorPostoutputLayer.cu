@@ -2,12 +2,7 @@
  * This file is an addtional component of CURRENNT. 
  * Xin WANG
  * National Institute of Informatics, Japan
- * 2018 - 2019
- *
- * Copyright (c) 2013 Johannes Bergmann, Felix Weninger, Bjoern Schuller
- * Institute for Human-Machine Communication
- * Technische Universitaet Muenchen (TUM)
- * D-80290 Munich, Germany
+ * 2016 - 2019
  *
  * This file is part of CURRENNT.
  *
@@ -30,6 +25,7 @@
 #include "../helpers/getRawPointer.cuh"
 #include "../helpers/Matrix.hpp"
 #include "../helpers/FFTMat.hpp"
+#include "../helpers/sigProcess.hpp"
 #include "../helpers/JsonClasses.hpp"
 #include "../helpers/misFuncs.hpp"
 
@@ -365,6 +361,7 @@ namespace layers{
 	dftBuf.m_phaseError = 0.0;
 	dftBuf.m_resError = 0.0;
 	dftBuf.m_realSpecError = 0.0;
+	dftBuf.m_lpcError = 0.0;
     }
     
     template <typename TDevice>
@@ -384,6 +381,8 @@ namespace layers{
 
 	dftBuf.m_fftLengthRealSpec = 0;
 	dftBuf.m_fftBinsNumRealSpec = 0;
+
+	dftBuf.m_lpcOrder = 0;
 	
 	dftBuf.m_fftSourceFramed.clear();
 	dftBuf.m_fftTargetFramed.clear();
@@ -405,6 +404,17 @@ namespace layers{
 	dftBuf.m_fftDiffFramedRealSpec.clear();
 	dftBuf.m_fftDiffSigFFTRealSpec.clear();
 
+	dftBuf.m_autoCorrSrc.clear();
+	dftBuf.m_lpcCoefSrc.clear();
+	dftBuf.m_lpcErrSrc.clear();
+	dftBuf.m_refCoefSrc.clear();
+	
+	dftBuf.m_autoCorrTar.clear();
+	dftBuf.m_lpcCoefTar.clear();
+	dftBuf.m_lpcErrTar.clear();
+	dftBuf.m_refCoefTar.clear();
+
+	dftBuf.m_lpcGrad.clear();
     }
     
     template <typename TDevice>
@@ -413,7 +423,8 @@ namespace layers{
 							const int frameLength,
 							const int frameShift,
 							const int windowType,
-							const int windowTypePhase)
+							const int windowTypePhase,
+							const int lpcOrder)
     {
 	
 	//  make m_fftLength an even number
@@ -426,7 +437,7 @@ namespace layers{
 	    return;
 	    
 	}else{
-
+	    
 	    // valid DFT buffer
 	    dftBuf.m_valid_flag = true;
 
@@ -435,10 +446,14 @@ namespace layers{
 	    dftBuf.m_frameLength = frameLength;
 	    dftBuf.m_frameShift = frameShift;
 	    dftBuf.m_windowType = windowType;
-
+	    dftBuf.m_lpcOrder = lpcOrder;
+	    
 	    // check
 	    if (frameLength > tmp_fftLength)
 		throw std::runtime_error("\nFFT length should be > frame length");
+
+	    if (lpcOrder > frameLength)
+		throw std::runtime_error("\nLPC order is too large");
 
 	    // Maximum length of the waveforms in the training/test set
 	    int maxSeqLength = this->__vMaxSeqLength();
@@ -473,12 +488,19 @@ namespace layers{
 
 	    // A temporary buffer to store the gradients
 	    dftBuf.m_fftDiffData = this->outputs();
+
+	    // gradient buffer phase distance
+	    //  other data buffers are shared with specAmp distance
 	    if (this->m_zeta > 0.0)
 		dftBuf.m_fftDiffDataPhase = dftBuf.m_fftDiffData;
+
+	    // buffer for complex-valued spectral distance
+	    //  other data buffers are shared with specAmp distance	    
 	    if (this->m_eta > 0.0)
 		dftBuf.m_fftResData = dftBuf.m_fftDiffData;
+
+	    // buffer for real-valued spectral distance
 	    if (this->m_kappa > 0.0){
-		// for real-valued spectrum
 		dftBuf.m_fftLengthRealSpec  = dftBuf.m_fftLength * 2; 
 		dftBuf.m_fftBinsNumRealSpec = helpers::fftTools::fftBinsNum(
 				dftBuf.m_fftLengthRealSpec);
@@ -493,6 +515,27 @@ namespace layers{
 				dftBuf.m_frameNum * dftBuf.m_fftBinsNumRealSpec, tmp);
 		dftBuf.m_fftDiffSigFFTRealSpec = dftBuf.m_fftTargetSigFFTRealSpec;
 		dftBuf.m_fftDiffDataRealSpec   = this->outputs();
+	    }
+
+	    // buffer for LPC analysis
+	    if (this->m_tau > 0.0){
+		
+		if (dftBuf.m_lpcOrder == 0)
+		    throw std::runtime_error("\nLPC order should be larger than 0");
+		
+		dftBuf.m_autoCorrSrc.resize(dftBuf.m_frameNum * (dftBuf.m_lpcOrder + 1), 0.0);
+		dftBuf.m_lpcCoefSrc.resize(dftBuf.m_frameNum * (dftBuf.m_lpcOrder + 1) * 2, 0.0);
+		dftBuf.m_lpcErrSrc.resize(dftBuf.m_frameNum * (dftBuf.m_lpcOrder + 1), 0.0);
+		dftBuf.m_refCoefSrc.resize(dftBuf.m_frameNum * (dftBuf.m_lpcOrder + 1), 0.0);
+		dftBuf.m_lpcResSrc.resize(dftBuf.m_frameNum * dftBuf.m_frameLength, 0.0);
+		
+		dftBuf.m_autoCorrTar = dftBuf.m_autoCorrSrc;
+		dftBuf.m_lpcCoefTar = dftBuf.m_lpcCoefSrc;
+		dftBuf.m_lpcErrTar  = dftBuf.m_lpcErrSrc;
+		dftBuf.m_refCoefTar = dftBuf.m_refCoefSrc;
+		dftBuf.m_lpcResTar = dftBuf.m_lpcResSrc;
+		
+		dftBuf.m_lpcGrad = dftBuf.m_fftDiffData;
 	    }
 	}	
 		
@@ -524,6 +567,9 @@ namespace layers{
 
 	m_kappa        = (layerChild->HasMember("kappa") ? 
 			  static_cast<real_t>((*layerChild)["kappa"].GetDouble()) : 0.0);
+	
+	m_tau        = (layerChild->HasMember("tau") ? 
+			  static_cast<real_t>((*layerChild)["tau"].GetDouble()) : 0.0);
 	
 	// Type of spectral amplitude distance (see ../helpers/FFTMat.hpp):
 	m_specDisType   = (layerChild->HasMember("specDisType") ? 
@@ -557,8 +603,14 @@ namespace layers{
 			 static_cast<int>((*layerChild)["preEmphasisNaturalWav"].GetInt()) : 0);
 
 
+	// LPC related configuration
+	m_lpcErrorType = (layerChild->HasMember("lpcErrorType") ? 
+			 static_cast<int>((*layerChild)["lpcErrorType"].GetInt()) :
+			  SIGPROCESS_LPC_ERR_TYPE);
+
+	
 	/* ------ Load DFT configurations ----- */
-	if (m_gamma > 0.0 || m_zeta > 0.0){
+	if (m_gamma > 0.0 || m_zeta > 0.0 || m_eta > 0.0 || m_kappa > 0.0 || m_tau > 0.0){
 
 	    // -------- First DFT configuration ----
 	    
@@ -581,12 +633,17 @@ namespace layers{
 	    
 	    // type of window for STFT framing (used to calculate phase)
 	    int tmp_windowTypePhase = layerChild->HasMember("windowTypePhase") ? 
-		static_cast<real_t>((*layerChild)["windowTypePhase"].GetInt()) : FFTMAT_WINDOW_HANN;
+		static_cast<real_t>((*layerChild)["windowTypePhase"].GetInt()):FFTMAT_WINDOW_HANN;
 
+	    // Order of LPC (if configured)
+	    int tmp_lpcOrder  = (layerChild->HasMember("lpcOrder") ? 
+			  static_cast<int>((*layerChild)["lpcOrder"].GetInt()) : 0);
+
+	    
 	    struct_DFTData dftBuf_1;
 	    this->__initDFTBuffer(dftBuf_1);
 	    this->__configDFTBuffer(dftBuf_1, tmp_fftLength, tmp_frameLength, tmp_frameShift,
-				    tmp_windowType, tmp_windowTypePhase);
+				    tmp_windowType, tmp_windowTypePhase, tmp_lpcOrder);
 	    this->m_DFTDataBuf.push_back(dftBuf_1);
 
 	    if (this->m_DFTDataBuf[0].m_valid_flag == false)
@@ -602,13 +659,16 @@ namespace layers{
 	    tmp_windowType       = (layerChild->HasMember("windowType2") ? 
 				    static_cast<real_t>((*layerChild)["windowType2"].GetInt()) :
 				    FFTMAT_WINDOW_HANN);
-	    tmp_windowTypePhase  = (layerChild->HasMember("windowTypePhase2") ? 
-				    static_cast<real_t>((*layerChild)["windowTypePhase2"].GetInt()) :
-				    FFTMAT_WINDOW_HANN);
+	    tmp_lpcOrder         = (layerChild->HasMember("lpcOrder2") ? 
+				    static_cast<int>((*layerChild)["lpcOrder2"].GetInt()) : 0);
+	    tmp_windowTypePhase  = layerChild->HasMember("windowTypePhase2") ? 
+		static_cast<real_t>((*layerChild)["windowTypePhase2"].GetInt()) :
+		FFTMAT_WINDOW_HANN;
+	
 	    struct_DFTData dftBuf_2;
 	    this->__initDFTBuffer(dftBuf_2);
 	    this->__configDFTBuffer(dftBuf_2, tmp_fftLength, tmp_frameLength, tmp_frameShift,
-				    tmp_windowType, tmp_windowTypePhase);
+				    tmp_windowType, tmp_windowTypePhase, tmp_lpcOrder);
 	    this->m_DFTDataBuf.push_back(dftBuf_2);
 	    
 
@@ -623,13 +683,16 @@ namespace layers{
 	    tmp_windowType       = (layerChild->HasMember("windowType3") ? 
 				    static_cast<real_t>((*layerChild)["windowType3"].GetInt()) :
 				    FFTMAT_WINDOW_HANN);
-	    tmp_windowTypePhase  = (layerChild->HasMember("windowTypePhase3") ? 
-				    static_cast<real_t>((*layerChild)["windowTypePhase3"].GetInt()) :
-				    FFTMAT_WINDOW_HANN);
+	    tmp_lpcOrder         = (layerChild->HasMember("lpcOrder3") ? 
+				    static_cast<int>((*layerChild)["lpcOrder3"].GetInt()) : 0);
+	    tmp_windowTypePhase  = layerChild->HasMember("windowTypePhase3") ? 
+		static_cast<real_t>((*layerChild)["windowTypePhase3"].GetInt()) :
+		FFTMAT_WINDOW_HANN;
+	    
 	    struct_DFTData dftBuf_3;
 	    this->__initDFTBuffer(dftBuf_3);
 	    this->__configDFTBuffer(dftBuf_3, tmp_fftLength, tmp_frameLength, tmp_frameShift,
-				    tmp_windowType, tmp_windowTypePhase);
+				    tmp_windowType, tmp_windowTypePhase, tmp_lpcOrder);
 	    this->m_DFTDataBuf.push_back(dftBuf_3);
 
 	    // Note: here we only used three DFT configurations
@@ -1069,7 +1132,7 @@ namespace layers{
 
 	// calculate phase distortion
 	dftBuf.m_phaseError = sourceSigPhase.specPhaseDistance(targetSigPhase,
-							     fftDiffSigPhase);
+							       fftDiffSigPhase);
 	// compute complex-valued grad vector
 	fftDiffSigPhase.specPhaseGrad(sourceSigPhase, targetSigPhase);
 	// inverse DFT
@@ -1175,6 +1238,47 @@ namespace layers{
 	return dftBuf.m_realSpecError;
     }
 
+
+    template <typename TDevice>
+    real_t DFTPostoutputLayer<TDevice>::__lpcError(struct_DFTData &dftBuf,
+						 const int timeLength)
+    {
+	// number of frames for this utterance
+	int validFrameNum =  helpers::fftTools::fftFrameNum(timeLength,
+							    dftBuf.m_frameLength,
+							    dftBuf.m_frameShift);
+	// Warp the data structure
+	// Assume m_fftSourceFramed and m_fftTargetFramed have stored the framed data.
+	// (after __specAmpDistance())
+	
+	helpers::lpcWarpper<TDevice> lpcAnalysizer(
+		&dftBuf.m_fftSourceFramed, &dftBuf.m_fftTargetFramed,
+		&dftBuf.m_autoCorrSrc, &dftBuf.m_autoCorrTar,
+		&dftBuf.m_lpcCoefSrc, &dftBuf.m_lpcCoefTar,
+		&dftBuf.m_lpcErrSrc, &dftBuf.m_lpcErrTar,
+		&dftBuf.m_refCoefSrc, &dftBuf.m_refCoefTar,
+		&dftBuf.m_lpcResSrc, &dftBuf.m_lpcResTar,
+		&dftBuf.m_lpcGrad,
+		dftBuf.m_lpcOrder,
+		this->m_lpcErrorType,
+		dftBuf.m_frameLength,
+		dftBuf.m_frameShift,
+		dftBuf.m_fftLength,
+		validFrameNum,
+		this->__vMaxSeqLength(), timeLength);
+
+	// Do LPC analysis
+	lpcAnalysizer.lpcAnalysis();
+
+	// Calculate LPC domain Errors
+	dftBuf.m_lpcError = lpcAnalysizer.lpcError();
+
+	// Collect gradients
+	lpcAnalysizer.lpcGradCollect();
+	
+	return dftBuf.m_lpcError;
+    }
+
     template <typename TDevice>
     real_t DFTPostoutputLayer<TDevice>::__specDistance_warpper(struct_DFTData &dftBuf,
 							     const int timeLength)
@@ -1183,6 +1287,7 @@ namespace layers{
 	real_t phaseError = 0.0;
 	real_t specResError = 0.0;
 	real_t specRealError = 0.0;
+	real_t lpcError = 0.0;
 	
 	this->__cleanDFTError(dftBuf);
 	
@@ -1201,8 +1306,11 @@ namespace layers{
 	    
 	    if (m_kappa > 0.0)
 		specRealError = this->__specRealAmpDistance(dftBuf, timeLength);
+
+	    if (m_tau > 0.0)
+		lpcError = this->__lpcError(dftBuf, timeLength);
 	}
-	return specAmpError + phaseError + specResError + specRealError;
+	return specAmpError + phaseError + specResError + specRealError + lpcError;
     }
 
     template <typename TDevice>
@@ -1241,7 +1349,15 @@ namespace layers{
 	    // grad of real-valued spectral distance
 	    if (m_kappa > 0.0)
 		thrust::transform(dftBuf.m_fftDiffDataRealSpec.begin(),
-				  dftBuf.m_fftDiffDataRealSpec.begin() + timeLength * this->__vSize(),
+				  dftBuf.m_fftDiffDataRealSpec.begin() + timeLength*this->__vSize(),
+				  this->precedingLayer().outputErrors().begin(),
+				  this->precedingLayer().outputErrors().begin(),
+				  thrust::plus<real_t>());
+
+	    // grad of LPC error
+	    if (m_tau > 0.0)
+		thrust::transform(dftBuf.m_lpcGrad.begin(),
+				  dftBuf.m_lpcGrad.begin() + timeLength * this->__vSize(),
 				  this->precedingLayer().outputErrors().begin(),
 				  this->precedingLayer().outputErrors().begin(),
 				  thrust::plus<real_t>());
@@ -1300,7 +1416,7 @@ namespace layers{
 	    //   2. calculate distances
 	    //   3. calculate gradients and save them to the buffer
 	    // 
-	    if (m_gamma > 0.0 || m_zeta > 0.0 || m_eta > 0.0 || m_kappa > 0.0){
+	    if (m_gamma > 0.0 || m_zeta > 0.0 || m_eta > 0.0 || m_kappa > 0.0 || m_tau > 0.0){
 		// calculate distances
 		for (int dftBufIndex = 0; dftBufIndex < this->m_DFTDataBuf.size(); dftBufIndex++)
 		    this->__specDistance_warpper(this->m_DFTDataBuf[dftBufIndex], timeLength);
@@ -1338,13 +1454,12 @@ namespace layers{
 	// Gradients from spectral amplitude and phase
 	//  gradients have been calculated in computeForwardPass()
 	//  here, gradients are simply accumulated into the gradient buffer
-	if (m_gamma > 0.0 || m_zeta > 0.0 || m_eta > 0.0 || m_kappa > 0.0){
+	if (m_gamma > 0.0 || m_zeta > 0.0 || m_eta > 0.0 || m_kappa > 0.0 || m_tau > 0.0){
 
 	    // Accumulate gradients from each DFT buffer
 	    for (int dftBufIndex = 0; dftBufIndex < this->m_DFTDataBuf.size(); dftBufIndex++)
 		this->__specAccumulateGrad(this->m_DFTDataBuf[dftBufIndex], timeLength);
 	}
-
 	
 	// For HNM special training mode
 	if (m_hnm_flag == DFTERRORPOST_HNM_MODEL_1 || m_hnm_flag == DFTERRORPOST_HNM_MODEL_2)
@@ -1397,7 +1512,7 @@ namespace layers{
 	    
 	    if (m_kappa > 0.0){
 		(*layersArray)[layersArray->Size() - 1].AddMember("kappa", m_kappa, allocator);
-		
+
 		if (m_realSpecType != FFTMAT_REALSPEC_TYPE_NORMAL)
 		    (*layersArray)[layersArray->Size() - 1].AddMember("kappa_realspec_type",
 								      m_realSpecType, allocator);
@@ -1407,11 +1522,18 @@ namespace layers{
 								      m_specDisType, allocator);
 	    }
 
+	    if (m_tau > 0.0){
+		(*layersArray)[layersArray->Size() - 1].AddMember("tau", m_tau, allocator);
+		(*layersArray)[layersArray->Size() - 1].AddMember("lpcErrorType", m_lpcErrorType,
+								  allocator);
+	    }
+
 	    std::string tmpStr1 = "fftLength";
 	    std::string tmpStr2 = "frameLength";
 	    std::string tmpStr3 = "frameShift";
 	    std::string tmpStr4 = "windowType";
 	    std::string tmpStr5 = "windowTypePhase";
+	    std::string tmpStr6 = "lpcOrder";
 	    
 	    for (int dftBufIndex = 0; dftBufIndex < this->m_DFTDataBuf.size(); dftBufIndex++){
 
@@ -1452,12 +1574,17 @@ namespace layers{
 			tmpStr5.c_str(),
 			m_DFTDataBuf[dftBufIndex].m_windowTypePhase,
 			allocator);
+		    (*layersArray)[layersArray->Size() - 1].AddMember(
+			tmpStr6.c_str(),
+			m_DFTDataBuf[dftBufIndex].m_lpcOrder,
+			allocator);
 		}
 	    }
 
 	    
 	    if (m_hnm_flag > 0 ){
-		(*layersArray)[layersArray->Size() - 1].AddMember("hnmMode", m_hnm_flag, allocator);
+		(*layersArray)[layersArray->Size() - 1].AddMember("hnmMode", m_hnm_flag,
+								  allocator);
 		(*layersArray)[layersArray->Size() - 1].AddMember("noisePartTrainEpochNum",
 								  m_noiseTrain_epoch, allocator);
 		(*layersArray)[layersArray->Size() - 1].AddMember("noiseOutputLayerName",
@@ -1492,7 +1619,7 @@ namespace layers{
 	    for (int dftBufIndex = 0; dftBufIndex < this->m_DFTDataBuf.size(); dftBufIndex++)
 		std::cerr << m_DFTDataBuf[dftBufIndex].m_specError << ", ";
 	    
-	    std::cerr << ", " << m_mseError << ", 0" << ", ";
+	    std::cerr << m_mseError << ", 0" << ", ";
 	    if (m_zeta > 0.0){
 		for (int dftBufIndex = 0; dftBufIndex < this->m_DFTDataBuf.size(); dftBufIndex++)
 		    std::cerr << m_DFTDataBuf[dftBufIndex].m_phaseError << ", ";
@@ -1505,6 +1632,11 @@ namespace layers{
 		for (int dftBufIndex = 0; dftBufIndex < this->m_DFTDataBuf.size(); dftBufIndex++)
 		    std::cerr << m_DFTDataBuf[dftBufIndex].m_realSpecError << ", ";		
 	    }
+	    
+	    if (m_tau > 0.0){
+		for (int dftBufIndex = 0; dftBufIndex < this->m_DFTDataBuf.size(); dftBufIndex++)
+		    std::cerr << m_DFTDataBuf[dftBufIndex].m_lpcError << ", ";		
+	    }
 	}
 
 	real_t sum_error = 0.0;
@@ -1513,6 +1645,7 @@ namespace layers{
 	    sum_error += m_DFTDataBuf[dftBufIndex].m_phaseError;
 	    sum_error += m_DFTDataBuf[dftBufIndex].m_resError;
 	    sum_error += m_DFTDataBuf[dftBufIndex].m_realSpecError;
+	    sum_error += m_DFTDataBuf[dftBufIndex].m_lpcError;
 	}
 	return sum_error;
 	    

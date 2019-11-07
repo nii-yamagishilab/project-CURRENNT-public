@@ -2,12 +2,7 @@
  * This file is an addtional component of CURRENNT. 
  * Xin WANG
  * National Institute of Informatics, Japan
- * 2018
- *
- * Copyright (c) 2013 Johannes Bergmann, Felix Weninger, Bjoern Schuller
- * Institute for Human-Machine Communication
- * Technische Universitaet Muenchen (TUM)
- * D-80290 Munich, Germany
+ * 2018 - 2019
  *
  * This file is part of CURRENNT.
  *
@@ -62,6 +57,8 @@ namespace layers {
 	    // real-valued spectra error
 	    real_t             m_realSpecError;
 
+	    // lpc error
+	    real_t             m_lpcError;
 	    
 	    int                m_frameLength;
 	    int                m_frameShift;
@@ -71,7 +68,10 @@ namespace layers {
 	    
 	    int                m_frameNum;	    
 	    int                m_fftBinsNum;
+
+	    int                m_lpcOrder;
 	    
+	    // dft buffers
 	    real_vector        m_fftSourceFramed;
 	    fft_vector         m_fftSourceSigFFT;
 	    
@@ -81,10 +81,12 @@ namespace layers {
 	    real_vector        m_fftDiffData;
 	    real_vector        m_fftDiffFramed;
 	    fft_vector         m_fftDiffSigFFT;
-	    
+
+	    // gradietns buffer for phase and complex-valued spectral distances
 	    real_vector        m_fftDiffDataPhase;
 	    real_vector        m_fftResData;
-	    
+
+	    // for real-valued spectral 
 	    int                m_fftLengthRealSpec;
 	    int                m_fftBinsNumRealSpec;
 	    
@@ -98,11 +100,27 @@ namespace layers {
 	    real_vector        m_fftDiffFramedRealSpec;
 	    fft_vector         m_fftDiffSigFFTRealSpec;	
 
+
+	    // for LPC analysis
+	    real_vector        m_autoCorrSrc; // buffer for auto-correlation 
+	    real_vector        m_lpcCoefSrc;  // buffer for LPC coefficients
+	    real_vector        m_lpcErrSrc;   // buffer for LPC error
+	    real_vector        m_refCoefSrc;  // buffer for reflect coefficients
+	    real_vector        m_lpcResSrc;   // buffer for LPC residual
+	    
+	    real_vector        m_autoCorrTar; // buffer for auto-correlation 
+	    real_vector        m_lpcCoefTar;  // buffer for LPC coefficients
+	    real_vector        m_lpcErrTar;   // buffer for LPC error
+	    real_vector        m_refCoefTar;  // buffer for reflect coefficients
+	    real_vector        m_lpcResTar;   // buffer for LPC residual
+	    
+	    real_vector        m_lpcGrad;  // buffer to store the gradients
 	};
 
 	/*
 	  Error =  m_beta * waveform_MSE + m_gamma * spectral_amplitude_MSE + m_zeta * phase_MSE
-	  + m_eta  * residual_signal_spectral_amplitude + m_kappa * real_spectrum_amp
+	  + m_eta  * residual_signal_spectral_amplitude + m_kappa * real_spectrum_amp 
+	  + m_tau * lpc_error
 	 */
 
 	real_t             m_beta;              // Weight for waveform MSE
@@ -110,8 +128,10 @@ namespace layers {
 	real_t             m_zeta;              // Weight for DFT phase
 	real_t             m_eta;               // Weight for residual spectrum amplitude
 	real_t             m_kappa;             // Weight for realvalued-spectrum ampltiude
+	real_t             m_tau;
 	
 	real_t             m_mseError;          //
+
 	
 	int                m_preEmphasis;       // Whether preEmphasis the natural speech?
 	int                m_specDisType;       // Type of spectral amplitude distance
@@ -119,6 +139,8 @@ namespace layers {
 	
 	int                m_realSpecType;      // Type of real-valued spectrum
 	int                m_realSpecDisType;   // Ty[e pf real-valued spectrum distance	
+	int                m_lpcErrorType;
+	
 	
 	// data structure for DFT analysis
 	std::vector<struct_DFTData> m_DFTDataBuf;
@@ -146,7 +168,7 @@ namespace layers {
 	void __configDFTBuffer(struct_DFTData &dftBuf,
 			       const int fftLength, const int frameLength,
 			       const int frameShift, const int windowType,
-			       const int windowTypePhase);
+			       const int windowTypePhase, const int lpcOrder);
 
 	
 	// methods for utilities
@@ -183,6 +205,9 @@ namespace layers {
 	// real-valued spectral distance
 	real_t __specRealAmpDistance(struct_DFTData &dftBuf, const int timeLength);
 
+	// LPC error
+	real_t __lpcError(struct_DFTData &dftBuf, const int timeLength);
+	
 	// a wrapper to wrap all the distances
 	real_t __specDistance_warpper(struct_DFTData &dftBuf, const int timeLength);
 

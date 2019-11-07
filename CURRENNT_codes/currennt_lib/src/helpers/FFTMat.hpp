@@ -2,14 +2,9 @@
  * This file is an addtional component of CURRENNT. 
  * Xin WANG
  * National Institute of Informatics, Japan
- * 2016
+ * 2016 - 2019
  *
  * This file is part of CURRENNT. 
- * Copyright (c) 2013 Johannes Bergmann, Felix Weninger, Bjoern Schuller
- * Institute for Human-Machine Communication
- * Technische Universitaet Muenchen (TUM)
- * D-80290 Munich, Germany
- *
  *
  * CURRENNT is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,20 +25,20 @@
 
 #include "../Types.hpp"
 
+// Macro definition for different types of spectral distances
+#define FFTMAT_SPECTYPE_AMP_LOG_MSE 0   // Log amplitude distance
+#define FFTMAT_SPECTYPE_AMP_KLD 1       // KLD 
+#define FFTMAT_SPECTYPE_AMP_MSE 2       // Mean squre error
+#define FFTMAT_SPECTYPE_SPEC_LOG_MSE 3  // Log complex-valued spectral distance
+#define FFTMAT_SPECTYPE_SPEC_MSE 4      // complex-valued spectral MSE
+#define FFTMAT_SPECTYPE_AMP_RATIO 5     // amplitude ratio
+#define FFTMAT_SPECTYPE_AMP_IS 6        // Itakura-saito distance
 
-#define FFTMAT_SPECTYPE_AMP_LOG_MSE 0
-#define FFTMAT_SPECTYPE_AMP_KLD 1
-#define FFTMAT_SPECTYPE_AMP_MSE 2
-#define FFTMAT_SPECTYPE_SPEC_LOG_MSE 3
-#define FFTMAT_SPECTYPE_SPEC_MSE 4     // 
-#define FFTMAT_SPECTYPE_AMP_RATIO 5    // amplitude ratio
-#define FFTMAT_SPECTYPE_AMP_IS 6       // Itakura-saito distance
+// Macro definition for phase distances
+#define FFTMAT_PHASETYPE_COS 0          // cos-based phase distance
+#define FFTMAT_PHASETYPE_INTANT 1       // instantaneous phase distance
 
-
-#define FFTMAT_PHASETYPE_COS 0
-#define FFTMAT_PHASETYPE_INTANT 1
-
-#define FFTMAT_WINDOW_HANN 0
+#define FFTMAT_WINDOW_HANN 0            //
 #define FFTMAT_WINDOW_SQUARE 1
 
 #define FFTMAT_REALSPEC_TYPE_NORMAL 0

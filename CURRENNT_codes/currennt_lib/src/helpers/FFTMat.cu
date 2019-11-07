@@ -2,14 +2,9 @@
  * This file is an addtional component of CURRENNT. 
  * Xin WANG
  * National Institute of Informatics, Japan
- * 2016
+ * 2018 - 2019
  *
- * This file is part of CURRENNT. 
- * Copyright (c) 2013 Johannes Bergmann, Felix Weninger, Bjoern Schuller
- * Institute for Human-Machine Communication
- * Technische Universitaet Muenchen (TUM)
- * D-80290 Munich, Germany
- *
+ * This file is part of CURRENNT. *
  *
  * CURRENNT is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1060,6 +1055,7 @@ namespace helpers {
 	if (m_signalBufLength < m_signalLength)
 	    throw std::runtime_error("Error: signal Buff length < signal length");
 
+	// clean the buffer cells that are beyond the length of current sentence
 	thrust::fill((*m_rawData).begin() + m_signalLength,
 		     (*m_rawData).end(), 0.0);
 
