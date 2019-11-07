@@ -147,7 +147,7 @@ namespace data_sets {
 	
         boost::scoped_ptr<thread_data_t> m_threadData; // just because nvcc hates boost headers
         int    m_curFirstSeqIdx;
-
+	
 	int    m_quick_network_test_num;
 	
 	// Add 0620: Wang support to the txt input data
@@ -164,25 +164,29 @@ namespace data_sets {
 	int         m_auxDataDim;              // dimension of the auxillary data
 
 	// Add 170327: external input file
-	std::string m_exInputDir;
-	std::string m_exInputExt;
-	int         m_exInputDim;
+	std::string m_exInputDir; // obsolete
+	std::string m_exInputExt; // obsolete
+	int         m_exInputDim; // obsolete
 	
-	int         m_exInputType;             // reserved
+	int         m_exInputType;   // reserved
 	bool        m_exInputFlag;
+	int         m_exInputReso;
+	
+	int         m_exOutputType;  // reserved
+	bool        m_exOutputFlag;
+	int         m_exOutputReso;
+	
 	std::vector<std::string> m_exInputDirs;
 	std::vector<std::string> m_exInputExts;
 	Cpu::int_vector          m_exInputDims;
-	int         m_exInputReso;
 	
-	int         m_exOutputType;             // reserved
-	bool        m_exOutputFlag;
 	std::vector<std::string> m_exOutputDirs;
 	std::vector<std::string> m_exOutputExts;
 	Cpu::int_vector          m_exOutputDims;
-	int         m_exOutputReso;
+	
 	
 	Cpu::int_vector m_resolutionBuf;
+	
     public:
         /**
          * Creates an empty data set

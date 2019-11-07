@@ -161,6 +161,7 @@ namespace {
 	}else{
 	    throw std::runtime_error("Impossible");
 	}
+	
 	/*
 	if (!cufftHandle_fft || fftSize_local != fftSize || batchSize_local != batchSize){
 	    fftSize_local = fftSize;

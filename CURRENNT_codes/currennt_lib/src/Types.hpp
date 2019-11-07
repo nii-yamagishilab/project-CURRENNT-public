@@ -1,4 +1,9 @@
 /******************************************************************************
+ * This file is an addtional component of CURRENNT. 
+ * Xin WANG
+ * National Institute of Informatics, Japan
+ * 2018
+ *
  * Copyright (c) 2013 Johannes Bergmann, Felix Weninger, Bjoern Schuller
  * Institute for Human-Machine Communication
  * Technische Universitaet Muenchen (TUM)
@@ -37,11 +42,13 @@
 #define AUXDATATYPE_CHAR  2 // used for the auxilliary data
 
 
-
 /*************************************************************************//**
  * The floating point type used for all computations
  *****************************************************************************/
+// real-valued float number
 typedef float real_t;
+
+// complex-valued float number
 typedef float2 complex_t;
 
 /*************************************************************************//**
@@ -51,10 +58,19 @@ struct Cpu
 {
     enum { cublas_capable = false };
 
+    // to store real_valued data array
     typedef thrust::host_vector<real_t> real_vector;
+    
+    // to store int data array
     typedef thrust::host_vector<int>    int_vector;
+
+    // to store bool data array
     typedef thrust::host_vector<bool>   bool_vector;
+
+    // to store char data array (indicator of sequence boundary)
     typedef thrust::host_vector<char>   pattype_vector;
+
+    // to store complex-valued data array
     typedef thrust::host_vector<complex_t> complex_vector;
 };
 

@@ -44,9 +44,67 @@ namespace layers {
 	typedef typename Cpu::int_vector          cpu_int_vector;
 	
     private:
-	//     m_beta * waveform_MSE + m_gamma * spectral_amplitude_MSE + m_zeta * phase_MSE
-	//   + m_eta  * residual_signal_spectral_amplitude + m_kappa * real_spectrum_amp
-	
+
+	struct struct_DFTData{
+	    
+	    // whether this DFT buffer will be used?
+	    bool               m_valid_flag;
+
+	    // spectra amplitude Error
+	    real_t             m_specError;
+	    
+	    // phase error
+	    real_t             m_phaseError;
+	    
+	    // complex-valued spectra error
+	    real_t             m_resError;
+	    
+	    // real-valued spectra error
+	    real_t             m_realSpecError;
+
+	    
+	    int                m_frameLength;
+	    int                m_frameShift;
+	    int                m_windowType;
+	    int                m_windowTypePhase;
+	    int                m_fftLength;
+	    
+	    int                m_frameNum;	    
+	    int                m_fftBinsNum;
+	    
+	    real_vector        m_fftSourceFramed;
+	    fft_vector         m_fftSourceSigFFT;
+	    
+	    real_vector        m_fftTargetFramed;
+	    fft_vector         m_fftTargetSigFFT;
+	    
+	    real_vector        m_fftDiffData;
+	    real_vector        m_fftDiffFramed;
+	    fft_vector         m_fftDiffSigFFT;
+	    
+	    real_vector        m_fftDiffDataPhase;
+	    real_vector        m_fftResData;
+	    
+	    int                m_fftLengthRealSpec;
+	    int                m_fftBinsNumRealSpec;
+	    
+	    real_vector        m_fftSourceFramedRealSpec;
+	    fft_vector         m_fftSourceSigFFTRealSpec;
+	    
+	    real_vector        m_fftTargetFramedRealSpec;
+	    fft_vector         m_fftTargetSigFFTRealSpec;
+	    
+	    real_vector        m_fftDiffDataRealSpec;
+	    real_vector        m_fftDiffFramedRealSpec;
+	    fft_vector         m_fftDiffSigFFTRealSpec;	
+
+	};
+
+	/*
+	  Error =  m_beta * waveform_MSE + m_gamma * spectral_amplitude_MSE + m_zeta * phase_MSE
+	  + m_eta  * residual_signal_spectral_amplitude + m_kappa * real_spectrum_amp
+	 */
+
 	real_t             m_beta;              // Weight for waveform MSE
 	real_t             m_gamma;             // Weight for DFT amplitude 
 	real_t             m_zeta;              // Weight for DFT phase
@@ -62,127 +120,9 @@ namespace layers {
 	int                m_realSpecType;      // Type of real-valued spectrum
 	int                m_realSpecDisType;   // Ty[e pf real-valued spectrum distance	
 	
-	// Short time STFT part (configurable))
-	real_t             m_specError;
-	real_t             m_phaseError;
-	real_t             m_resError;
-	real_t             m_realSpecError;
+	// data structure for DFT analysis
+	std::vector<struct_DFTData> m_DFTDataBuf;
 	
-	int                m_frameLength;
-	int                m_frameShift;
-	int                m_frameNum;
-	int                m_windowType;
-	int                m_windowTypePhase;
-	int                m_fftLength;
-	int                m_fftBinsNum;
-		
-	real_vector        m_fftSourceFramed;
-	fft_vector         m_fftSourceSigFFT;
-
-	real_vector        m_fftTargetFramed;
-	fft_vector         m_fftTargetSigFFT;
-
-	real_vector        m_fftDiffData;
-	real_vector        m_fftDiffFramed;
-	fft_vector         m_fftDiffSigFFT;
-
-	real_vector        m_fftDiffDataPhase;
-	real_vector        m_fftResData;
-	
-	int                m_fftLengthRealSpec;
-	int                m_fftBinsNumRealSpec;
-
-	real_vector        m_fftSourceFramedRealSpec;
-	fft_vector         m_fftSourceSigFFTRealSpec;
-
-	real_vector        m_fftTargetFramedRealSpec;
-	fft_vector         m_fftTargetSigFFTRealSpec;
-
-	real_vector        m_fftDiffDataRealSpec;
-	real_vector        m_fftDiffFramedRealSpec;
-	fft_vector         m_fftDiffSigFFTRealSpec;	
-	
-	// Long time STFT 
-	real_t             m_specError2;
-	real_t             m_phaseError2;
-	real_t             m_resError2;
-	real_t             m_realSpecError2;
-	int                m_fftLength2;
-	int                m_fftBinsNum2;
-	int                m_frameLength2;
-	int                m_frameShift2;
-	int                m_frameNum2;
-	int                m_windowType2;
-	int                m_windowTypePhase2;
-	
-	real_vector        m_fftSourceFramed2;
-	fft_vector         m_fftSourceSigFFT2;
-
-	real_vector        m_fftTargetFramed2;
-	fft_vector         m_fftTargetSigFFT2;
-
-	real_vector        m_fftDiffData2;
-	real_vector        m_fftDiffFramed2;
-	fft_vector         m_fftDiffSigFFT2;
-
-	real_vector        m_fftDiffDataPhase2;
-	real_vector        m_fftResData2;
-
-
-	int                m_fftLengthRealSpec2;
-	int                m_fftBinsNumRealSpec2;
-
-	real_vector        m_fftSourceFramedRealSpec2;
-	fft_vector         m_fftSourceSigFFTRealSpec2;
-
-	real_vector        m_fftTargetFramedRealSpec2;
-	fft_vector         m_fftTargetSigFFTRealSpec2;
-
-	real_vector        m_fftDiffDataRealSpec2;
-	real_vector        m_fftDiffFramedRealSpec2;
-	fft_vector         m_fftDiffSigFFTRealSpec2;
-
-	
-	// Long time STFT 
-	real_t             m_specError3;
-	real_t             m_phaseError3;
-	real_t             m_resError3;
-	real_t             m_realSpecError3;
-	int                m_fftLength3;
-	int                m_fftBinsNum3;
-	int                m_frameLength3;
-	int                m_frameShift3;
-	int                m_frameNum3;
-	int                m_windowType3;
-	int                m_windowTypePhase3;
-	
-	real_vector        m_fftSourceFramed3;
-	fft_vector         m_fftSourceSigFFT3;
-
-	real_vector        m_fftTargetFramed3;
-	fft_vector         m_fftTargetSigFFT3;
-
-	real_vector        m_fftDiffData3;
-	real_vector        m_fftDiffFramed3;
-	fft_vector         m_fftDiffSigFFT3;
-
-	real_vector        m_fftDiffDataPhase3;
-	real_vector        m_fftResData3;
-
-
-	int                m_fftLengthRealSpec3;
-	int                m_fftBinsNumRealSpec3;
-
-	real_vector        m_fftSourceFramedRealSpec3;
-	fft_vector         m_fftSourceSigFFTRealSpec3;
-
-	real_vector        m_fftTargetFramedRealSpec3;
-	fft_vector         m_fftTargetSigFFTRealSpec3;
-
-	real_vector        m_fftDiffDataRealSpec3;
-	real_vector        m_fftDiffFramedRealSpec3;
-	fft_vector         m_fftDiffSigFFTRealSpec3;
-
 	
 	// support for harmonic + noise model (not used anymore)
 	int                m_hnm_flag;
@@ -196,9 +136,20 @@ namespace layers {
 
 	int                m_modeMultiDimSignal;
 	real_vector        m_modeChangeDataBuf;
-	
-	void __loadOpts(const helpers::JsonValue &layerChild);
 
+
+
+	// methods for initialization
+	void __loadOpts(const helpers::JsonValue &layerChild);
+	void __cleanDFTError(struct_DFTData &dftBuf);
+	void __initDFTBuffer(struct_DFTData &dftBuf);	
+	void __configDFTBuffer(struct_DFTData &dftBuf,
+			       const int fftLength, const int frameLength,
+			       const int frameShift, const int windowType,
+			       const int windowTypePhase);
+
+	
+	// methods for utilities
 	int  __vSize();
 	int  __vMaxSeqLength();
 	int  __vCurMaxSeqLength();
@@ -219,23 +170,25 @@ namespace layers {
 	real_t __waveformMseForward(const int timeLength);
 	void __waveformMseBackward(const int timeLength);
 
-	// methods for spectral, phase errors
-	real_t __specAmpDistance1(const int timeLength);
-	real_t __specAmpDistance2(const int timeLength);
-	real_t __specAmpDistance3(const int timeLength);
+	
+	// spectral amplitude distance
+        real_t __specAmpDistance(struct_DFTData &dftBuf, const int timeLength);
+	
+	// phase distance
+	real_t __specPhaDistance(struct_DFTData &dftBuf, const int timeLength);
+	
+	// complex-valued spectral distance
+	real_t __specResAmpDistance(struct_DFTData &dftBuf, const int timeLength);
+	
+	// real-valued spectral distance
+	real_t __specRealAmpDistance(struct_DFTData &dftBuf, const int timeLength);
 
-	real_t __specPhaDistance1(const int timeLength);
-	real_t __specPhaDistance2(const int timeLength);
-	real_t __specPhaDistance3(const int timeLength);
+	// a wrapper to wrap all the distances
+	real_t __specDistance_warpper(struct_DFTData &dftBuf, const int timeLength);
 
-	real_t __specResAmpDistance1(const int timeLength);
-	real_t __specResAmpDistance2(const int timeLength);
-	real_t __specResAmpDistance3(const int timeLength);
-
-	real_t __specRealAmpDistance1(const int timeLength);
-	real_t __specRealAmpDistance2(const int timeLength);
-	real_t __specRealAmpDistance3(const int timeLength);
-       
+	// a wrapper to accumulate gradients
+	void __specAccumulateGrad(struct_DFTData &dftBuf, const int timeLength);
+	
 	
     public:
         /**
