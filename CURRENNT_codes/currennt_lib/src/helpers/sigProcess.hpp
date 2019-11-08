@@ -25,7 +25,7 @@
 
 #include "../Types.hpp"
 
-#define SIGPROCESS_LPC_ERR_TYPE 0       // Itakura-saito distance
+#define SIGPROCESS_LPC_ERR_TYPE 0       // Residual MSE
 
 namespace helpers {
 
@@ -90,13 +90,25 @@ namespace helpers {
 
 	~lpcWarpper();
 
+	// calculate auto-correlation coefficients
 	void __autoCorr(real_vector *framedData, real_vector *autoCorr);
+
+	// LPC analysis using Levinson-Durbin
 	void __levinsonDurbinRecursion(real_vector *autoCorr, real_vector *lpcCoef,
 				       real_vector *refCoef, real_vector *lpcErr);
+
+	// calculate residual signal, given LPC coefficients
+	void __lpcResidual(real_vector *framedData, real_vector *lpcCoef,
+			   real_vector *lpcRes);
+
+	// calculate residual MSE and gradients
+	real_t __lpcResidualMseAndGrad(real_vector *lpcResSrc, real_vector *lpcResTar,
+				       real_vector *lpcCoefSrc, real_vector *lpcCoefTar);
 	
+	// warpper functions
 	void lpcAnalysis();
 	real_t lpcError();
-	void lpcGradCollect();
+	void lpcGradCollect(const real_t weight);
     };
 
     

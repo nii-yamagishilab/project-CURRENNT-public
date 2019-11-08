@@ -527,7 +527,7 @@ namespace layers{
 		dftBuf.m_lpcCoefSrc.resize(dftBuf.m_frameNum * (dftBuf.m_lpcOrder + 1) * 2, 0.0);
 		dftBuf.m_lpcErrSrc.resize(dftBuf.m_frameNum * (dftBuf.m_lpcOrder + 1), 0.0);
 		dftBuf.m_refCoefSrc.resize(dftBuf.m_frameNum * (dftBuf.m_lpcOrder + 1), 0.0);
-		dftBuf.m_lpcResSrc.resize(dftBuf.m_frameNum * dftBuf.m_frameLength, 0.0);
+		dftBuf.m_lpcResSrc.resize(dftBuf.m_frameNum * dftBuf.m_fftLength, 0.0);
 		
 		dftBuf.m_autoCorrTar = dftBuf.m_autoCorrSrc;
 		dftBuf.m_lpcCoefTar = dftBuf.m_lpcCoefSrc;
@@ -1273,8 +1273,8 @@ namespace layers{
 	// Calculate LPC domain Errors
 	dftBuf.m_lpcError = lpcAnalysizer.lpcError();
 
-	// Collect gradients
-	lpcAnalysizer.lpcGradCollect();
+	// Collect gradients (which will be in dftBuf.m_lpcGrad)
+	lpcAnalysizer.lpcGradCollect(m_tau);
 	
 	return dftBuf.m_lpcError;
     }

@@ -758,7 +758,9 @@ namespace {
 	    // t.get<0>() source
 	    // t.get<1>() target
 	    // t.get<2>() buffer to store diff
-
+	    // Note: before calculation, t.get<2>().y is set by SpecAmpDistance_AMP_LOG_MSE
+	    //   t.get<2>().y = [ log(Re(src)^2 + Im(src)^2) - log(Re(tar)^2 + Im(tar)^2) ]
+	    // 
 	    real_t spec = (t.get<0>().x * t.get<0>().x +
 			   t.get<0>().y * t.get<0>().y +
 			   FFT_KLD_FLOOR_NUM);
