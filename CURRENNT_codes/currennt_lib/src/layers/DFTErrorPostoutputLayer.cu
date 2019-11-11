@@ -1527,59 +1527,96 @@ namespace layers{
 		(*layersArray)[layersArray->Size() - 1].AddMember("lpcErrorType", m_lpcErrorType,
 								  allocator);
 	    }
-
-	    std::string tmpStr1 = "fftLength";
-	    std::string tmpStr2 = "frameLength";
-	    std::string tmpStr3 = "frameShift";
-	    std::string tmpStr4 = "windowType";
-	    std::string tmpStr5 = "windowTypePhase";
-	    std::string tmpStr6 = "lpcOrder";
 	    
 	    for (int dftBufIndex = 0; dftBufIndex < this->m_DFTDataBuf.size(); dftBufIndex++){
 
-		// for the second dft buffer, add "2" after the str
-		// for the third dft buffer, use "3" 
-		if (dftBufIndex == 1){
-		    tmpStr1 += '2';
-		    tmpStr2 += '2';
-		    tmpStr3 += '2';
-		    tmpStr4 += '2';
-		    tmpStr5 += '2';		    
-		}else if(dftBufIndex == 2){
-		    tmpStr1[tmpStr1.size()-1] = '3';
-		    tmpStr2[tmpStr2.size()-1] = '3';
-		    tmpStr3[tmpStr3.size()-1] = '3';
-		    tmpStr4[tmpStr4.size()-1] = '3';
-		    tmpStr5[tmpStr5.size()-1] = '3';		    
-		}
-
-		if (m_DFTDataBuf[dftBufIndex].m_valid_flag){
+		
+		if (dftBufIndex == 0 && m_DFTDataBuf[dftBufIndex].m_valid_flag){
 		    (*layersArray)[layersArray->Size() - 1].AddMember(
-			tmpStr1.c_str(),
+			"fftLength",
 			m_DFTDataBuf[dftBufIndex].m_fftLength,
 			allocator);
 		    (*layersArray)[layersArray->Size() - 1].AddMember(
-			tmpStr2.c_str(),
+			"frameLength",
 			m_DFTDataBuf[dftBufIndex].m_frameLength,
 			allocator);
 		    (*layersArray)[layersArray->Size() - 1].AddMember(
-			tmpStr3.c_str(),
+			"frameShift",
 			m_DFTDataBuf[dftBufIndex].m_frameShift,
-			allocator);		
-		    (*layersArray)[layersArray->Size() - 1].AddMember(
-			tmpStr4.c_str(),
-			m_DFTDataBuf[dftBufIndex].m_windowType,
 			allocator);
+		    if (m_DFTDataBuf[dftBufIndex].m_windowType != FFTMAT_WINDOW_HANN)
+			(*layersArray)[layersArray->Size() - 1].AddMember(
+			 "windowType",
+			 m_DFTDataBuf[dftBufIndex].m_windowType,
+			 allocator);
+		    if (m_DFTDataBuf[dftBufIndex].m_windowTypePhase != FFTMAT_WINDOW_HANN)
+			(*layersArray)[layersArray->Size() - 1].AddMember(
+			 "windowTypePhase",
+			 m_DFTDataBuf[dftBufIndex].m_windowTypePhase,
+			 allocator);
 		    (*layersArray)[layersArray->Size() - 1].AddMember(
-			tmpStr5.c_str(),
-			m_DFTDataBuf[dftBufIndex].m_windowTypePhase,
-			allocator);
-		    (*layersArray)[layersArray->Size() - 1].AddMember(
-			tmpStr6.c_str(),
+			"lpcOrder",
 			m_DFTDataBuf[dftBufIndex].m_lpcOrder,
 			allocator);
+		}else if (dftBufIndex == 1 && m_DFTDataBuf[dftBufIndex].m_valid_flag){
+		    (*layersArray)[layersArray->Size() - 1].AddMember(
+			"fftLength2",
+			m_DFTDataBuf[dftBufIndex].m_fftLength,
+			allocator);
+		    (*layersArray)[layersArray->Size() - 1].AddMember(
+			"frameLength2",
+			m_DFTDataBuf[dftBufIndex].m_frameLength,
+			allocator);
+		    (*layersArray)[layersArray->Size() - 1].AddMember(
+			"frameShift2",
+			m_DFTDataBuf[dftBufIndex].m_frameShift,
+			allocator);
+		    if (m_DFTDataBuf[dftBufIndex].m_windowType != FFTMAT_WINDOW_HANN)
+			(*layersArray)[layersArray->Size() - 1].AddMember(
+			 "windowType2",
+			 m_DFTDataBuf[dftBufIndex].m_windowType,
+			 allocator);
+		    if (m_DFTDataBuf[dftBufIndex].m_windowTypePhase != FFTMAT_WINDOW_HANN)
+			(*layersArray)[layersArray->Size() - 1].AddMember(
+			 "windowTypePhase2",
+			 m_DFTDataBuf[dftBufIndex].m_windowTypePhase,
+			 allocator);
+		    (*layersArray)[layersArray->Size() - 1].AddMember(
+			"lpcOrder2",
+			m_DFTDataBuf[dftBufIndex].m_lpcOrder,
+			allocator);
+		}else if (dftBufIndex == 2 && m_DFTDataBuf[dftBufIndex].m_valid_flag){
+		    (*layersArray)[layersArray->Size() - 1].AddMember(
+			"fftLength3",
+			m_DFTDataBuf[dftBufIndex].m_fftLength,
+			allocator);
+		    (*layersArray)[layersArray->Size() - 1].AddMember(
+			"frameLength3",
+			m_DFTDataBuf[dftBufIndex].m_frameLength,
+			allocator);
+		    (*layersArray)[layersArray->Size() - 1].AddMember(
+			"frameShift3",
+			m_DFTDataBuf[dftBufIndex].m_frameShift,
+			allocator);
+		    if (m_DFTDataBuf[dftBufIndex].m_windowType != FFTMAT_WINDOW_HANN)
+			(*layersArray)[layersArray->Size() - 1].AddMember(
+			 "windowType3",
+			 m_DFTDataBuf[dftBufIndex].m_windowType,
+			 allocator);
+		    if (m_DFTDataBuf[dftBufIndex].m_windowTypePhase != FFTMAT_WINDOW_HANN)
+			(*layersArray)[layersArray->Size() - 1].AddMember(
+			 "windowTypePhase3",
+			 m_DFTDataBuf[dftBufIndex].m_windowTypePhase,
+			 allocator);
+		    (*layersArray)[layersArray->Size() - 1].AddMember(
+			"lpcOrder3",
+			m_DFTDataBuf[dftBufIndex].m_lpcOrder,
+			allocator);
+		}else{
+		    // pass
 		}
 	    }
+	    
 
 	    
 	    if (m_hnm_flag > 0 ){

@@ -205,7 +205,6 @@ namespace {
 		real_t tmp_sum = framedData[frameIdx * frameBufLen + posInFrame];
 		real_t lpc_coef = 0.0;
 	    
-		// calculate the auto-correlation as auto_corr(k) = \sum_{t=-inf}^{inf} x[n]x[n+k]
 		for (int order = 1; order < polyOrder; order++){
 		    if (posInFrame - order < 0)
 			break;

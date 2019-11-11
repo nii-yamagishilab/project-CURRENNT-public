@@ -456,11 +456,14 @@ namespace {
 	int fftLength;   // dimension of frame (padded)
 	int frameLength;
 	int frameShift;
+	int validFrameNum;
 
 	__host__ __device__ void operator() (const thrust::tuple<real_t &, int> &t) const
 	{
 	    int framePos = t.get<1>() % fftLength;
-	    if (framePos > frameLength)
+	    int frameIdx = t.get<1>() / fftLength;
+	    
+	    if (framePos > frameLength || frameIdx >= validFrameNum)
 		t.get<0>() = 0.0;
 	}
     };
@@ -1688,6 +1691,7 @@ namespace helpers {
 	    fn1.fftLength   = m_fftLength;
 	    fn1.frameLength = m_frameLength;
 	    fn1.frameShift  = m_frameShift;
+	    fn1.validFrameNum = m_validFrameNum;
 	    thrust::for_each(
 		thrust::make_zip_iterator(
 			thrust::make_tuple((*m_framedData).begin(), 
