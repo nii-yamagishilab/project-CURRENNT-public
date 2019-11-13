@@ -25,7 +25,8 @@
 
 #include "../Types.hpp"
 
-#define SIGPROCESS_LPC_ERR_TYPE 0       // Residual MSE
+#define SIGPROCESS_LPC_ERR_TYPE_RES_MSE 0     // Residual MSE
+#define SIGPROCESS_LPC_ERR_TYPE_LIKEHOOD_1 1  // max p(O_t = \hat{o}+t | O_t-k:t-1 = o_t-k:t-1)
 
 namespace helpers {
 

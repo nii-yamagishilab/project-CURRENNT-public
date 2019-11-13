@@ -606,7 +606,7 @@ namespace layers{
 	// LPC related configuration
 	m_lpcErrorType = (layerChild->HasMember("lpcErrorType") ? 
 			 static_cast<int>((*layerChild)["lpcErrorType"].GetInt()) :
-			  SIGPROCESS_LPC_ERR_TYPE);
+			  SIGPROCESS_LPC_ERR_TYPE_RES_MSE);
 
 	
 	/* ------ Load DFT configurations ----- */

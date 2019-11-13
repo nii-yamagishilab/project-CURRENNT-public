@@ -108,6 +108,9 @@ namespace {
 	    // frame index
 	    int frameIdx = t.get<1>();
 
+	    // a temporary polyOrder, which may be changed if the reflection coefficiets is unstable
+	    int tmp_polyOrder = polyOrder;
+		
 	    // pointer that points to autoCorr, refCoef, lpcErr of current frame
 	    long int dataPtr = frameIdx * polyOrder;
 	    // pointer that points to lpcCoef of current frame
@@ -116,10 +119,13 @@ namespace {
 	    // reflection coef
 	    real_t tmp_refCoef = 0.0;
 
+	    // temporary value for swapping
+	    real_t tmp_lpcCoef = 0.0;
+
+	    
 	    // if the frame is all 0.0, return
 	    if (autoCorr[dataPtr + 0] < SIGPROCESS_AUTOCORR_THESHOLD)
 		return;
-
 	    
 	    // initialization
 	    lpcErr[dataPtr] = autoCorr[dataPtr + 0];  // 0-order LPC, error = auto-corr[0]
@@ -139,7 +145,7 @@ namespace {
 		    tmp_refCoef += (lpcCoef[lpcCoefPtr + order2] *
 				    autoCorr[dataPtr + 1 + order2]);
 		tmp_refCoef /= lpcErr[dataPtr + order - 1];
-
+		
 		refCoef[dataPtr + order] = tmp_refCoef;
 
 		// update LPC coefficients
@@ -157,15 +163,24 @@ namespace {
 		lpcErr[dataPtr + order] = lpcErr[dataPtr + order - 1] *
 		    (1 - tmp_refCoef * tmp_refCoef);
 
+		// check the reflection coefficients
+		//  if |tmp_refCoef| > 1.0, return with the LPC coefficients of order - 1
+		if (lpcErr[dataPtr + order] < 0.0){
+		    tmp_polyOrder = order;
+		    break;
+		}
+
 		// copy the lpc coeff (including the 1 of 0-order LPC)
 		for (int order2 = 0; order2 <= order; order2++)
 		    lpcCoef[lpcCoefPtr + order2] = lpcCoef[lpcCoefPtr + polyOrder + order2];
 	    }
 
 	    // Reverse the order of LPC coef [a_p^p, a_p^p-1, ... 1.0]  -> [1.0, a_p^1, ... a_p^p]
-	    for (int order = 0; order < polyOrder; order++)
-		lpcCoef[lpcCoefPtr + order] =
-		    lpcCoef[lpcCoefPtr + polyOrder + polyOrder - 1 - order];
+	    for (int order = 0; order < (tmp_polyOrder / 2); order++){
+		tmp_lpcCoef = lpcCoef[lpcCoefPtr + tmp_polyOrder - 1 - order];
+		lpcCoef[lpcCoefPtr + tmp_polyOrder - 1 - order] = lpcCoef[lpcCoefPtr + order];
+		lpcCoef[lpcCoefPtr + order] = tmp_lpcCoef;
+	    }
 	}
     };
 
@@ -605,7 +620,7 @@ namespace helpers {
     {
 	real_t lpcError = 0.0;
 	
-	if (m_lpcErrorType == SIGPROCESS_LPC_ERR_TYPE){
+	if (m_lpcErrorType == SIGPROCESS_LPC_ERR_TYPE_RES_MSE){
 	    
 	    
 	    // Calculate residual MSE
