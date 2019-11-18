@@ -140,6 +140,7 @@ namespace{
 	int HmnNum;
 	int noNoiseInSince;
 	
+	
 	real_t *targetData;
 	real_t *sourceData;
 	real_t *genSignalBuff;
@@ -147,7 +148,7 @@ namespace{
 	real_t *HmnBuff;
 	real_t *phaseNoise;
 	real_t *addtiveNoise;
-	
+	real_t *uvFlag;
 	const char *patTypes;
 	
 	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
@@ -196,6 +197,10 @@ namespace{
 		    (freqOpt == NN_OPE_FREGEN_F0_LF0 && freq > 10.0) ||
 		    (freqOpt == NN_OPE_FREGEN_F0_PF0 && freq > 10.0)){
 
+		    // write the U/V flag
+		    if (dimIdx == 0)
+			uvFlag[timeIdx] = 1.0;
+		    
 		    // convert F0 
 		    if (freqOpt == NN_OPE_FREGEN_F0_LF0){
 			// LF0 -> F0
@@ -234,7 +239,6 @@ namespace{
 		    sigValue = sin(spPhase) * f0Mag;
 		    
 		    // store the signal value
-
 		    if (flagPhaseMatch){
 			// when phase matching is used, phase candidates of fundammental components
 			// and harmonics are saved in separate buffers
@@ -266,7 +270,7 @@ namespace{
 			if (dimIdx < (hnmNum + 1)){
 			    addtiveNoise[timeIdxPhy * (hnmNum + 1) + dimIdx] =
 				addtiveNoise[timeIdxPhy * (hnmNum + 1) + dimIdx] /
-				(addtiveNoiseMag) * (f0Mag + addtiveNoiseMag);
+				(addtiveNoiseMag) * f0Mag;
 			}
 		    }
 		}
@@ -432,6 +436,70 @@ namespace{
 	}
     };
 
+
+
+    struct sin2pulse
+    {
+	int layerSize;
+	int parallel;
+	int maxLength;
+
+	real_t *addNoise;
+	real_t *outputData;
+	real_t *uvFlag;
+	
+	const char *patTypes;
+	
+	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
+	{
+	    int timeBlock = t.get<1>() / layerSize;
+	    int dimIndex = t.get<1>() % layerSize;
+
+	    int prev_step = timeBlock - parallel;
+	    int next_step = timeBlock + parallel;
+
+	    if (patTypes[timeBlock] == PATTYPE_NONE){
+		// current time step is void
+		t.get<0>() = 0.0;
+	    }else{
+		// current time step is not void
+		
+		if (uvFlag[timeBlock] < 1){
+		    // current step is unvoiced
+		    t.get<0>() = outputData[t.get<1>()];
+		}else{
+		    // current step is voiced
+		    
+		    if (prev_step < 0 || next_step > maxLength ||
+			patTypes[prev_step] == PATTYPE_NONE ||
+			patTypes[next_step] == PATTYPE_NONE ||
+			uvFlag[prev_step] == 0.0 ||
+			uvFlag[next_step] == 0.0){
+			// current step is near the boundary of voiced segment
+			t.get<0>() = 0.0;
+		    }else{
+
+			
+			// current step is inside a voiced segment
+			if ((outputData[t.get<1>()] - addNoise[t.get<1>()]) >=
+			    (outputData[prev_step * layerSize + dimIndex] -
+			     addNoise[prev_step * layerSize + dimIndex])&&
+			    (outputData[t.get<1>()] - addNoise[t.get<1>()]) >=
+			    (outputData[next_step * layerSize + dimIndex] -
+			     addNoise[next_step * layerSize + dimIndex])){
+			    
+			    // current step is a local maximum
+			    t.get<0>() = outputData[t.get<1>()];
+			}else{
+			    t.get<0>() = 0.0;
+			}
+		    }
+		}
+	    }
+	    return;
+	}
+    };
+
 }    
 }
 
@@ -522,6 +590,8 @@ namespace layers{
 	m_noiseShareAcrDim = (layerChild->HasMember("shareNoiseAcrossDim") ? 
 			      static_cast<real_t>((*layerChild)["shareNoiseAcrossDim"].GetInt()):0);
 
+	m_sin2pulse = (layerChild->HasMember("sin2pulse") ? 
+		       ((*layerChild)["sin2pulse"].GetInt()):0);
 	
 	const Configuration &config = Configuration::instance();
 	if (config.f0dataMean_signalgen() > 0)
@@ -597,6 +667,7 @@ namespace layers{
     {
 	m_noiseInput.resize(this->outputs().size(), 0.0);
 	m_phaseNoise.resize(this->outputs().size(), 0.0);
+	m_uvflag.resize(this->outputs().size()/this->size(), 0.0);
 	
 	switch (this->getLayerMode()) {
 	case NN_SIGGEN_LAYER_MODE_NOISE_ONLY:
@@ -628,6 +699,7 @@ namespace layers{
 	m_freqHmnBuff.clear();    m_freqHmnBuff.shrink_to_fit();
 	m_noiseInput.clear();     m_noiseInput.shrink_to_fit();
 	m_phaseNoise.clear();     m_phaseNoise.shrink_to_fit();
+	m_uvflag.clear();         m_uvflag.shrink_to_fit();
     }
 
     template <typename TDevice>
@@ -689,7 +761,10 @@ namespace layers{
 	    (*layersArray)[layersArray->Size() - 1].AddMember("shareNoiseAcrossDim",
 							      m_noiseShareAcrDim,
 							      allocator);
-	    
+	if (m_sin2pulse)
+	    (*layersArray)[layersArray->Size() - 1].AddMember("sin2pulse",
+							      m_sin2pulse,
+							      allocator);
     }
 
     template <typename TDevice>
@@ -820,7 +895,11 @@ namespace layers{
 		fn1.phaseNoise     = helpers::getRawPointer(this->m_phaseNoise);
 		// buffer of additive noise
 		fn1.addtiveNoise   = helpers::getRawPointer(this->m_noiseInput);
-		// buffer of hamonics
+
+		fn1.uvFlag         = helpers::getRawPointer(this->m_uvflag);
+
+		    
+		// buffer of hamonics		
 		fn1.HmnBuff        = NULL;
 		fn1.signalStatic   = NULL;
 		fn1.targetData     = NULL;
@@ -863,7 +942,7 @@ namespace layers{
 		fn1.equalNoiseSinePower = m_equalNoiseSinePower;
 		fn1.inputShiftTime  = 0;
 		fn1.outputShiftTime = 0;
-	    
+		
 		fn1.freqDim       = this->m_freqDim;
 		fn1.freqOpt       = this->m_freqOpt;
 		fn1.freqSR        = (real_t)this->m_freqSR;
@@ -885,6 +964,8 @@ namespace layers{
 		fn1.phaseNoise     = helpers::getRawPointer(this->m_phaseNoise);
 		fn1.HmnBuff        = helpers::getRawPointer(m_freqHmnBuff);
 		fn1.addtiveNoise   = helpers::getRawPointer(this->m_noiseInput);
+		fn1.uvFlag         = helpers::getRawPointer(this->m_uvflag);
+
 		
 		if (this->flagTrainingMode()){
 		    fn1.targetData     = helpers::getRawPointer(this->m_targetLayer->outputs());
@@ -975,6 +1056,37 @@ namespace layers{
 			thrust::counting_iterator<int>(0)+timeLengthTotal * this->size())),
 		 fn4);
 	    
+	    }
+
+	    // if we need to convert sine waveforms to pulse train
+	    if (m_sin2pulse){
+
+		thrust::fill(m_phaseNoise.begin(), m_phaseNoise.end(), 0.0);
+
+		{
+		internal::sin2pulse fn5;
+
+		fn5.layerSize  = this->size();
+		fn5.parallel   = this->parallelSequences();
+		fn5.maxLength  = timeLengthTotal;
+
+		fn5.addNoise   = helpers::getRawPointer(this->m_noiseInput);
+		fn5.outputData = helpers::getRawPointer(this->outputs());
+		fn5.patTypes   = helpers::getRawPointer(this->patTypes());
+		fn5.uvFlag     = helpers::getRawPointer(this->m_uvflag);
+		thrust::for_each(
+                 thrust::make_zip_iterator(
+		   thrust::make_tuple(
+			m_phaseNoise.begin(),
+			thrust::counting_iterator<int>(0))),
+		 thrust::make_zip_iterator(
+	           thrust::make_tuple(
+			m_phaseNoise.begin() + timeLengthTotal * this->size(),
+			thrust::counting_iterator<int>(0)+timeLengthTotal * this->size())),
+		 fn5);
+		}
+		thrust::copy(m_phaseNoise.begin(), m_phaseNoise.end(),
+			     this->outputs().begin());
 	    }
 	}
 

@@ -1423,6 +1423,8 @@ namespace layers{
 	if (m_dimChange){
 	    printf("\tChange dimension from %d to %d", this->precedingLayer().size(), this->size());
 	}
+
+
 	
 	/* ------ print the information ------ */
 
@@ -1609,6 +1611,7 @@ namespace layers{
 	    (*layersArray)[layersArray->Size() - 1].AddMember("dimension_change",
 							      m_dimChange,
 							      allocator);
+
     }
 
     template <typename TDevice>
@@ -2045,6 +2048,7 @@ namespace layers{
 				 thrust::counting_iterator<int>(0) + this->size() * timeLength)),
 		  fn1);
 	    }
+	    
 	}else if (m_reverse_grad >= 0){
 	    
 	    // nothing for forward propagation during gradients reverse mode

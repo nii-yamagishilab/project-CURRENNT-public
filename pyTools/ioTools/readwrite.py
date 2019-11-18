@@ -120,12 +120,12 @@ def read_htk(filename, format='f4', end='l'):
         format = '='+format
     """    
     if 'f' in format:
-        sample_ize = int(head_info['SampleSize'][0]/4)
+        sample_size = int(head_info['SampleSize'][0]/4)
     else:
         print("Error in read_htk: input should be float32")
         return False
         
-    datatype = np.dtype((format,(sample_ize,)))
+    datatype = np.dtype((format,(sample_size,)))
     data = np.fromfile(f,dtype=datatype)
     f.close()
     return data

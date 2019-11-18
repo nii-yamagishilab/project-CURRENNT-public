@@ -70,11 +70,15 @@ namespace layers{
 	real_vector     m_freqErrorBuff;
 	real_vector     m_signalStatic;	
 
+	real_vector     m_uvflag;
+	
 	int             m_equalNoiseSinePower;
 	int             m_noiseType;
 
 	int             m_noNoiseInSine;
 	int             m_noiseShareAcrDim;
+
+	int             m_sin2pulse;
 	
 	void __loadOpts(const helpers::JsonValue &layerChild);
 	void __setLayerMode();

@@ -57,10 +57,6 @@
 
 #include "../Configuration.hpp"
 
-#define  NN_WAVENETCORE_MODE_UNCOND   0   // unconditional WaveNet core
-#define  NN_WAVENETCORE_MODE_COND_INI 1   // the first conditional WaveNet core
-#define  NN_WAVENETCORE_MODE_COND_FOL 2   // the following conditional WaveNet cores
-
 
 namespace internal{
 namespace {

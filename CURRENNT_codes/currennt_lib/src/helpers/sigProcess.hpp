@@ -25,8 +25,9 @@
 
 #include "../Types.hpp"
 
-#define SIGPROCESS_LPC_ERR_TYPE_RES_MSE 0     // Residual MSE
-#define SIGPROCESS_LPC_ERR_TYPE_LIKEHOOD_1 1  // max p(O_t = \hat{o}+t | O_t-k:t-1 = o_t-k:t-1)
+#define SIGPROCESS_LPC_ERR_TYPE_WAV_MSE 0     // waveform MSE (o_{1:T} - iLPC(LPC(\hat{o}_{1:T})))^2
+#define SIGPROCESS_LPC_ERR_TYPE_RES_MSE 1     // Residual MSE (LPC(o_{1:T}) - LPC(\hat{o}_{1:T}))^2
+#define SIGPROCESS_LPC_ERR_TYPE_LIKEHOOD_1 2  // max p(O_t = \hat{o}+t | O_t-k:t-1 = o_t-k:t-1)
 
 namespace helpers {
 
@@ -101,11 +102,19 @@ namespace helpers {
 	// calculate residual signal, given LPC coefficients
 	void __lpcResidual(real_vector *framedData, real_vector *lpcCoef,
 			   real_vector *lpcRes);
-
+	
+	void __lpcSynthesis(real_vector *lpcRes, real_vector *lpcCoef,
+			    real_vector *framedData);
+	
 	// calculate residual MSE and gradients
 	real_t __lpcResidualMseAndGrad(real_vector *lpcResSrc, real_vector *lpcResTar,
 				       real_vector *lpcCoefSrc, real_vector *lpcCoefTar);
-	
+
+	// calculate waveform MSE and gradients
+	real_t __lpcWaveformMseAndGrad(real_vector *framedDataSrc,
+				       real_vector *lpcResSrc, real_vector *lpcResTar,
+				       real_vector *lpcCoefSrc, real_vector *lpcCoefTar);
+
 	// warpper functions
 	void lpcAnalysis();
 	real_t lpcError();

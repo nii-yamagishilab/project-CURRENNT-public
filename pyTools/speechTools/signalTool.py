@@ -56,10 +56,18 @@ def filter_res(data):
     return amplitude_to_db(mag)
 
 def read_fft_data_currennt(path, fft_length):
-    data = readwrite.read_raw_mat(path, (fft_length/2+1)*2)
+    data = readwrite.read_raw_mat(path, int(fft_length/2+1)*2)
     data_re = data[:, 0::2]
     data_im = data[:, 1::2]
     return data_re, data_im
+
+
+def read_fft_to_log_mag_currennt(path, fft_length):
+    data = readwrite.read_raw_mat(path, int(fft_length/2+1)*2)
+    data_re = data[:, 0::2]
+    data_im = data[:, 1::2]
+    return amplitude_to_db(amplitude_re_im(data_re, data_im))
+
 
 if __name__ == "__main__":
     pass

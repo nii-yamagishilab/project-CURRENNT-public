@@ -194,7 +194,7 @@ namespace {
 	real_t *framedData; // framed speech data
 	real_t *lpcCoef;   // LPC coefficients
 	
-	// Calcualte the LPC coeffient for one frame, assume LPC model (in z-domain)
+	// Calcualte the LPC residual for one frame, assume LPC model (in z-domain)
 	//    r_t = o_t + \sum_k=1^K a_k o_t-k
 	// 
 	// t.get<0>(): array of residual [frames, frameBuflength]
@@ -232,6 +232,77 @@ namespace {
 		// save r_k for frameIdx-th frame
 		t.get<0>() = tmp_sum;
 	    }
+	}
+    };
+
+
+    struct lpcSynthesis
+    {
+	int polyOrder;     // maximum number of auto-correlation-order
+	int frameLength;   // length of one frame
+	int frameBufLen;   // length of the frame buffer allocated to each frame
+
+	real_t *residualData;
+	real_t *waveData;     // framed speech data
+	real_t *lpcCoef;      // LPC coefficients
+	
+	// Calcualte the LPC residual for one frame, assume LPC model (in z-domain)
+	//    o_t = r_t - \sum_k=1^K a_k o_t-k
+	// 
+	// t.get<0>(): not used
+	// t.get<1>(): index of frame
+	// 
+	// Parallelized over frames
+	__host__ __device__ void operator() (const thrust::tuple<real_t &, int> &t) const
+	{
+	    // which frame?
+	    int frameIdx = t.get<1>();
+
+	    real_t tmpValue = 0.0;
+	    
+	    if (lpcCoef[frameIdx * polyOrder * 2] < SIGPROCESS_LPC_0ORDER_THESHOLD){
+		// void frame
+		return;
+		
+	    }else{
+		for (int timeStep = 0; timeStep < frameBufLen; timeStep++){
+
+		    if (timeStep < frameLength){
+			
+			// time range within the frame length
+			tmpValue = residualData[frameIdx * frameBufLen + timeStep];
+			
+			for (int order = 1; order < polyOrder; order++){
+			    if (timeStep - order >= 0){
+
+				if (waveData == NULL){
+				    tmpValue = tmpValue - lpcCoef[frameIdx * polyOrder * 2 + order] *
+					residualData[frameIdx * frameBufLen + timeStep - order];
+				}else{
+				    tmpValue = tmpValue - lpcCoef[frameIdx * polyOrder * 2 + order] *
+					waveData[frameIdx * frameBufLen + timeStep - order];
+				}
+			    }else{
+				break;
+			    }
+			}
+			
+			if (waveData == NULL)
+			    residualData[frameIdx * frameBufLen + timeStep] = tmpValue;
+			else
+			    waveData[frameIdx * frameBufLen + timeStep] = tmpValue;
+		    }else{
+			// time range beyond the frame length
+			if (waveData == NULL){
+			    residualData[frameIdx * frameBufLen + timeStep] = 0.0;
+			}else{
+			    waveData[frameIdx * frameBufLen + timeStep] = 0.0;
+			}
+			
+		    }
+		}
+	    }
+	    
 	}
     };
 
@@ -324,6 +395,49 @@ namespace {
     };
 
 
+
+    struct lpcWaveformDifference
+    {
+	int frameLength;   // length of one frame
+	int frameBufLen;   // length of the frame buffer allocated to each frame
+	int frameNum;
+	int polyOrder;
+	
+	real_t *lpcCoefSrc;
+	real_t *lpcCoefTar;	
+	real_t *resTar;    // r_t, residual of target signal
+	real_t *resSrc;    // \hat_r_t, residual of source signal
+	
+	// save [\hat_r_t - r_t]^2 in resSrc
+	// save [\hat_r_t - r_t]   in resTar
+
+	__host__ __device__ void operator() (const thrust::tuple<real_t &, int> &t) const
+	{
+	    
+	    // which frame?
+	    int frameIdx = t.get<1>() / frameBufLen;
+
+	    // which sampling point in the frame
+	    int posInFrame = t.get<1>() % frameBufLen;
+
+	    if (posInFrame >= frameLength ||
+		lpcCoefSrc[frameIdx * polyOrder * 2] < SIGPROCESS_LPC_0ORDER_THESHOLD ||
+		lpcCoefTar[frameIdx * polyOrder * 2] < SIGPROCESS_LPC_0ORDER_THESHOLD){
+		// if this time step is beyond the frame length
+		// or if this frame is all 0 (dummy frame)
+		resTar[t.get<1>()] = 0.0;
+		resSrc[t.get<1>()] = 0.0;
+	    }else{
+		// [\hat_r_t - r_t]   in resSrc
+		resSrc[t.get<1>()] =  resSrc[t.get<1>()] - resTar[t.get<1>()];
+		// [\hat_r_t - r_t]^2   in resTar
+		resTar[t.get<1>()] = (resSrc[t.get<1>()] * resSrc[t.get<1>()]);
+	    }
+	}
+    };
+
+
+    
 }
 }
 
@@ -484,6 +598,42 @@ namespace helpers {
     }
 
     template <typename TDevice>
+    void lpcWarpper<TDevice>::__lpcSynthesis(real_vector *lpcRes, real_vector *lpcCoef,
+					     real_vector *framedData)
+    {
+	if (lpcCoef == NULL || lpcRes == NULL)
+	    throw std::runtime_error("lpcCoef, lpcRes not initialized");
+
+	
+	{{
+	    internal::lpcSynthesis fn1;
+	    fn1.polyOrder   = m_polyOrder;
+	    fn1.frameLength = m_frameLength;    
+	    fn1.frameBufLen = m_frameBufLength;
+	    
+	    fn1.residualData= getRawPointer(*lpcRes);
+	    fn1.lpcCoef     = getRawPointer(*lpcCoef);
+	    if (framedData == NULL)
+		fn1.waveData = NULL;
+	    else
+		fn1.waveData = getRawPointer(*framedData);
+	    
+	    int tmp_num_data = m_frameNum;
+	    thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple(
+			    (*lpcRes).begin(), 
+			    thrust::counting_iterator<int>(0))),
+		thrust::make_zip_iterator(
+			thrust::make_tuple(
+			    (*lpcRes).begin() + tmp_num_data,
+			    thrust::counting_iterator<int>(0) + tmp_num_data)),
+		fn1);
+	}}  
+
+    }
+
+    template <typename TDevice>
     void lpcWarpper<TDevice>::__lpcResidual(real_vector *framedData,
 					    real_vector *lpcCoef,
 					    real_vector *lpcRes)
@@ -514,6 +664,78 @@ namespace helpers {
 			    thrust::counting_iterator<int>(0) + tmp_num_data)),
 		fn1);
 	}}
+    }
+
+    template <typename TDevice>
+    real_t lpcWarpper<TDevice>::__lpcWaveformMseAndGrad(real_vector *framedDataSrc,
+							real_vector *lpcResSrc,  real_vector *lpcResTar,
+							real_vector *lpcCoefSrc, real_vector *lpcCoefTar)
+    {
+	if (framedDataSrc == NULL || lpcResTar == NULL)
+	    throw std::runtime_error("framedDataSrc and lpcResTar not initialized");
+
+	// total number of data points in all frames
+	long int tmp_num_data = m_frameNum * m_frameBufLength;
+
+
+	// get the LPC synthesized signal, using natural residual and
+	// generated LPC coefficients
+	// The output will be saved to lpcResTar
+	this->__lpcSynthesis(lpcResTar, lpcCoefSrc, NULL);
+	
+	// copy the generated waveforms to lpcResSrc
+	thrust::copy((*framedDataSrc).begin(), (*framedDataSrc).end(),
+		     (*lpcResSrc).begin());
+
+	// Note: we are using lpcResSrc and lpcResTar to store the
+	// generated waveforms and LPC-synthesized waveforms.
+	// Just for convenience
+	
+	// borrow the function 
+	{{
+	    internal::lpcWaveformDifference fn1;
+	    fn1.frameLength = m_frameLength;    
+	    fn1.frameBufLen = m_frameBufLength;
+	    fn1.frameNum    = m_frameNum;
+	    fn1.polyOrder   = m_polyOrder;
+
+	    // lpcCoeff are used to judge whether this frame is dummy or not
+	    fn1.lpcCoefSrc = getRawPointer(*lpcCoefSrc);
+	    fn1.lpcCoefTar = getRawPointer(*lpcCoefTar);
+	    fn1.resTar = getRawPointer(*lpcResTar);
+	    fn1.resSrc = getRawPointer(*lpcResSrc);
+	    
+	    thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple(
+			    (*lpcResSrc).begin(), 
+			    thrust::counting_iterator<int>(0))),
+		thrust::make_zip_iterator(
+			thrust::make_tuple(
+			    (*lpcResSrc).begin() + tmp_num_data,
+			    thrust::counting_iterator<int>(0) + tmp_num_data)),
+		fn1);
+	}}
+	// [\hat_waveform_t - waveform_t]^2 is saved in lpcResTar
+	// weight * 2 / NM * [\hat_waveform_t - waveform_t] is saved in lpcResSrc
+
+	real_t distance = 0.0;
+	{{
+	   internal::scaleError fn2;
+	   fn2.factor = 1.0;
+	   distance = thrust::transform_reduce((*(lpcResTar)).begin(),
+					       (*(lpcResTar)).begin() + tmp_num_data,
+					       fn2,
+					       (real_t)0,
+					       thrust::plus<real_t>());
+	   
+	   // the MSE of residual signal can be quite small
+	   // so, we do the averaging after sum
+	   distance = distance / (m_frameNum * m_frameLength);
+	}}
+
+	// gradients have been to saved to lpcResSrc;
+	return distance;
     }
 
     template <typename TDevice>
@@ -594,7 +816,6 @@ namespace helpers {
 	
 	return distance;
     }
-
     
     template <typename TDevice>
     void lpcWarpper<TDevice>::lpcAnalysis()
@@ -611,8 +832,7 @@ namespace helpers {
 
 	// Calculate residual signals
 	this->__lpcResidual(m_framedDataSrc, m_lpcCoefSrc, m_lpcResSrc);
-	this->__lpcResidual(m_framedDataTar, m_lpcCoefTar, m_lpcResTar);    
-	
+	this->__lpcResidual(m_framedDataTar, m_lpcCoefTar, m_lpcResTar);
     }
 
     template <typename TDevice>
@@ -631,6 +851,13 @@ namespace helpers {
 
 	    // The gradients have been saved to m_lpcResSrc
 	    // The gradients will be de-framed and saved to m_lpcGrad in lpcGradCollect()
+	    
+	}else if (m_lpcErrorType == SIGPROCESS_LPC_ERR_TYPE_WAV_MSE){
+	    
+	    lpcError = this->__lpcWaveformMseAndGrad(m_framedDataSrc,
+						     m_lpcResSrc, m_lpcResTar,
+						     m_lpcCoefSrc, m_lpcCoefTar);	    
+
 	    
 	}else{
 	    throw std::runtime_error("Error: lpcErrorType undefined");

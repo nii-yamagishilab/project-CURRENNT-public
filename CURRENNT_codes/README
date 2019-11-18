@@ -94,11 +94,9 @@ Building on Linux requires the following:
 
    3 CUDA > 6.5
        The modified CURRENNT can be compiled with CUDA7.0, 8.0, 9.0, and 10.0.
-       This version of CURRENNT has coverd the issues mentioned in
+       This modified CURRENNT has covered the issues mentioned in
        http://sourceforge.net/p/currennt/discussion/general/thread/df6eeece/
        http://sourceforge.net/p/currennt/discussion/general/thread/e10ef414/
-
-
 
 To build CURRENNT execute:
 1. In the root of CURRENNT_codes
@@ -109,12 +107,36 @@ To build CURRENNT execute:
    2. Change /home/smg/wang/TOOL/bin/netcdf_220/lib to PATH_TO_INSTALL/lib, where PATH_TO_INSTALL
       is the path you installed netcdf
 
-2. Make sure you are in the root directory of CURRENNT_codes:
+2. Make sure that you are in the directory of CURRENNT_codes:
    $: mkdir build && cd build
    $: cmake ..
    $: make
    
-   This produces the executable file 'currennt' in ./build
+   This produces the executable file 'currennt' in CURRENNT_codes/build
+
+   Note:
+   1. If CUDA is not installed in the default path, you may see
+      "Could NOT find CUDA (missing: CUDA_INCLUDE_DIRS CUDA_CUDART_LIBRARY) ... ".
+
+      Then, please use this option with cmake
+      $: cmake -DCUDA_TOOLKIT_ROOT_DIR=XXX ../
+      where XXX is the path to CUDA on your machine.
+
+      For example, it is $: cmake -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda ../ on my machine
+
+   2. If CUDA does not support gcc on your machine, you may see
+      "...host_config.h:119:2: error: #error -- unsupported GNU version! gcc versions later than 6 are not supported!"
+
+      Then, please install gcc 6 or older versions.
+      Then, please use this option with cmake
+      $: cmake -DCMAKE_C_COMPILER=YYY ../
+      where YYY is the path to gcc on your machine
+
+      For example, it is $: cmake -DCMAKE_C_COMPILER=/usr/bin/gcc-5 ../ on my machine
+      
+   Of course, you may need to specify both
+   $: cmake -DCUDA_TOOLKIT_ROOT_DIR=XXX -DCMAKE_C_COMPILER=YYY ../
+
 
 You might get many warnings like 'Cannot tell what pointer points to, assuming
 global memory space' or '***operator()" was declared but never referenced'. 

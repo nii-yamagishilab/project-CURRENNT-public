@@ -520,8 +520,8 @@ namespace layers{
 	    // buffer for LPC analysis
 	    if (this->m_tau > 0.0){
 		
-		if (dftBuf.m_lpcOrder == 0)
-		    throw std::runtime_error("\nLPC order should be larger than 0");
+		//if (dftBuf.m_lpcOrder == 0)
+		// throw std::runtime_error("\nLPC order should be larger than 0");
 		
 		dftBuf.m_autoCorrSrc.resize(dftBuf.m_frameNum * (dftBuf.m_lpcOrder + 1), 0.0);
 		dftBuf.m_lpcCoefSrc.resize(dftBuf.m_frameNum * (dftBuf.m_lpcOrder + 1) * 2, 0.0);
@@ -536,6 +536,7 @@ namespace layers{
 		dftBuf.m_lpcResTar = dftBuf.m_lpcResSrc;
 		
 		dftBuf.m_lpcGrad = dftBuf.m_fftDiffData;
+		thrust::fill(dftBuf.m_lpcGrad.begin(), dftBuf.m_lpcGrad.end(), 0.0);
 	    }
 	}	
 		
@@ -606,7 +607,7 @@ namespace layers{
 	// LPC related configuration
 	m_lpcErrorType = (layerChild->HasMember("lpcErrorType") ? 
 			 static_cast<int>((*layerChild)["lpcErrorType"].GetInt()) :
-			  SIGPROCESS_LPC_ERR_TYPE_RES_MSE);
+			  SIGPROCESS_LPC_ERR_TYPE_WAV_MSE);
 
 	
 	/* ------ Load DFT configurations ----- */
@@ -1250,8 +1251,9 @@ namespace layers{
 	// Warp the data structure
 	// Assume m_fftSourceFramed and m_fftTargetFramed have stored the framed data.
 	// (after __specAmpDistance())
-	
-	helpers::lpcWarpper<TDevice> lpcAnalysizer(
+
+	if (dftBuf.m_lpcOrder > 0){
+	    helpers::lpcWarpper<TDevice> lpcAnalysizer(
 		&dftBuf.m_fftSourceFramed, &dftBuf.m_fftTargetFramed,
 		&dftBuf.m_autoCorrSrc, &dftBuf.m_autoCorrTar,
 		&dftBuf.m_lpcCoefSrc, &dftBuf.m_lpcCoefTar,
@@ -1267,14 +1269,18 @@ namespace layers{
 		validFrameNum,
 		this->__vMaxSeqLength(), timeLength);
 
-	// Do LPC analysis
-	lpcAnalysizer.lpcAnalysis();
+	    // Do LPC analysis
+	    lpcAnalysizer.lpcAnalysis();
 
-	// Calculate LPC domain Errors
-	dftBuf.m_lpcError = lpcAnalysizer.lpcError();
+	    // Calculate LPC domain Errors
+	    dftBuf.m_lpcError = lpcAnalysizer.lpcError();
 
-	// Collect gradients (which will be in dftBuf.m_lpcGrad)
-	lpcAnalysizer.lpcGradCollect(m_tau);
+	    // Collect gradients (which will be in dftBuf.m_lpcGrad)
+	    lpcAnalysizer.lpcGradCollect(m_tau);
+	    
+	}else{
+	    dftBuf.m_lpcError = 0.0;
+	}
 	
 	return dftBuf.m_lpcError;
     }
