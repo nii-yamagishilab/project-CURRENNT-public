@@ -20,7 +20,6 @@
  * along with CURRENNT.  If not, see <http://www.gnu.org/licenses/>.
  *****************************************************************************/
 
-
 #include "DFTErrorPostoutputLayer.hpp"
 #include "../helpers/getRawPointer.cuh"
 #include "../helpers/Matrix.hpp"
@@ -43,7 +42,6 @@
 #include <boost/shared_ptr.hpp>
 #include <boost/algorithm/string.hpp>
 #include <vector>
-
 
 // Configuration for HNM training (obsolete)
 #define DFTERRORPOST_HNM_MODEL_1 1
@@ -199,8 +197,7 @@ namespace{
 
     
     struct multiDimSignaltoOneDim
-    {
-	
+    {	
 	real_t *sourceData;
 	int     sourceDim;
 	int     maxLength;
@@ -223,8 +220,7 @@ namespace{
     };
 
     struct multiDimSignaltoOneDimGrad
-    {
-	
+    {	
 	real_t *sourceData;
 	int     sourceDim;
 	int     maxLength;
@@ -247,8 +243,7 @@ namespace{
     };
 
     struct preemphasis
-    {
-	
+    {	
 	real_t *sourceData;
 	int     parallel;
 	
@@ -280,8 +275,7 @@ namespace{
     };
 
     struct deemphasis
-    {
-	
+    {	
 	real_t     *sourceData;
 	int         parallel;
 	int         maxWaveLength;
@@ -290,8 +284,7 @@ namespace{
         __host__ __device__ void operator() (const thrust::tuple<real_t&, int> &values) const
         {
 	    // de-emphasis is autoregressive, cannot be parallelized
-	    // but can be parallelized cross different waveforms in the batch
-	    
+	    // but can be parallelized cross different waveforms in the batch	    
 	    int blockIdx = values.get<1>();
 	    for (int timeIdx = 0; timeIdx < maxWaveLength; timeIdx++){
 		if (timeIdx > 0 && patTypes[timeIdx * parallel + blockIdx] != PATTYPE_NONE){
@@ -304,7 +297,6 @@ namespace{
         }
     };
 
-
     struct cleanImagPart
     {
 	__host__ __device__ void operator() (complex_t &t) const
@@ -312,11 +304,9 @@ namespace{
 	    t.y = 0;
 	}
     };
-
     
 }
 }
-
 
 namespace layers{
 
@@ -332,6 +322,10 @@ namespace layers{
 	, m_beta           (0.0)
 	, m_gamma          (0.0)
 	, m_zeta           (0.0)
+	, m_eta            (0.0)
+	, m_kappa          (0.0)
+	, m_tau            (0.0)
+	, m_iota           (0.0)
 	, m_mseError       (0.0)
 	, m_noiseOutputLayer (NULL)
 	, m_f0InputLayer     (NULL)
@@ -357,16 +351,19 @@ namespace layers{
     template <typename TDevice>
     void DFTPostoutputLayer<TDevice>::__cleanDFTError(struct_DFTData &dftBuf)
     {
+	// clean the errors
 	dftBuf.m_specError = 0.0;
 	dftBuf.m_phaseError = 0.0;
 	dftBuf.m_resError = 0.0;
 	dftBuf.m_realSpecError = 0.0;
 	dftBuf.m_lpcError = 0.0;
+	dftBuf.m_specErrorOthers = 0.0;
     }
     
     template <typename TDevice>
     void DFTPostoutputLayer<TDevice>::__initDFTBuffer(struct_DFTData &dftBuf)
     {
+	// clean the buffers for short-time analysis
 	dftBuf.m_valid_flag = false;
 	
 	this->__cleanDFTError(dftBuf);
@@ -415,6 +412,9 @@ namespace layers{
 	dftBuf.m_refCoefTar.clear();
 
 	dftBuf.m_lpcGrad.clear();
+	
+	dftBuf.m_specGrad_others.clear();
+	dftBuf.m_specGrad_tmpBuf.clear();
     }
     
     template <typename TDevice>
@@ -447,7 +447,10 @@ namespace layers{
 	    dftBuf.m_frameShift = frameShift;
 	    dftBuf.m_windowType = windowType;
 	    dftBuf.m_lpcOrder = lpcOrder;
-	    
+
+	    printf("\n\tDFT analysis: fft_point: %d, frame_length: %d, frame_shift: %d",
+		   dftBuf.m_fftLength, dftBuf.m_frameLength, dftBuf.m_frameShift);
+	    printf("\n\t\tspectral amplitude distance [weight: %.3f]", m_gamma);
 	    // check
 	    if (frameLength > tmp_fftLength)
 		throw std::runtime_error("\nFFT length should be > frame length");
@@ -489,16 +492,20 @@ namespace layers{
 	    // A temporary buffer to store the gradients
 	    dftBuf.m_fftDiffData = this->outputs();
 
+	    
 	    // gradient buffer phase distance
 	    //  other data buffers are shared with specAmp distance
-	    if (this->m_zeta > 0.0)
+	    if (this->m_zeta > 0.0){
 		dftBuf.m_fftDiffDataPhase = dftBuf.m_fftDiffData;
-
+		printf("\n\t\tphase distance [weight: %f]", m_zeta);
+	    }
+	    
 	    // buffer for complex-valued spectral distance
 	    //  other data buffers are shared with specAmp distance	    
-	    if (this->m_eta > 0.0)
+	    if (this->m_eta > 0.0){
 		dftBuf.m_fftResData = dftBuf.m_fftDiffData;
-
+		printf("\n\t\tcomplex-valued spectral distance [weight: %f]", m_eta);
+	    }
 	    // buffer for real-valued spectral distance
 	    if (this->m_kappa > 0.0){
 		dftBuf.m_fftLengthRealSpec  = dftBuf.m_fftLength * 2; 
@@ -515,6 +522,7 @@ namespace layers{
 				dftBuf.m_frameNum * dftBuf.m_fftBinsNumRealSpec, tmp);
 		dftBuf.m_fftDiffSigFFTRealSpec = dftBuf.m_fftTargetSigFFTRealSpec;
 		dftBuf.m_fftDiffDataRealSpec   = this->outputs();
+		printf("\n\t\treal-valued spectral distance [weight: %f]", m_kappa);
 	    }
 
 	    // buffer for LPC analysis
@@ -537,23 +545,32 @@ namespace layers{
 		
 		dftBuf.m_lpcGrad = dftBuf.m_fftDiffData;
 		thrust::fill(dftBuf.m_lpcGrad.begin(), dftBuf.m_lpcGrad.end(), 0.0);
+		printf("\n\t\tlpc-based error [weight: %f, lpc-order: %d]", m_tau, dftBuf.m_lpcOrder);
 	    }
-	}	
+
+
+	    // buffer for additional spectral loss
+	    if (this->m_iota > 0.0){
+		// waveform grad w.r.t spec-amp-distances for all hidden layers
+		// one dimension for each hidden lauer
+		dftBuf.m_specGrad_others.resize(this->outputs().size() * m_otherSignalInputLayer_num, 0.0);
 		
+		// this buffer is used to actually store the gradients
+		// it will be copied to dftBuf.m_specGrad_others
+		dftBuf.m_specGrad_tmpBuf.resize(this->outputs().size(), 0.0);
+		printf("\n\t\tspectral amplitude distance on hidden features [weight: %f]", m_iota);
+	    }
+	}		
     }
     
     template <typename TDevice>
     void DFTPostoutputLayer<TDevice>::__loadOpts(const helpers::JsonValue &layerChild)
     {
-
-	/* ------ Load general configuration ----- */
-	
-	/*
+	/* ------ Load general configuration ----- 
 	  Error =  m_beta * waveform_MSE + m_gamma * spectral_amplitude_MSE + 
 	           m_zeta * phase_MSE    + m_eta  * residual_signal_spectral_amplitude + 
 		   m_kappa * real_spectrum_amp
-	*/
-	
+	*/	
 	m_beta         = (layerChild->HasMember("beta") ? 
 			   static_cast<real_t>((*layerChild)["beta"].GetDouble()) : 0.0);
 
@@ -572,6 +589,9 @@ namespace layers{
 	m_tau        = (layerChild->HasMember("tau") ? 
 			  static_cast<real_t>((*layerChild)["tau"].GetDouble()) : 0.0);
 	
+	m_iota        = (layerChild->HasMember("iota") ? 
+			  static_cast<real_t>((*layerChild)["iota"].GetDouble()) : 0.0);
+
 	// Type of spectral amplitude distance (see ../helpers/FFTMat.hpp):
 	m_specDisType   = (layerChild->HasMember("specDisType") ? 
 			   static_cast<real_t>((*layerChild)["specDisType"].GetInt()) :
@@ -609,9 +629,45 @@ namespace layers{
 			 static_cast<int>((*layerChild)["lpcErrorType"].GetInt()) :
 			  SIGPROCESS_LPC_ERR_TYPE_WAV_MSE);
 
-	
+	// ------- for additional signals from other hidden layers of the network
+	m_separate_excitation_loss = (layerChild->HasMember("lpcExcitationLoss") ? 
+				      static_cast<int>((*layerChild)["lpcExcitationLoss"].GetInt()):0);
+	if (m_tau > 0.0){
+	    if (m_separate_excitation_loss){
+		// select a default LPC loss when external excitation is used
+		if (m_lpcErrorType != SIGPROCESS_LPC_ERR_TYPE_EXCIT_LOSS &&
+		    m_lpcErrorType != SIGPROCESS_LPC_ERR_TYPE_EXCIT_FFTLOSS){
+		    m_lpcErrorType = SIGPROCESS_LPC_ERR_TYPE_EXCIT_FFTLOSS;
+		}
+		printf("\n\tLPC error between natural residual and generated excitation,");
+		if (m_lpcErrorType == SIGPROCESS_LPC_ERR_TYPE_EXCIT_FFTLOSS)
+		    printf(" spectral-amplitude-loss");
+		else
+		    printf(" waveform MSE");
+	    }else{
+		printf("\n\tLPC error between residuals of natural and generated waveforms");
+	    }
+	}else{
+	    m_separate_excitation_loss = 0;
+	}
+
+	// ------ read additional output layers for DFT errors
+	m_otherSignalInputLayers_names.clear();
+	m_otherSignalInputLayers_ptr.clear();
+	m_otherSignalInputLayer_num = 0;
+	m_otherSignalInputLayers_str = (layerChild->HasMember("otherLayersTobeImported") ? 
+					((*layerChild)["otherLayersTobeImported"].GetString()) : "");
+	if (m_otherSignalInputLayers_str.size()){
+	    misFuncs::ParseStrOpt(m_otherSignalInputLayers_str, m_otherSignalInputLayers_names, ",");
+	    m_otherSignalInputLayer_num = m_otherSignalInputLayers_names.size();
+	}
+	if (m_tau > 0.0 && m_separate_excitation_loss && m_otherSignalInputLayer_num < 1)
+	    throw std::runtime_error("Error: lpcExcitationLoss is on but otherLayersForDFTError is not provided");
+	if (m_iota > 0.0 && m_otherSignalInputLayer_num < 1)
+	    throw std::runtime_error("Error: iota is on but otherLayersForDFTError is not provided");
+		
 	/* ------ Load DFT configurations ----- */
-	if (m_gamma > 0.0 || m_zeta > 0.0 || m_eta > 0.0 || m_kappa > 0.0 || m_tau > 0.0){
+	if (m_gamma > 0.0 || m_zeta > 0.0 || m_eta > 0.0 || m_kappa > 0.0 || m_tau > 0.0 || m_iota > 0.0){
 
 	    // -------- First DFT configuration ----
 	    
@@ -700,7 +756,6 @@ namespace layers{
 	    // If more DFT configurations are to be used,
 	    // Please also modify FFTMat.cu getCuFFTHandle_fft to return multiple FFT handlers
 	}
-	
 
 	// -------  Obsolete (not used anymore)
 	// for a special training strategy on h-NSF
@@ -1248,12 +1303,33 @@ namespace layers{
 	int validFrameNum =  helpers::fftTools::fftFrameNum(timeLength,
 							    dftBuf.m_frameLength,
 							    dftBuf.m_frameShift);
-	// Warp the data structure
-	// Assume m_fftSourceFramed and m_fftTargetFramed have stored the framed data.
-	// (after __specAmpDistance())
+	if (dftBuf.m_lpcOrder < 1){
+	    // no need to use lpcError
+	    dftBuf.m_lpcError = 0.0;
+	}else{
+	    // when LPC error is calculated
+	    if (m_separate_excitation_loss){
+		// when LPC excitation loss is evaluated on excitation waveform
 
-	if (dftBuf.m_lpcOrder > 0){
-	    helpers::lpcWarpper<TDevice> lpcAnalysizer(
+		if (m_otherSignalInputLayers_ptr.size() < 1 ||
+		    m_otherSignalInputLayers_ptr[0] == NULL)
+		    throw std::runtime_error("Error: no excitation layer loaded in DFTlayer");
+		
+		// step1. frame the excitation signal
+		//  here we use dftBuf.m_fftSourceFramed to store the framed excitation signals
+		//  
+		helpers::FFTMat<TDevice> excitSig(
+			&m_otherSignalInputLayers_ptr[0]->outputs(),
+			&dftBuf.m_fftSourceFramed,
+			&dftBuf.m_fftSourceSigFFT,
+			dftBuf.m_frameLength, dftBuf.m_frameShift,
+			dftBuf.m_windowType, dftBuf.m_fftLength, dftBuf.m_fftBinsNum,
+			dftBuf.m_frameNum, this->__vMaxSeqLength(), timeLength,
+			this->m_specDisType); 
+		excitSig.frameSignal();
+
+		// step2. do LPC analysis on target signal
+		helpers::lpcWarpper<TDevice> lpcAnalysizer(
 		&dftBuf.m_fftSourceFramed, &dftBuf.m_fftTargetFramed,
 		&dftBuf.m_autoCorrSrc, &dftBuf.m_autoCorrTar,
 		&dftBuf.m_lpcCoefSrc, &dftBuf.m_lpcCoefTar,
@@ -1269,24 +1345,170 @@ namespace layers{
 		validFrameNum,
 		this->__vMaxSeqLength(), timeLength);
 
-	    // Do LPC analysis
-	    lpcAnalysizer.lpcAnalysis();
+		lpcAnalysizer.lpcAnalysisTargetSignal();
 
-	    // Calculate LPC domain Errors
-	    dftBuf.m_lpcError = lpcAnalysizer.lpcError();
 
-	    // Collect gradients (which will be in dftBuf.m_lpcGrad)
-	    lpcAnalysizer.lpcGradCollect(m_tau);
-	    
-	}else{
-	    dftBuf.m_lpcError = 0.0;
+		// step3. calculate distance
+		if (this->m_lpcErrorType == SIGPROCESS_LPC_ERR_TYPE_EXCIT_LOSS){
+		    // MSE distance between excitation and natural residuals waveforms
+
+		    // Calculate LPC domain Errors
+		    dftBuf.m_lpcError = lpcAnalysizer.lpcError();
+
+		    // Collect gradients (which will be in dftBuf.m_lpcGrad)
+		    lpcAnalysizer.lpcGradCollect(m_tau);
+		    
+		}else if (this->m_lpcErrorType == SIGPROCESS_LPC_ERR_TYPE_EXCIT_FFTLOSS){
+		    // FFT distance between excitation and natural residual waveforms
+		    // Note: this method is a bad idea
+		    // 
+		    
+		    // For excitation signals have been created
+		    // it has been framed
+		    // do STFT
+		    excitSig.FFT();
+
+		    
+		    // here, we need to re-use the buffer for waveform spectral loss
+		    // wrap around residual signals of natural waveforms (m_lpcResTar)
+		    helpers::FFTMat<TDevice> ResTarSig(
+			&this->_targets(), &dftBuf.m_lpcResTar,
+			&dftBuf.m_fftTargetSigFFT,
+			dftBuf.m_frameLength, dftBuf.m_frameShift,
+			dftBuf.m_windowType, dftBuf.m_fftLength, dftBuf.m_fftBinsNum,
+			dftBuf.m_frameNum, this->__vMaxSeqLength(), timeLength,
+			this->m_specDisType);
+		    // residual signals have been framed
+		    // do STFT
+		    ResTarSig.FFT();
+		    
+		    // wrap around the gradient buffer for LPC DFT loss (m_lpcGrad)
+		    helpers::FFTMat<TDevice> lpcFFTDiffSig(
+			&dftBuf.m_lpcGrad, &dftBuf.m_fftDiffFramed,
+			&dftBuf.m_fftDiffSigFFT,
+			dftBuf.m_frameLength, dftBuf.m_frameShift,
+			dftBuf.m_windowType, dftBuf.m_fftLength, dftBuf.m_fftBinsNum,
+			dftBuf.m_frameNum, this->__vMaxSeqLength(), timeLength,
+			this->m_specDisType);
+	
+		    // amplitude distance
+		    dftBuf.m_lpcError = excitSig.specAmpDistance(ResTarSig, lpcFFTDiffSig);
+		    // compute complex-valued grad vector
+		    lpcFFTDiffSig.specAmpGrad(excitSig, ResTarSig);
+		    // inverse DFT
+		    lpcFFTDiffSig.iFFT();
+		    // de-framing/windowing
+		    lpcFFTDiffSig.collectGrad(m_tau);
+		}else{
+		    throw std::runtime_error("Error: cannot reach here in DFT layer with external signal loss");
+		}
+		
+	    }else{
+
+		// when LPC loss is evaluated on generated waveform
+		// Warp the data structure
+		// Assume m_fftSourceFramed and m_fftTargetFramed have stored the framed data.
+		// (after __specAmpDistance())
+		
+		helpers::lpcWarpper<TDevice> lpcAnalysizer(
+		&dftBuf.m_fftSourceFramed, &dftBuf.m_fftTargetFramed,
+		&dftBuf.m_autoCorrSrc, &dftBuf.m_autoCorrTar,
+		&dftBuf.m_lpcCoefSrc, &dftBuf.m_lpcCoefTar,
+		&dftBuf.m_lpcErrSrc, &dftBuf.m_lpcErrTar,
+		&dftBuf.m_refCoefSrc, &dftBuf.m_refCoefTar,
+		&dftBuf.m_lpcResSrc, &dftBuf.m_lpcResTar,
+		&dftBuf.m_lpcGrad,
+		dftBuf.m_lpcOrder,
+		this->m_lpcErrorType,
+		dftBuf.m_frameLength,
+		dftBuf.m_frameShift,
+		dftBuf.m_fftLength,
+		validFrameNum,
+		this->__vMaxSeqLength(), timeLength);
+
+		// Do LPC analysis
+		lpcAnalysizer.lpcAnalysisSourceSignal();
+		lpcAnalysizer.lpcAnalysisTargetSignal();		
+
+		// Calculate LPC domain Errors
+		dftBuf.m_lpcError = lpcAnalysizer.lpcError();
+
+		// Collect gradients (which will be in dftBuf.m_lpcGrad)
+		lpcAnalysizer.lpcGradCollect(m_tau);
+	    }
 	}
 	
 	return dftBuf.m_lpcError;
     }
 
+
     template <typename TDevice>
-    real_t DFTPostoutputLayer<TDevice>::__specDistance_warpper(struct_DFTData &dftBuf,
+    real_t DFTPostoutputLayer<TDevice>::__specAmpDistanceOthers(struct_DFTData &dftBuf,
+								const int timeLength)
+    {
+
+	//
+	dftBuf.m_specErrorOthers = 0.0;
+	
+	// Do anlysis on target signal at first
+	helpers::FFTMat<TDevice> targetSig(
+			&this->_targets(), &dftBuf.m_fftTargetFramed,
+			&dftBuf.m_fftTargetSigFFT,
+			dftBuf.m_frameLength, dftBuf.m_frameShift,
+			dftBuf.m_windowType, dftBuf.m_fftLength, dftBuf.m_fftBinsNum,
+			dftBuf.m_frameNum, this->__vMaxSeqLength(), timeLength,
+			this->m_specDisType);
+	// specAmpDistance should have done the two steps on target signals
+	//targetSig.frameSignal();
+	//targetSig.FFT();
+
+	// Calculate the distance and gradietns over each hidden layer
+	if (m_otherSignalInputLayers_ptr.size()){
+	    
+	    for (int layerIndex = 0; layerIndex < m_otherSignalInputLayers_ptr.size(); layerIndex++){
+		// for each external input layer
+		helpers::FFTMat<TDevice> sourceSig(
+			&m_otherSignalInputLayers_ptr[layerIndex]->outputs(),
+			&dftBuf.m_fftSourceFramed,
+			&dftBuf.m_fftSourceSigFFT,
+			dftBuf.m_frameLength, dftBuf.m_frameShift,
+			dftBuf.m_windowType, dftBuf.m_fftLength, dftBuf.m_fftBinsNum,
+			dftBuf.m_frameNum, this->__vMaxSeqLength(), timeLength,
+			this->m_specDisType);
+
+		sourceSig.frameSignal();
+		sourceSig.FFT();
+
+		helpers::FFTMat<TDevice> fftDiffSig(
+			&dftBuf.m_specGrad_tmpBuf, &dftBuf.m_fftDiffFramed,
+			&dftBuf.m_fftDiffSigFFT,
+			dftBuf.m_frameLength, dftBuf.m_frameShift,
+			dftBuf.m_windowType, dftBuf.m_fftLength, dftBuf.m_fftBinsNum,
+			dftBuf.m_frameNum, this->__vMaxSeqLength(), timeLength,
+			this->m_specDisType);
+	
+		// calculate the error
+		dftBuf.m_specErrorOthers += sourceSig.specAmpDistance(targetSig, fftDiffSig);
+	
+		fftDiffSig.specAmpGrad(sourceSig, targetSig);
+		fftDiffSig.iFFT();
+		fftDiffSig.collectGrad(m_iota);
+		
+		// collect gradients to m_specGrad_others
+		thrust::copy(dftBuf.m_specGrad_tmpBuf.begin(), dftBuf.m_specGrad_tmpBuf.end(),
+			     dftBuf.m_specGrad_others.begin() + layerIndex * dftBuf.m_specGrad_tmpBuf.size());
+	    }
+	    
+	}else{
+	    throw std::runtime_error("Error: iota is on but otherLayersForDFTError is not provided");
+	}
+	return dftBuf.m_specErrorOthers;
+    }
+
+
+    
+    template <typename TDevice>
+    real_t DFTPostoutputLayer<TDevice>::__specDistance_wrapper(struct_DFTData &dftBuf,
 							     const int timeLength)
     {
 	real_t specAmpError = 0.0;
@@ -1294,6 +1516,7 @@ namespace layers{
 	real_t specResError = 0.0;
 	real_t specRealError = 0.0;
 	real_t lpcError = 0.0;
+	real_t specErrorsOthers = 0.0;
 	
 	this->__cleanDFTError(dftBuf);
 	
@@ -1306,17 +1529,29 @@ namespace layers{
 	    // calculate the phase distance
 	    if (m_zeta > 0.0)
 		phaseError = this->__specPhaDistance(dftBuf, timeLength);
-	    
+
+	    // calculate the spectrum distance in complex-domain (equivalent to waveform MSE)
 	    if (m_eta > 0.0)
 		specResError = this->__specResAmpDistance(dftBuf, timeLength);
-	    
+
+	    // calculate the real-valued spectrum distances
 	    if (m_kappa > 0.0)
 		specRealError = this->__specRealAmpDistance(dftBuf, timeLength);
 
+	    // calculate the spectral distance for other hidden layers
+	    //  note that, this will re-use the buffers for short-time-analysis
+	    if (m_iota > 0.0)
+		specErrorsOthers = this->__specAmpDistanceOthers(dftBuf, timeLength);
+	    
+	    // calculate the distances in LPC domain
+	    //  note that, LPC analysis requires framing,
+	    //  thus, we put the lpcError here so that it can re-use the data structure
+	    //  for framing in FFTMat
 	    if (m_tau > 0.0)
 		lpcError = this->__lpcError(dftBuf, timeLength);
+		    
 	}
-	return specAmpError + phaseError + specResError + specRealError + lpcError;
+	return specAmpError + phaseError + specResError + specRealError + lpcError + specErrorsOthers;
     }
 
     template <typename TDevice>
@@ -1361,12 +1596,41 @@ namespace layers{
 				  thrust::plus<real_t>());
 
 	    // grad of LPC error
-	    if (m_tau > 0.0)
-		thrust::transform(dftBuf.m_lpcGrad.begin(),
-				  dftBuf.m_lpcGrad.begin() + timeLength * this->__vSize(),
-				  this->precedingLayer().outputErrors().begin(),
-				  this->precedingLayer().outputErrors().begin(),
-				  thrust::plus<real_t>());
+	    if (m_tau > 0.0){
+		if (m_separate_excitation_loss){
+		    // when lpc error is calculated on excitation and natural residuals
+		    // copy the gradients to the excitation layer
+		    // Note: here we copy the gradients directly to the outputErrors
+		    //  this requires that the excitation layer is a skipini layer,
+		    //  also, the layer after the excitation layer should be a skipini layer
+		    thrust::transform(dftBuf.m_lpcGrad.begin(),
+				      dftBuf.m_lpcGrad.begin() + timeLength * this->__vSize(),
+				      m_otherSignalInputLayers_ptr[0]->outputErrors().begin(),
+				      m_otherSignalInputLayers_ptr[0]->outputErrors().begin(),
+				      thrust::plus<real_t>());
+		}else{
+		    // when lpc error is calculated on generated and natural waveforms 
+		    // copy the gradients to the output of neural-filter-module
+		    thrust::transform(dftBuf.m_lpcGrad.begin(),
+				      dftBuf.m_lpcGrad.begin() + timeLength * this->__vSize(),
+				      this->precedingLayer().outputErrors().begin(),
+				      this->precedingLayer().outputErrors().begin(),
+				      thrust::plus<real_t>());
+		}
+	    }
+	    
+	    // gradients for other hidden layers
+	    if (m_iota > 0.0){
+		for (int layerIndex = 0; layerIndex < m_otherSignalInputLayers_ptr.size(); layerIndex++){
+		    thrust::transform(
+			dftBuf.m_specGrad_others.begin() + layerIndex * this->__vMaxSeqLength(),
+			dftBuf.m_specGrad_others.begin() + (layerIndex+1) * this->__vMaxSeqLength(),
+			m_otherSignalInputLayers_ptr[layerIndex]->outputErrors().begin(),
+			m_otherSignalInputLayers_ptr[layerIndex]->outputErrors().begin(),
+			thrust::plus<real_t>());
+		}		
+	    }
+	    
 	}
 
     }
@@ -1422,10 +1686,10 @@ namespace layers{
 	    //   2. calculate distances
 	    //   3. calculate gradients and save them to the buffer
 	    // 
-	    if (m_gamma > 0.0 || m_zeta > 0.0 || m_eta > 0.0 || m_kappa > 0.0 || m_tau > 0.0){
+	    if (m_gamma > 0.0 || m_zeta > 0.0 || m_eta > 0.0 || m_kappa > 0.0 || m_tau > 0.0 || m_iota > 0.0){
 		// calculate distances
 		for (int dftBufIndex = 0; dftBufIndex < this->m_DFTDataBuf.size(); dftBufIndex++)
-		    this->__specDistance_warpper(this->m_DFTDataBuf[dftBufIndex], timeLength);
+		    this->__specDistance_wrapper(this->m_DFTDataBuf[dftBufIndex], timeLength);
 	    }
 	}
 	return;
@@ -1460,8 +1724,7 @@ namespace layers{
 	// Gradients from spectral amplitude and phase
 	//  gradients have been calculated in computeForwardPass()
 	//  here, gradients are simply accumulated into the gradient buffer
-	if (m_gamma > 0.0 || m_zeta > 0.0 || m_eta > 0.0 || m_kappa > 0.0 || m_tau > 0.0){
-
+	if (m_gamma > 0.0 || m_zeta > 0.0 || m_eta > 0.0 || m_kappa > 0.0 || m_tau > 0.0 || m_iota > 0.0){
 	    // Accumulate gradients from each DFT buffer
 	    for (int dftBufIndex = 0; dftBufIndex < this->m_DFTDataBuf.size(); dftBufIndex++)
 		this->__specAccumulateGrad(this->m_DFTDataBuf[dftBufIndex], timeLength);
@@ -1506,6 +1769,15 @@ namespace layers{
 	    (*layersArray)[layersArray->Size() - 1].AddMember("preEmphasisNaturalWav",
 							      m_preEmphasis,
 							      allocator);
+	if (m_separate_excitation_loss)
+	    (*layersArray)[layersArray->Size() - 1].AddMember(
+			"lpcExcitationLoss", m_separate_excitation_loss, allocator);
+	
+
+	if (m_otherSignalInputLayers_str.size())
+	    (*layersArray)[layersArray->Size() - 1].AddMember(
+			"otherLayersTobeImported", m_otherSignalInputLayers_str.c_str(), allocator);
+	
 	
 	if (m_gamma > 0.0){
 	    (*layersArray)[layersArray->Size() - 1].AddMember("gamma", m_gamma, allocator);
@@ -1533,6 +1805,10 @@ namespace layers{
 		(*layersArray)[layersArray->Size() - 1].AddMember("lpcErrorType", m_lpcErrorType,
 								  allocator);
 	    }
+
+	    if (m_iota > 0.0)
+		(*layersArray)[layersArray->Size() - 1].AddMember("iota", m_iota, allocator);
+	    
 	    
 	    for (int dftBufIndex = 0; dftBufIndex < this->m_DFTDataBuf.size(); dftBufIndex++){
 
@@ -1623,7 +1899,6 @@ namespace layers{
 		}
 	    }
 	    
-
 	    
 	    if (m_hnm_flag > 0 ){
 		(*layersArray)[layersArray->Size() - 1].AddMember("hnmMode", m_hnm_flag,
@@ -1680,6 +1955,10 @@ namespace layers{
 		for (int dftBufIndex = 0; dftBufIndex < this->m_DFTDataBuf.size(); dftBufIndex++)
 		    std::cerr << m_DFTDataBuf[dftBufIndex].m_lpcError << ", ";		
 	    }
+	    if (m_iota > 0.0){
+		for (int dftBufIndex = 0; dftBufIndex < this->m_DFTDataBuf.size(); dftBufIndex++)
+		    std::cerr << m_DFTDataBuf[dftBufIndex].m_specErrorOthers << ", ";		
+	    }
 	}
 
 	real_t sum_error = 0.0;
@@ -1689,6 +1968,7 @@ namespace layers{
 	    sum_error += m_DFTDataBuf[dftBufIndex].m_resError;
 	    sum_error += m_DFTDataBuf[dftBufIndex].m_realSpecError;
 	    sum_error += m_DFTDataBuf[dftBufIndex].m_lpcError;
+	    sum_error += m_DFTDataBuf[dftBufIndex].m_specErrorOthers;
 	}
 	return sum_error;
 	    
@@ -1719,6 +1999,18 @@ namespace layers{
 		printf(", assume last dimension of its output as F0");
 	    }
 	}
+
+	// 
+	if (m_otherSignalInputLayers_names.size()){
+	    for (int layerIndex = 0; layerIndex < m_otherSignalInputLayers_names.size(); layerIndex++){
+		if (targetLayer.name() == m_otherSignalInputLayers_names[layerIndex]){
+		    m_otherSignalInputLayers_ptr.push_back(&targetLayer);
+		    printf("\n\tDFT layer catches excitation layer %s",
+			   m_otherSignalInputLayers_ptr[layerIndex]->name().c_str());
+		}
+	    }
+	}
+	
 	return;
     }
 

@@ -59,7 +59,11 @@ namespace layers {
 
 	    // lpc error
 	    real_t             m_lpcError;
+
+	    // spec error for hidden layers
+	    real_t             m_specErrorOthers;
 	    
+	    // configuration for short-time analysis
 	    int                m_frameLength;
 	    int                m_frameShift;
 	    int                m_windowType;
@@ -72,15 +76,15 @@ namespace layers {
 	    int                m_lpcOrder;
 	    
 	    // dft buffers
-	    real_vector        m_fftSourceFramed;
-	    fft_vector         m_fftSourceSigFFT;
+	    real_vector        m_fftSourceFramed;    // source signal being framed
+	    fft_vector         m_fftSourceSigFFT;    // FFT of framed source signal (STFT)
 	    
-	    real_vector        m_fftTargetFramed;
-	    fft_vector         m_fftTargetSigFFT;
+	    real_vector        m_fftTargetFramed;    // target signal begin framed
+	    fft_vector         m_fftTargetSigFFT;    // FFT of framed target signal (STFT)
 	    
-	    real_vector        m_fftDiffData;
-	    real_vector        m_fftDiffFramed;
-	    fft_vector         m_fftDiffSigFFT;
+	    real_vector        m_fftDiffData;        // waveform grad w.r.t spec-amp-distance
+	    real_vector        m_fftDiffFramed;      // framed waveform grad w.r.t spec-amp-distance
+	    fft_vector         m_fftDiffSigFFT;      // to store the spec-amp-distance
 
 	    // gradietns buffer for phase and complex-valued spectral distances
 	    real_vector        m_fftDiffDataPhase;
@@ -115,12 +119,16 @@ namespace layers {
 	    real_vector        m_lpcResTar;   // buffer for LPC residual
 	    
 	    real_vector        m_lpcGrad;  // buffer to store the gradients
+
+	    // for additional spec-amp-distances on hidden layers
+	    real_vector        m_specGrad_others;
+	    real_vector        m_specGrad_tmpBuf;
 	};
 
 	/*
 	  Error =  m_beta * waveform_MSE + m_gamma * spectral_amplitude_MSE + m_zeta * phase_MSE
-	  + m_eta  * residual_signal_spectral_amplitude + m_kappa * real_spectrum_amp 
-	  + m_tau * lpc_error
+	  + m_eta * residual_signal_spectral_amplitude + m_kappa * real_spectrum_amp 
+	  + m_tau * lpc_error + m_iota * spectral_amplitude_for_hidden_layers
 	 */
 
 	real_t             m_beta;              // Weight for waveform MSE
@@ -128,7 +136,8 @@ namespace layers {
 	real_t             m_zeta;              // Weight for DFT phase
 	real_t             m_eta;               // Weight for residual spectrum amplitude
 	real_t             m_kappa;             // Weight for realvalued-spectrum ampltiude
-	real_t             m_tau;
+	real_t             m_tau;               // Weight for error in LPC-domain
+	real_t             m_iota;              // weight for DFT amplitude distances for hidden layers
 	
 	real_t             m_mseError;          //
 
@@ -138,9 +147,16 @@ namespace layers {
 	int                m_phaseDisType;      // Type of phase distance
 	
 	int                m_realSpecType;      // Type of real-valued spectrum
-	int                m_realSpecDisType;   // Ty[e pf real-valued spectrum distance	
+	int                m_realSpecDisType;   // Type pf real-valued spectrum distance	
 	int                m_lpcErrorType;
-	
+
+
+	// support for evaluation on signals from multiple layers
+	int                m_separate_excitation_loss;
+	int                m_otherSignalInputLayer_num;
+	std::string        m_otherSignalInputLayers_str;        // string of additional input layers
+	std::vector<std::string> m_otherSignalInputLayers_names; // string buffer of additional input layers
+	std::vector<Layer<TDevice>*> m_otherSignalInputLayers_ptr; // pointer to previous layers
 	
 	// data structure for DFT analysis
 	std::vector<struct_DFTData> m_DFTDataBuf;
@@ -207,13 +223,16 @@ namespace layers {
 
 	// LPC error
 	real_t __lpcError(struct_DFTData &dftBuf, const int timeLength);
+
+	// spec errors for other hidden layers
+	real_t __specAmpDistanceOthers(struct_DFTData &dftBuf, const int timeLength);
 	
 	// a wrapper to wrap all the distances
-	real_t __specDistance_warpper(struct_DFTData &dftBuf, const int timeLength);
+	real_t __specDistance_wrapper(struct_DFTData &dftBuf, const int timeLength);
 
 	// a wrapper to accumulate gradients
 	void __specAccumulateGrad(struct_DFTData &dftBuf, const int timeLength);
-	
+
 	
     public:
         /**

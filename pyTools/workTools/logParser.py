@@ -43,7 +43,7 @@ def read_log_err(file_path, train_num, val_num):
     
     print(data.shape[0])
     total_num = train_num + val_num
-    epoch_num = data.shape[0] / total_num
+    epoch_num = int(data.shape[0] / total_num)
     data_train = np.zeros([epoch_num, data.shape[1]])
     data_val = np.zeros([epoch_num, data.shape[1]])
     

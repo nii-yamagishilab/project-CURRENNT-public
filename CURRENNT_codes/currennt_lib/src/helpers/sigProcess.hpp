@@ -25,9 +25,10 @@
 
 #include "../Types.hpp"
 
-#define SIGPROCESS_LPC_ERR_TYPE_WAV_MSE 0     // waveform MSE (o_{1:T} - iLPC(LPC(\hat{o}_{1:T})))^2
-#define SIGPROCESS_LPC_ERR_TYPE_RES_MSE 1     // Residual MSE (LPC(o_{1:T}) - LPC(\hat{o}_{1:T}))^2
-#define SIGPROCESS_LPC_ERR_TYPE_LIKEHOOD_1 2  // max p(O_t = \hat{o}+t | O_t-k:t-1 = o_t-k:t-1)
+#define SIGPROCESS_LPC_ERR_TYPE_WAV_MSE 0       // waveform MSE (o_{1:T} - iLPC(LPC(\hat{o}_{1:T})))^2
+#define SIGPROCESS_LPC_ERR_TYPE_RES_MSE 1       // residual MSE (LPC(o_{1:T}) - LPC(\hat{o}_{1:T}))^2
+#define SIGPROCESS_LPC_ERR_TYPE_EXCIT_LOSS 2    // loss between excitation and natural-waveform residual
+#define SIGPROCESS_LPC_ERR_TYPE_EXCIT_FFTLOSS 3 // FFT loss between excitation and natural-waveform residual
 
 namespace helpers {
 
@@ -115,8 +116,14 @@ namespace helpers {
 				       real_vector *lpcResSrc, real_vector *lpcResTar,
 				       real_vector *lpcCoefSrc, real_vector *lpcCoefTar);
 
+	// calculate MSE between natural residual and explicit excitation
+	real_t __lpcMseResExcitAndGrad(real_vector *framedDataSrc,
+				       real_vector *lpcResSrc, real_vector *lpcResTar,
+				       real_vector *lpcCoefSrc, real_vector *lpcCoefTar);
+
 	// warpper functions
-	void lpcAnalysis();
+	void lpcAnalysisSourceSignal();
+	void lpcAnalysisTargetSignal();	
 	real_t lpcError();
 	void lpcGradCollect(const real_t weight);
     };
