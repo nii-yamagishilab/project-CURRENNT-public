@@ -62,12 +62,14 @@ namespace helpers {
 	int m_frameShift;
 	
 	int m_frameNum;          // valid number of frame
-	int m_frameBufLength; // length of the memory allocated to each frame
-	int m_signalBufLength;  // maxSeqLength, maximum length of the buffer
-	int m_signalLength;     // curMaxSeqLength, length of the current utterance
+	int m_frameBufLength;    // length of the memory allocated to each frame
+	int m_signalBufLength;   // maxSeqLength, maximum length of the buffer
+	int m_signalLength;      // curMaxSeqLength, length of the current utterance
 
 	int m_lpcOrder;
-	int m_polyOrder;  // m_polyOrder = m_lpcOrder + 1
+	int m_polyOrder;         // m_polyOrder = m_lpcOrder + 1
+
+	int m_lpcGain;           // whether to use the Gain of LPC analysis
 	
     public:
 	lpcWarpper(real_vector *framedDataSrc,
@@ -89,7 +91,8 @@ namespace helpers {
 		   int frameBufferLength,
 		   int frameNum,
 		   int signalBufLength,
-		   int signalLength);
+		   int signalLength,
+		   int lpcGain);
 
 	~lpcWarpper();
 

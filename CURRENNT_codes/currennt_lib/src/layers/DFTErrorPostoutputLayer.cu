@@ -329,6 +329,7 @@ namespace layers{
 	, m_mseError       (0.0)
 	, m_noiseOutputLayer (NULL)
 	, m_f0InputLayer     (NULL)
+	, m_sineInputLayer_ptr (NULL)
 	, m_noiseTrain_epoch (-1)
 	, m_modeMultiDimSignal (DFTMODEFORMULTIDIMSIGNAL_NONE)
     {
@@ -401,6 +402,9 @@ namespace layers{
 	dftBuf.m_fftDiffFramedRealSpec.clear();
 	dftBuf.m_fftDiffSigFFTRealSpec.clear();
 
+	dftBuf.m_fftMaskFFT.clear();
+	dftBuf.m_fftMaskSignalFramed.clear();
+	
 	dftBuf.m_autoCorrSrc.clear();
 	dftBuf.m_lpcCoefSrc.clear();
 	dftBuf.m_lpcErrSrc.clear();
@@ -556,8 +560,19 @@ namespace layers{
 		dftBuf.m_specGrad_others.resize(this->outputs().size() * m_otherSignalInputLayer_num, 0.0);
 		
 		// this buffer is used to actually store the gradients
-		// it will be copied to dftBuf.m_specGrad_others
+		// it will be copied to dftBuf.m_specGrad_others (in __specAmpDistanceOthers())
 		dftBuf.m_specGrad_tmpBuf.resize(this->outputs().size(), 0.0);
+
+		
+		if (m_sineInputLayer_str.size()){
+		    // framed signal buffer for sine source excitation
+		    dftBuf.m_fftMaskSignalFramed.resize(dftBuf.m_frameNum * dftBuf.m_fftLength, 0.0);
+		    
+		    // FFT buffer for sine source excitation
+		    dftBuf.m_fftMaskFFT.resize(dftBuf.m_frameNum * dftBuf.m_fftBinsNum, tmp);
+		}
+		    
+		
 		printf("\n\t\tspectral amplitude distance on hidden features [weight: %f]", m_iota);
 	    }
 	}		
@@ -626,18 +641,33 @@ namespace layers{
 
 	// LPC related configuration
 	m_lpcErrorType = (layerChild->HasMember("lpcErrorType") ? 
-			 static_cast<int>((*layerChild)["lpcErrorType"].GetInt()) :
+			  static_cast<int>((*layerChild)["lpcErrorType"].GetInt()) :
 			  SIGPROCESS_LPC_ERR_TYPE_WAV_MSE);
+	m_lpcGain = (layerChild->HasMember("lpcCalculateGain") ? 
+		     static_cast<int>((*layerChild)["lpcCalculateGain"].GetInt()) : 1);
 
+	
+	// sine-input layer
+	m_sineInputLayer_str = (layerChild->HasMember("sineSourceLayer") ? 
+				((*layerChild)["sineSourceLayer"].GetString()) : "");
+	
 	// ------- for additional signals from other hidden layers of the network
 	m_separate_excitation_loss = (layerChild->HasMember("lpcExcitationLoss") ? 
 				      static_cast<int>((*layerChild)["lpcExcitationLoss"].GetInt()):0);
 	if (m_tau > 0.0){
+
+	    // m_tau --> residual errors between natural and waveforms
+	    //           |-- FFT loss: m_separate_excitation_loss = 1, m_lpcError = FFTLOSS
+	    //           |-- MSE     : m_separate_excitation_loss = 1, m_lpcError = LOSS
+	    //       --> natural and generated waveforms LPC residuals
+	    //           |-- MSE     : m_separate_excitation_loss = 0, m_lpcError = WAV_MSE
+	    //           |-- RES MSE : m_separate_excitation_loss = 0, m_lpcError = RES_MSE
 	    if (m_separate_excitation_loss){
+		// m_separate_excitation_loss = 1
 		// select a default LPC loss when external excitation is used
 		if (m_lpcErrorType != SIGPROCESS_LPC_ERR_TYPE_EXCIT_LOSS &&
 		    m_lpcErrorType != SIGPROCESS_LPC_ERR_TYPE_EXCIT_FFTLOSS){
-		    m_lpcErrorType = SIGPROCESS_LPC_ERR_TYPE_EXCIT_FFTLOSS;
+		    m_lpcErrorType = SIGPROCESS_LPC_ERR_TYPE_EXCIT_LOSS;
 		}
 		printf("\n\tLPC error between natural residual and generated excitation,");
 		if (m_lpcErrorType == SIGPROCESS_LPC_ERR_TYPE_EXCIT_FFTLOSS)
@@ -645,12 +675,34 @@ namespace layers{
 		else
 		    printf(" waveform MSE");
 	    }else{
+		// m_separate_excitation_loss = 0
+		if (m_lpcErrorType != SIGPROCESS_LPC_ERR_TYPE_RES_MSE &&
+		    m_lpcErrorType != SIGPROCESS_LPC_ERR_TYPE_WAV_MSE){
+		    m_lpcErrorType = SIGPROCESS_LPC_ERR_TYPE_WAV_MSE;
+		}
 		printf("\n\tLPC error between residuals of natural and generated waveforms");
+		if (m_lpcErrorType == SIGPROCESS_LPC_ERR_TYPE_WAV_MSE)
+		    printf(" MSE (o_{1:T} - iLPC(LPC(hat{o}_{1:T})))^2");
+		else
+		    printf(" (LPC(o_{1:T}) - LPC(hat{o}_{1:T}))^2");
 	    }
+
+	    if (m_lpcGain)
+		printf("\n\tLPC analysis will calculate Gain");
+	    else
+		printf("\n\tLPC analysis ignores Gain");
+	    
 	}else{
 	    m_separate_excitation_loss = 0;
 	}
 
+	if (m_iota > 0.0){
+	    if (m_sineInputLayer_str.size())
+		printf("\n\tEvaluate DFT errors with sine spectral mask");
+	    else
+		printf("\n\tEvaluate DFT errors without sine spectral mask");
+	}
+	
 	// ------ read additional output layers for DFT errors
 	m_otherSignalInputLayers_names.clear();
 	m_otherSignalInputLayers_ptr.clear();
@@ -661,8 +713,10 @@ namespace layers{
 	    misFuncs::ParseStrOpt(m_otherSignalInputLayers_str, m_otherSignalInputLayers_names, ",");
 	    m_otherSignalInputLayer_num = m_otherSignalInputLayers_names.size();
 	}
+	
 	if (m_tau > 0.0 && m_separate_excitation_loss && m_otherSignalInputLayer_num < 1)
 	    throw std::runtime_error("Error: lpcExcitationLoss is on but otherLayersForDFTError is not provided");
+	
 	if (m_iota > 0.0 && m_otherSignalInputLayer_num < 1)
 	    throw std::runtime_error("Error: iota is on but otherLayersForDFTError is not provided");
 		
@@ -1304,9 +1358,11 @@ namespace layers{
 							    dftBuf.m_frameLength,
 							    dftBuf.m_frameShift);
 	if (dftBuf.m_lpcOrder < 1){
+	    
 	    // no need to use lpcError
 	    dftBuf.m_lpcError = 0.0;
 	}else{
+	    
 	    // when LPC error is calculated
 	    if (m_separate_excitation_loss){
 		// when LPC excitation loss is evaluated on excitation waveform
@@ -1343,7 +1399,8 @@ namespace layers{
 		dftBuf.m_frameShift,
 		dftBuf.m_fftLength,
 		validFrameNum,
-		this->__vMaxSeqLength(), timeLength);
+		this->__vMaxSeqLength(), timeLength,
+		this->m_lpcGain);
 
 		lpcAnalysizer.lpcAnalysisTargetSignal();
 
@@ -1424,7 +1481,8 @@ namespace layers{
 		dftBuf.m_frameShift,
 		dftBuf.m_fftLength,
 		validFrameNum,
-		this->__vMaxSeqLength(), timeLength);
+		this->__vMaxSeqLength(), timeLength,
+		this->m_lpcGain);
 
 		// Do LPC analysis
 		lpcAnalysizer.lpcAnalysisSourceSignal();
@@ -1462,7 +1520,6 @@ namespace layers{
 	//targetSig.frameSignal();
 	//targetSig.FFT();
 
-	// Calculate the distance and gradietns over each hidden layer
 	if (m_otherSignalInputLayers_ptr.size()){
 	    
 	    for (int layerIndex = 0; layerIndex < m_otherSignalInputLayers_ptr.size(); layerIndex++){
@@ -1479,6 +1536,33 @@ namespace layers{
 		sourceSig.frameSignal();
 		sourceSig.FFT();
 
+		// if mask signal is provided, use mask
+		if (m_sineInputLayer_str.size()){
+		    if (m_sineInputLayer_ptr == NULL)
+			throw std::runtime_error("Error: sine source layer is not linked");
+		    helpers::FFTMat<TDevice> maskSig(
+			&m_sineInputLayer_ptr->outputs(),
+			&dftBuf.m_fftMaskSignalFramed,
+			&dftBuf.m_fftMaskFFT,
+			dftBuf.m_frameLength, dftBuf.m_frameShift,
+			dftBuf.m_windowType, dftBuf.m_fftLength, dftBuf.m_fftBinsNum,
+			dftBuf.m_frameNum, this->__vMaxSeqLength(), timeLength,
+			this->m_specDisType);
+
+		    if (layerIndex == 0){
+			// only do framing and FFT once
+			maskSig.frameSignal();
+			maskSig.FFT();
+			maskSig.spec2mask();
+			
+			// mask the target signal
+			targetSig.spectralMask(maskSig);
+		    }
+		    // mask the source spectral
+		    sourceSig.spectralMask(maskSig);
+		}
+	
+		// Calculate the distance and gradietns over each hidden layer
 		helpers::FFTMat<TDevice> fftDiffSig(
 			&dftBuf.m_specGrad_tmpBuf, &dftBuf.m_fftDiffFramed,
 			&dftBuf.m_fftDiffSigFFT,
@@ -1489,9 +1573,25 @@ namespace layers{
 	
 		// calculate the error
 		dftBuf.m_specErrorOthers += sourceSig.specAmpDistance(targetSig, fftDiffSig);
-	
+		// calculate grad w.r.t masked spectral
 		fftDiffSig.specAmpGrad(sourceSig, targetSig);
+		
+		// grad through the mask
+		if (m_sineInputLayer_str.size()){
+		    helpers::FFTMat<TDevice> maskSig(
+			&m_sineInputLayer_ptr->outputs(),
+			&dftBuf.m_fftMaskSignalFramed,
+			&dftBuf.m_fftMaskFFT,
+			dftBuf.m_frameLength, dftBuf.m_frameShift,
+			dftBuf.m_windowType, dftBuf.m_fftLength, dftBuf.m_fftBinsNum,
+			dftBuf.m_frameNum, this->__vMaxSeqLength(), timeLength,
+			this->m_specDisType);
+		    fftDiffSig.spectralMask(maskSig);
+		}
+
+		// grad from spectral domain to framed signal
 		fftDiffSig.iFFT();
+		// grad from framed signal to original waveform
 		fftDiffSig.collectGrad(m_iota);
 		
 		// collect gradients to m_specGrad_others
@@ -1804,11 +1904,17 @@ namespace layers{
 		(*layersArray)[layersArray->Size() - 1].AddMember("tau", m_tau, allocator);
 		(*layersArray)[layersArray->Size() - 1].AddMember("lpcErrorType", m_lpcErrorType,
 								  allocator);
+		(*layersArray)[layersArray->Size() - 1].AddMember("lpcCalculateGain", m_lpcGain,
+								  allocator);
 	    }
 
-	    if (m_iota > 0.0)
+	    if (m_iota > 0.0){
 		(*layersArray)[layersArray->Size() - 1].AddMember("iota", m_iota, allocator);
-	    
+		if (m_sineInputLayer_str.size())
+		    (*layersArray)[layersArray->Size() - 1].AddMember("sineSourceLayer",
+								      m_sineInputLayer_str.c_str(),
+								      allocator);
+	    }
 	    
 	    for (int dftBufIndex = 0; dftBufIndex < this->m_DFTDataBuf.size(); dftBufIndex++){
 
@@ -2000,7 +2106,7 @@ namespace layers{
 	    }
 	}
 
-	// 
+	// link layers for DFT losss
 	if (m_otherSignalInputLayers_names.size()){
 	    for (int layerIndex = 0; layerIndex < m_otherSignalInputLayers_names.size(); layerIndex++){
 		if (targetLayer.name() == m_otherSignalInputLayers_names[layerIndex]){
@@ -2008,6 +2114,14 @@ namespace layers{
 		    printf("\n\tDFT layer catches excitation layer %s",
 			   m_otherSignalInputLayers_ptr[layerIndex]->name().c_str());
 		}
+	    }
+	}
+	
+	// link layer of sine input
+	if (m_sineInputLayer_str.size()){
+	    if (targetLayer.name() == m_sineInputLayer_str){
+		m_sineInputLayer_ptr = &targetLayer;
+		printf("\n\tDFT layer catches sine source layer %s", m_sineInputLayer_str.c_str());
 	    }
 	}
 	

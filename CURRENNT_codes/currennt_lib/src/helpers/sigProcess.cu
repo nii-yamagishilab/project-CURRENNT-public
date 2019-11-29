@@ -91,7 +91,8 @@ namespace {
     struct lpcLevinsonDurbinRecursion
     {
 	int polyOrder;     // order of LPC + 1, for example polyOrder = k+1 for [1, a_1, ..., a_k]
-	                   
+	int lpcUseGain;
+	
 	// input
 	real_t *autoCorr;  // matrix of auto-correlation values, [frame, polyOrder]
 
@@ -99,10 +100,9 @@ namespace {
 	real_t *refCoef;   // reflection coefficients array, [frame, polyOrder]
 	real_t *lpcErr;    // LPC analysis error array, [frame, polyOrder]
 	real_t *lpcCoef;   // LPC coefficients, [frame, polyOrder]
-
+	
 	// Calcualte the LPC coeffient for one frame, assume LPC model (in z-domain)
 	//    1 + \sum_k=1^K a_k z^-k
-	
 	__host__ __device__ void operator() (const thrust::tuple<real_t &, int> &t) const
 	{
 	    // frame index
@@ -122,6 +122,10 @@ namespace {
 	    // temporary value for swapping
 	    real_t tmp_lpcCoef = 0.0;
 
+
+	    // gain factor
+	    real_t gain_coef = 1.0;
+	
 	    
 	    // if the frame is all 0.0, return
 	    if (autoCorr[dataPtr + 0] < SIGPROCESS_AUTOCORR_THESHOLD)
@@ -175,11 +179,21 @@ namespace {
 		    lpcCoef[lpcCoefPtr + order2] = lpcCoef[lpcCoefPtr + polyOrder + order2];
 	    }
 
+	    
 	    // Reverse the order of LPC coef [a_p^p, a_p^p-1, ... 1.0]  -> [1.0, a_p^1, ... a_p^p]
 	    for (int order = 0; order < (tmp_polyOrder / 2); order++){
 		tmp_lpcCoef = lpcCoef[lpcCoefPtr + tmp_polyOrder - 1 - order];
 		lpcCoef[lpcCoefPtr + tmp_polyOrder - 1 - order] = lpcCoef[lpcCoefPtr + order];
 		lpcCoef[lpcCoefPtr + order] = tmp_lpcCoef;
+	    }
+
+	    // if Gain coefficients is to be used
+	    if (lpcUseGain){
+		gain_coef = sqrt(lpcErr[dataPtr + tmp_polyOrder - 1]);
+	    
+		for (int order = 0; order < tmp_polyOrder; order++){
+		    lpcCoef[lpcCoefPtr + order] = lpcCoef[lpcCoefPtr + order] / gain_coef;
+		}
 	    }
 	}
     };
@@ -217,8 +231,8 @@ namespace {
 		t.get<0>() = 0;
 	    }else{
 		// temporary buffer
-		real_t tmp_sum = framedData[frameIdx * frameBufLen + posInFrame];
-		real_t lpc_coef = 0.0;
+		real_t lpc_coef = lpcCoef[frameIdx * polyOrder * 2];
+		real_t tmp_sum = framedData[frameIdx * frameBufLen + posInFrame] * lpc_coef;
 	    
 		for (int order = 1; order < polyOrder; order++){
 		    if (posInFrame - order < 0)
@@ -270,7 +284,8 @@ namespace {
 		    if (timeStep < frameLength){
 			
 			// time range within the frame length
-			tmpValue = residualData[frameIdx * frameBufLen + timeStep];
+			tmpValue = residualData[frameIdx * frameBufLen + timeStep] *
+			    lpcCoef[frameIdx * polyOrder * 2];
 			
 			for (int order = 1; order < polyOrder; order++){
 			    if (timeStep - order >= 0){
@@ -382,7 +397,7 @@ namespace {
 		t.get<0>() = 0.0;
 		
 	    }else{
-		real_t tmp_grad = resDif[t.get<1>()];
+		real_t tmp_grad = resDif[t.get<1>()] * lpcCoefSrc[frameIdx * polyOrder * 2];
 		for (int order = 1; order < polyOrder; order++){
 		    if (posInFrame + order >= frameLength)
 			break;
@@ -505,7 +520,8 @@ namespace helpers {
 				    int frameBufferLength, 
 				    int frameNum,
 				    int signalBufLength,
-				    int signalLength)
+				    int signalLength,
+				    int lpcGain)
     : m_framedDataSrc (framedDataSrc)
     , m_autoCorrSrc   (autoCorrSrc)
     , m_lpcCoefSrc    (lpcCoefSrc)
@@ -527,6 +543,7 @@ namespace helpers {
     , m_frameBufLength (frameBufferLength)
     , m_signalBufLength (signalBufLength)
     , m_signalLength  (signalLength)
+    , m_lpcGain       (lpcGain)
     {
 
 	if (signalBufLength != this->m_lpcGrad->size())
@@ -622,6 +639,7 @@ namespace helpers {
 	    fn1.refCoef    = getRawPointer(*refCoef);
 	    fn1.lpcErr     = getRawPointer(*lpcErr);
 	    fn1.lpcCoef    = getRawPointer(*lpcCoef);
+	    fn1.lpcUseGain = this->m_lpcGain;
 	    
 	    thrust::for_each(
 		thrust::make_zip_iterator(
@@ -981,6 +999,12 @@ namespace helpers {
 						     m_lpcResSrc, m_lpcResTar,
 						     m_lpcCoefSrc, m_lpcCoefTar);	    
 
+	    
+	}else if (m_lpcErrorType == SIGPROCESS_LPC_ERR_TYPE_EXCIT_FFTLOSS){
+	    // note that SIGPROCESS_LPC_ERR_TYPE_EXCIT_FFTLOSS is not calculated here
+	    // it is calculated in FFTMat.
+	    // it should be moved here
+	    throw std::runtime_error("Error: lpcError EXCIT_FFTLOSS not defined");
 	    
 	}else{
 	    throw std::runtime_error("Error: lpcErrorType undefined");

@@ -1,8 +1,8 @@
 /******************************************************************************
- * Copyright (c) 2013 Johannes Bergmann, Felix Weninger, Bjoern Schuller
- * Institute for Human-Machine Communication
- * Technische Universitaet Muenchen (TUM)
- * D-80290 Munich, Germany
+ * This file is an addtional component of CURRENNT. 
+ * Xin WANG
+ * National Institute of Informatics, Japan
+ * 2016 - 2019
  *
  * This file is part of CURRENNT.
  *
@@ -461,9 +461,9 @@ namespace layers {
     template <typename TDevice>
     void SincFilterLayer<TDevice>::__build_filter_coeff()
     {
-	// create the filter coefficients based on the parameter
-	int timeLength = this->curMaxSeqLength() * this->parallelSequences();
+	// create the filter coefficients based on the parameter of cut-off-frequency
 	
+	int timeLength = this->curMaxSeqLength() * this->parallelSequences();	
 	// build low-pass and high-pass together
 	{
 	    internal::freqToFilters fn1;
@@ -499,7 +499,7 @@ namespace layers {
 
 	int timeLength = this->curMaxSeqLength() * this->parallelSequences();
 	
-	// Step1. convert input signal input filter coefficients
+	// Step1. convert input cut-off-frequency into filter coefficients
 	this->__build_filter_coeff();
 	
 	// Step2. do filtering
@@ -567,6 +567,7 @@ namespace layers {
     void SincFilterLayer<TDevice>::computeForwardPass(const int timeStep,
 							       const int nnState)
     {
+	// noto implemented for stepwise generation
 	throw std::runtime_error("SincFilterLayer computeForwardPass(timeStep) not implemented");
     }
 

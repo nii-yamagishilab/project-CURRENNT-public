@@ -90,6 +90,10 @@ namespace layers {
 	    real_vector        m_fftDiffDataPhase;
 	    real_vector        m_fftResData;
 
+	    // for spectral mask
+	    real_vector        m_fftMaskSignalFramed;
+	    fft_vector         m_fftMaskFFT;
+	    
 	    // for real-valued spectral 
 	    int                m_fftLengthRealSpec;
 	    int                m_fftBinsNumRealSpec;
@@ -119,7 +123,7 @@ namespace layers {
 	    real_vector        m_lpcResTar;   // buffer for LPC residual
 	    
 	    real_vector        m_lpcGrad;  // buffer to store the gradients
-
+	    
 	    // for additional spec-amp-distances on hidden layers
 	    real_vector        m_specGrad_others;
 	    real_vector        m_specGrad_tmpBuf;
@@ -148,8 +152,9 @@ namespace layers {
 	
 	int                m_realSpecType;      // Type of real-valued spectrum
 	int                m_realSpecDisType;   // Type pf real-valued spectrum distance	
-	int                m_lpcErrorType;
-
+	int                m_lpcErrorType;      // Type of LPC error
+	
+	int                m_lpcGain;           // whether LPC Gain should be used
 
 	// support for evaluation on signals from multiple layers
 	int                m_separate_excitation_loss;
@@ -157,6 +162,11 @@ namespace layers {
 	std::string        m_otherSignalInputLayers_str;        // string of additional input layers
 	std::vector<std::string> m_otherSignalInputLayers_names; // string buffer of additional input layers
 	std::vector<Layer<TDevice>*> m_otherSignalInputLayers_ptr; // pointer to previous layers
+
+	// support to receive input from sine
+	std::string        m_sineInputLayer_str;
+	Layer<TDevice>*    m_sineInputLayer_ptr;
+
 	
 	// data structure for DFT analysis
 	std::vector<struct_DFTData> m_DFTDataBuf;
@@ -173,10 +183,8 @@ namespace layers {
 	real_t             m_f0DataS;
 
 	int                m_modeMultiDimSignal;
-	real_vector        m_modeChangeDataBuf;
-
-
-
+	real_vector        m_modeChangeDataBuf;	
+	
 	// methods for initialization
 	void __loadOpts(const helpers::JsonValue &layerChild);
 	void __cleanDFTError(struct_DFTData &dftBuf);

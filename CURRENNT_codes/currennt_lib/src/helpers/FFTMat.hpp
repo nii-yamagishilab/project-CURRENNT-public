@@ -110,6 +110,12 @@ namespace helpers {
 	void specAmpToZeroGrad();
 	real_t specAmpToZeroDistance();
 	
+	// methods to mask the spectral
+	void spectralMask(FFTMat<TDevice> &mask);
+
+	// methods to conver spectral to mask
+	void spec2mask();
+	
 	
 	void changeWindowType(const int windowType);
     };

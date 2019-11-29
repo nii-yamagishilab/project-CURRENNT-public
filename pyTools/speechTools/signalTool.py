@@ -12,7 +12,7 @@ def spec(data, fft_bins=4096, frame_shift=40, frame_length=240):
     """
     f, t, cfft = scipy.signal.stft(data, nfft=4096, noverlap=frame_length-frame_shift, nperseg=frame_length)
     """
-    f, t, cfft = scipy.signal.stft(data, nfft=4096, noverlap=frame_length-frame_shift, nperseg=frame_length)
+    f, t, cfft = scipy.signal.stft(data, nfft=fft_bins, noverlap=frame_length-frame_shift, nperseg=frame_length)
     return f,t,cfft
 
 def amplitude(cfft):

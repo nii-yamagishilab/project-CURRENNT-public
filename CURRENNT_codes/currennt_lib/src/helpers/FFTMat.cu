@@ -999,6 +999,91 @@ namespace {
 	}
     };
 
+
+    struct SpecMaskBasedOnMaskAmplitude
+    {
+	__host__ __device__ void operator() (const thrust::tuple<complex_t &,
+					     complex_t &> &t) const
+	{
+	    // t.get<0>() data to be masked
+	    // t.get<1>() mask
+
+	    real_t mask_amp = t.get<1>().x * t.get<1>().x + t.get<1>().y * t.get<1>().y;
+	    
+	    t.get<0>().x = t.get<0>().x * mask_amp;
+	    t.get<0>().y = t.get<0>().y * mask_amp;
+	}
+    };
+
+    struct SpectralToMask
+    {
+	int fftBins;
+	int validFrameNum;
+	
+	complex_t* fft_data;
+
+	// dummy, frame_number
+	__host__ __device__ void operator() (const thrust::tuple<real_t &, int> &t) const
+	{
+	    int frame_index = t.get<1>();
+	    
+	    if (frame_index > validFrameNum){
+		// dummy frames 
+		for (int fft_index = 0; fft_index < fftBins; fft_index++){
+		    fft_data[frame_index * fftBins + fft_index].x = 0.0;
+		    fft_data[frame_index * fftBins + fft_index].y = 0.0;
+		}
+	    }else{
+		// valid frames
+
+		// collect statistics
+		real_t tmp_amp = 0.0;
+		real_t tmp_dif_old = 0.0;
+		real_t tmp_dif_new = 0.0;
+		
+		real_t average_amp = 0.0;
+		real_t std_amp = 0.0;
+		real_t max_amp = 0.0;
+		for (int fft_index = 0; fft_index < fftBins; fft_index++){
+		    tmp_amp = (fft_data[frame_index * fftBins + fft_index].x *
+			       fft_data[frame_index * fftBins + fft_index].x +
+			       fft_data[frame_index * fftBins + fft_index].y *
+			       fft_data[frame_index * fftBins + fft_index].y);
+		    tmp_dif_old = tmp_amp - average_amp;
+		    average_amp = average_amp + tmp_dif_old / (fft_index + 1);
+		    tmp_dif_new = tmp_amp - average_amp;
+		    std_amp = std_amp + tmp_dif_old * tmp_dif_new;
+
+		    if (tmp_amp > max_amp)
+			max_amp = tmp_amp;
+		}
+		if (std_amp < 0.0)
+		    std_amp = 0.0;
+		else
+		    std_amp = sqrt(std_amp / fftBins);
+
+		// set mask values
+		for (int fft_index = 0; fft_index < fftBins; fft_index++){
+		    tmp_amp = (fft_data[frame_index * fftBins + fft_index].x *
+			       fft_data[frame_index * fftBins + fft_index].x +
+			       fft_data[frame_index * fftBins + fft_index].y *
+			       fft_data[frame_index * fftBins + fft_index].y);
+		    if (max_amp > (std_amp * 10 + average_amp)){
+			// frame with sine
+			fft_data[frame_index * fftBins + fft_index].x = tmp_amp / max_amp;
+			fft_data[frame_index * fftBins + fft_index].y = 0.0;
+		    }else{
+			// frame without sine
+			fft_data[frame_index * fftBins + fft_index].x = 0.0;
+			fft_data[frame_index * fftBins + fft_index].y = 0.0;
+		    }
+		}
+	    }
+
+	}
+    };
+
+    
 }
 }
 
@@ -1794,7 +1879,51 @@ namespace helpers {
 	this->collectGrad(gradScaleFactor);
     }
 
-    
+
+    template <typename TDevice>
+    void FFTMat<TDevice>::spectralMask(FFTMat<TDevice> &mask)
+    {
+	// mask the spectral based on the spectral amplitude of mask
+	
+	if (this->m_fftData->size() != mask.m_fftData->size())
+	    throw std::runtime_error("Spectral mask error: input fft data unequal size");
+
+	{{
+	     internal::SpecMaskBasedOnMaskAmplitude fn1;
+	     thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_fftData).begin(),
+					   (*(mask.m_fftData)).begin())),
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_fftData).end(),
+					   (*(mask.m_fftData)).end())),
+		fn1);
+	}}
+    }
+
+
+    template <typename TDevice>
+    void FFTMat<TDevice>::spec2mask()
+    {
+	int frameNum = fftTools::fftFrameNum(m_rawData->size(), m_frameLength, m_frameShift);
+	{{
+	     internal::SpectralToMask fn1;
+	     fn1.fftBins = this->m_fftBins;
+	     fn1.validFrameNum = this->m_validFrameNum;
+	     fn1.fft_data = helpers::getRawPointer(*m_fftData);
+	     
+	     thrust::for_each(
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_framedData).begin(),
+					   thrust::counting_iterator<int>(0))),
+		thrust::make_zip_iterator(
+			thrust::make_tuple((*m_framedData).begin() + frameNum,
+					   thrust::counting_iterator<int>(0) +
+					   frameNum)),
+		fn1);
+	}}
+    }
+
     template class FFTMat<Cpu>;
     template class FFTMat<Gpu>;
 }
