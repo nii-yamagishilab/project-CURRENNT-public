@@ -284,8 +284,7 @@ namespace {
 		    if (timeStep < frameLength){
 			
 			// time range within the frame length
-			tmpValue = residualData[frameIdx * frameBufLen + timeStep] *
-			    lpcCoef[frameIdx * polyOrder * 2];
+			tmpValue = residualData[frameIdx * frameBufLen + timeStep];
 			
 			for (int order = 1; order < polyOrder; order++){
 			    if (timeStep - order >= 0){
@@ -303,9 +302,11 @@ namespace {
 			}
 			
 			if (waveData == NULL)
-			    residualData[frameIdx * frameBufLen + timeStep] = tmpValue;
+			    residualData[frameIdx * frameBufLen + timeStep] = tmpValue / 
+				lpcCoef[frameIdx * polyOrder * 2];
 			else
-			    waveData[frameIdx * frameBufLen + timeStep] = tmpValue;
+			    waveData[frameIdx * frameBufLen + timeStep] = tmpValue / 
+				lpcCoef[frameIdx * polyOrder * 2];
 		    }else{
 			// time range beyond the frame length
 			if (waveData == NULL){
@@ -954,7 +955,6 @@ namespace helpers {
 	// LPC residual 
 	this->__lpcResidual(m_framedDataTar, m_lpcCoefTar, m_lpcResTar);	
     }
-
     
     template <typename TDevice>
     void lpcWarpper<TDevice>::lpcAnalysisSourceSignal()
@@ -968,7 +968,6 @@ namespace helpers {
 	// Calculate residual signals
 	this->__lpcResidual(m_framedDataSrc, m_lpcCoefSrc, m_lpcResSrc);
     }
-
     
     template <typename TDevice>
     real_t lpcWarpper<TDevice>::lpcError()
@@ -977,18 +976,18 @@ namespace helpers {
 	
 	if (m_lpcErrorType == SIGPROCESS_LPC_ERR_TYPE_RES_MSE){
 	    
-	    
+	    // residual MSE (LPC(o_{1:T}) - LPC(\hat{o}_{1:T}))^2
 	    // Calculate residual MSE
 	    // Calculate gradients and save to m_lpcResSrc
 	    // Note, m_lpcResSrc mus be de-framed
 	    lpcError = this->__lpcResidualMseAndGrad(m_lpcResSrc, m_lpcResTar,
 						     m_lpcCoefSrc, m_lpcCoefTar);	    
-
 	    // The gradients have been saved to m_lpcResSrc
 	    // The gradients will be de-framed and saved to m_lpcGrad in lpcGradCollect()
 	    
 	}else if (m_lpcErrorType == SIGPROCESS_LPC_ERR_TYPE_WAV_MSE){
-	    
+
+	    // waveform MSE (o_{1:T} - iLPC(LPC(\hat{o}_{1:T})))^2
 	    lpcError = this->__lpcWaveformMseAndGrad(m_framedDataSrc,
 						     m_lpcResSrc, m_lpcResTar,
 						     m_lpcCoefSrc, m_lpcCoefTar);	    
