@@ -317,58 +317,90 @@ namespace internal {
 			    const int startPos, const int endPos, const int bufDim,
 			    const int dataDim,  const int dataStartDim)
     {
-	// 
+	// Load the raw data from external input/target files
+	// and save them to the buffers
+	
 	std::ifstream ifs(dataPath.c_str(), std::ifstream::binary | std::ifstream::in);
 	if (!ifs.good())
 	    throw std::runtime_error(std::string("Fail to open ")+dataPath);
 	
-	// get the number of data elements
 	std::streampos numEleS, numEleE;
 	long int numEle;
 	long int stPos, etPos;
 	real_t   tempVal;
 
-	stPos = startPos; etPos = endPos;
+	// the start position in the external data file
+	stPos = startPos;
+	// the end position in the external data file
+	etPos = endPos;
 
+	// get the number of data in external file
 	numEleS = ifs.tellg();
 	ifs.seekg(0, std::ios::end);
 	numEleE = ifs.tellg();
 	numEle  = (numEleE-numEleS)/sizeof(real_t);
 	ifs.seekg(0, std::ios::beg);
-	
+
+	// if use all data, read all data
 	if (etPos == DATASET_FLAG_READING_ALL)
 	    etPos = numEle;
+
+	// check the validity of the stPos and etPos
 	if (stPos >= etPos || stPos < 0){
 	    printf("Error info: stPos: %ld, etPos: %ld, %s", stPos, etPos, dataPath.c_str());
 	    throw std::runtime_error("Fail to read in readReadlDataAndFill");
 	}
-	
-	if ((etPos - stPos) > numEle){
-	    printf("\nWARNING: %s has %ld data elements, which is less than %ld.\n",
-		   dataPath.c_str(), numEle, (etPos - stPos));
-	    printf("\tWARNING: Extra data memory will be set to 0.0.\n");
-	}
 
 	// read in the data
-	long int timeIdx, dimIdx;
-	ifs.seekg(stPos * sizeof(real_t), std::ios::beg);
+	long int timeIdx = 0;
+	long int dimIdx = 0;
 	
-	for (long int i = 0; i < (etPos-stPos); i++){
-	    if (i >= numEle){
-		// set extra data memory to zero
-		buff[ timeIdx * bufDim + dataStartDim + dimIdx ] = 0.0;
-	    }else{
-		// read in
+
+	// Here are two cases:
+	//  if numEle == dataDim, assume that the external file only contains one data frame
+	//  else, assume that the external file contains many frames of data
+
+	if (numEle == dataDim){
+	    // case one
+	    for (dimIdx = 0; dimIdx < dataDim; dimIdx++){
+		// read the data of the dimIdx-th dimension
 		ifs.read ((char *)&tempVal, sizeof(real_t));
-		// time index
-		timeIdx = i / dataDim;
-		// dimension index
-		dimIdx  = i % dataDim;  
-		// put the data in the correct data cell
-		buff[ timeIdx * bufDim + dataStartDim + dimIdx ] = tempVal;
+		
+		// copy this data to all frames
+		for (timeIdx = 0; timeIdx < (etPos - stPos) / dataDim; timeIdx++)
+		    buff[ timeIdx * bufDim + dataStartDim + dimIdx ] = tempVal;
 	    }
+	    
+	}else{
+	    // case two
+	    
+	    // if the required number frames > the frame number in external file
+	    if ((etPos - stPos) > numEle){
+		printf("\nWARNING: %s has %ld data elements, which is less than %ld.\n",
+		       dataPath.c_str(), numEle, (etPos - stPos));
+		printf("\tWARNING: Extra data in memory will be set to 0.0.\n");
+	    }
+
+	    // move the pointer to the stPos
+	    ifs.seekg(stPos * sizeof(real_t), std::ios::beg);
+	    
+	    for (long int i = 0; i < (etPos-stPos); i++){
+		if (i >= numEle){
+		    // set extra data memory to zero
+		    // this has been down during inialization of exBataBuf
+		}else{
+		    // read in
+		    ifs.read ((char *)&tempVal, sizeof(real_t));
+		    // time index
+		    timeIdx = i / dataDim;
+		    // dimension index
+		    dimIdx  = i % dataDim;  
+		    // put the data in the correct data cell
+		    buff[ timeIdx * bufDim + dataStartDim + dimIdx ] = tempVal;
+		}
+	    }
+	    //thrust::copy(tempVec.begin(), tempVec.end(), data.begin());
 	}
-	//thrust::copy(tempVec.begin(), tempVec.end(), data.begin());
 	ifs.close();
 	return (etPos - stPos);
     }

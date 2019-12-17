@@ -750,12 +750,12 @@ namespace layers{
 	(*layersArray)[layersArray->Size() - 1].AddMember("phaseNoiseMag",     m_phaseNoiseMag,
 							  allocator);
 
-	if (m_equalNoiseSinePower){
-	    (*layersArray)[layersArray->Size() - 1].AddMember("equalNoiseSinePower",
-							      m_equalNoiseSinePower,
-							      allocator);
+	//if (m_equalNoiseSinePower){
+	(*layersArray)[layersArray->Size() - 1].AddMember("equalNoiseSinePower",
+							  m_equalNoiseSinePower,
+							  allocator);
 	    
-	}
+	//}
 
 	if (m_noiseShareAcrDim)
 	    (*layersArray)[layersArray->Size() - 1].AddMember("shareNoiseAcrossDim",
@@ -801,7 +801,10 @@ namespace layers{
 	
 	// generate additive noise
 	thrust::counting_iterator<unsigned int> index_sequence_begin(0);
-	if (m_noiseType == NN_SIGGEN_LAYER_NOISE_GAUSSIAN){
+	if (m_noiseMag < NN_SIGGEN_NOISE_FLOOR){
+	    m_noiseInput.resize(this->outputs().size(), 0.0);
+	    
+	}else if (m_noiseType == NN_SIGGEN_LAYER_NOISE_GAUSSIAN){
 	    thrust::transform(index_sequence_begin,
 			      index_sequence_begin + timeLength * signalDimTotal,
 			      m_noiseInput.begin(),

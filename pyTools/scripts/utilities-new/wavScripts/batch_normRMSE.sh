@@ -10,7 +10,7 @@
 ###
 
 # level of amplitude normalization, 26 by default
-LEV=26
+#LEV=26
 
 # input directory
 DATA_DIR=$1

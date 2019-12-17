@@ -167,7 +167,10 @@ namespace layers {
 	std::string        m_sineInputLayer_str;
 	Layer<TDevice>*    m_sineInputLayer_ptr;
 
-	
+      	// support to receive input from sine
+	std::string        m_f0InputLayer_str;
+	Layer<TDevice>*    m_f0InputLayer_ptr;
+
 	// data structure for DFT analysis
 	std::vector<struct_DFTData> m_DFTDataBuf;
 	
@@ -294,6 +297,8 @@ namespace layers {
 	// load the target data from the target layer
 	virtual void linkTargetLayer(Layer<TDevice> &targetLayer);
 
+	// 
+	std::vector<int> dependLayerIDs();
     };
 
 } // namespace layers

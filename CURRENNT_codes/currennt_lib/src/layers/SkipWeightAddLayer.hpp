@@ -44,13 +44,13 @@ namespace layers {
         
     private:
 
-	std::string             m_previousSkipStr;
-	std::string             m_weightLayerStr;    
+	std::string     m_previousSkipStr;
+	std::string     m_weightLayerStr;    
 
-	real_t                  m_z_scale;
-	real_t                  m_z_shift;
+	real_t          m_z_scale;
+	real_t          m_z_shift;
 
-	int                     m_mode;
+	int             m_mode;
 	
     public:
 		

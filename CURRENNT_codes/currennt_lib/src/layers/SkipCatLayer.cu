@@ -238,11 +238,11 @@ namespace layers{
 	    fn.srcShiftT= 0;
 	    fn.tarShiftT= 0;
 	    
-	    fn.patTypes = helpers::getRawPointer(this->precedingLayer().patTypes());
+	    fn.patTypes = helpers::getRawPointer(this->patTypes());
 	    fn.accumulate = false;
 	    
-	    int n = this->precedingLayer().curMaxSeqLength();
- 	    n = n * this->precedingLayer().parallelSequences();
+	    int n = this->curMaxSeqLength();
+ 	    n = n * this->parallelSequences();
 
 	    int cnt = 0;
 	    BOOST_FOREACH (Layer<TDevice> *layer, this->PreLayers()) {
@@ -304,9 +304,7 @@ namespace layers{
 	    
 	    fn.patTypes = helpers::getRawPointer(this->precedingLayer().patTypes());
 	    fn.accumulate = false;
-	    int n = this->precedingLayer().curMaxSeqLength();
- 	    n = n * this->precedingLayer().parallelSequences() * fn.copyDim ;
-
+	    
 	    int cnt = 0;
 	    BOOST_FOREACH (Layer<TDevice> *layer, this->PreLayers()) {
 

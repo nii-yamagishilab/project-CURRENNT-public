@@ -317,21 +317,22 @@ namespace layers{
 				Layer<TDevice> &precedingLayer,
 				int maxSeqLength,
 				int layerID)
-        : PostOutputLayer<TDevice>(layerChild, precedingLayer,
-				   precedingLayer.size(), maxSeqLength, layerID)
-	, m_beta           (0.0)
-	, m_gamma          (0.0)
-	, m_zeta           (0.0)
-	, m_eta            (0.0)
-	, m_kappa          (0.0)
-	, m_tau            (0.0)
-	, m_iota           (0.0)
-	, m_mseError       (0.0)
-	, m_noiseOutputLayer (NULL)
-	, m_f0InputLayer     (NULL)
-	, m_sineInputLayer_ptr (NULL)
-	, m_noiseTrain_epoch (-1)
-	, m_modeMultiDimSignal (DFTMODEFORMULTIDIMSIGNAL_NONE)
+      : PostOutputLayer<TDevice>(layerChild, precedingLayer,
+				 precedingLayer.size(), maxSeqLength, layerID)
+      , m_beta           (0.0)
+      , m_gamma          (0.0)
+      , m_zeta           (0.0)
+      , m_eta            (0.0)
+      , m_kappa          (0.0)
+      , m_tau            (0.0)
+      , m_iota           (0.0)
+      , m_mseError       (0.0)
+      , m_noiseOutputLayer (NULL)
+      , m_f0InputLayer     (NULL)
+      , m_sineInputLayer_ptr (NULL)
+      , m_f0InputLayer_ptr (NULL)
+      , m_noiseTrain_epoch (-1)
+      , m_modeMultiDimSignal (DFTMODEFORMULTIDIMSIGNAL_NONE)
     {
 	
 	if (precedingLayer.size() != this->size())
@@ -650,6 +651,10 @@ namespace layers{
 	// sine-input layer
 	m_sineInputLayer_str = (layerChild->HasMember("sineSourceLayer") ? 
 				((*layerChild)["sineSourceLayer"].GetString()) : "");
+
+	// f0 input layer
+	m_f0InputLayer_str = (layerChild->HasMember("f0InputLayer") ? 
+				((*layerChild)["f0InputLayer"].GetString()) : "");
 	
 	// ------- for additional signals from other hidden layers of the network
 	m_separate_excitation_loss = (layerChild->HasMember("lpcExcitationLoss") ? 
@@ -1540,6 +1545,7 @@ namespace layers{
 		if (m_sineInputLayer_str.size()){
 		    if (m_sineInputLayer_ptr == NULL)
 			throw std::runtime_error("Error: sine source layer is not linked");
+		    
 		    helpers::FFTMat<TDevice> maskSig(
 			&m_sineInputLayer_ptr->outputs(),
 			&dftBuf.m_fftMaskSignalFramed,
@@ -1915,10 +1921,13 @@ namespace layers{
 								      m_sineInputLayer_str.c_str(),
 								      allocator);
 	    }
+
+	    if (m_f0InputLayer_str.size())
+		(*layersArray)[layersArray->Size() - 1].AddMember("f0InputLayer",
+								  m_f0InputLayer_str.c_str(),
+								  allocator);		
 	    
 	    for (int dftBufIndex = 0; dftBufIndex < this->m_DFTDataBuf.size(); dftBufIndex++){
-
-		
 		if (dftBufIndex == 0 && m_DFTDataBuf[dftBufIndex].m_valid_flag){
 		    (*layersArray)[layersArray->Size() - 1].AddMember(
 			"fftLength",
@@ -2125,9 +2134,33 @@ namespace layers{
 	    }
 	}
 	
+	// link layer of F0 input
+	if (m_f0InputLayer_str.size()){
+	    if (targetLayer.name() == m_f0InputLayer_str){
+		m_f0InputLayer_ptr = &targetLayer;
+		printf("\n\tDFT layer catches F0 from %s", m_f0InputLayer_str.c_str());
+	    }
+	}
+
 	return;
     }
 
+    template <typename TDevice>
+    std::vector<int> DFTPostoutputLayer<TDevice>::dependLayerIDs()
+    {
+	std::vector<int> tmp;
+	if (m_otherSignalInputLayers_ptr.size())
+	    for (int layerIndex = 0; layerIndex < m_otherSignalInputLayers_ptr.size(); layerIndex++)
+		tmp.push_back(m_otherSignalInputLayers_ptr[layerIndex]->getLayerID());
+	if (m_sineInputLayer_ptr)
+	    tmp.push_back(m_sineInputLayer_ptr->getLayerID());
+	if (m_f0InputLayer_ptr)
+	    tmp.push_back(m_f0InputLayer_ptr->getLayerID());
+	tmp.push_back(this->precedingLayer().getLayerID());
+	return tmp;
+    }
+
+    
     template <typename TDevice>
     void DFTPostoutputLayer<TDevice>::computeBackwardPass(const int timeStep, const int nnState)
     {

@@ -1068,6 +1068,8 @@ namespace {
 			       fft_data[frame_index * fftBins + fft_index].x +
 			       fft_data[frame_index * fftBins + fft_index].y *
 			       fft_data[frame_index * fftBins + fft_index].y);
+
+		    /*
 		    if (max_amp > (std_amp * 10 + average_amp)){
 			// frame with sine
 			fft_data[frame_index * fftBins + fft_index].x = tmp_amp / max_amp;
@@ -1075,6 +1077,13 @@ namespace {
 		    }else{
 			// frame without sine
 			fft_data[frame_index * fftBins + fft_index].x = 0.0;
+			fft_data[frame_index * fftBins + fft_index].y = 0.0;
+			}*/
+		    if (average_amp < FFT_AMP_MIN_NUM){
+			fft_data[frame_index * fftBins + fft_index].x = 0.0;
+			fft_data[frame_index * fftBins + fft_index].y = 0.0;
+		    }else{
+			fft_data[frame_index * fftBins + fft_index].x = tmp_amp / max_amp;
 			fft_data[frame_index * fftBins + fft_index].y = 0.0;
 		    }
 		}

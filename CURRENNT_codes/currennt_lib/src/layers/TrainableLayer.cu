@@ -53,6 +53,9 @@
 #define NNTRAINABLELAYER_SPECIAL_INI_2 2  // special 1: assume feedforward_identity
                                           //            w = 0, b = 0.0
 
+#define NNTRAINABLELAYER_SPECIAL_INI_3 3  // special 3: assume feedforward_identity
+                                          //            w = 1/N, b = 0.0
+
 namespace internal {
 namespace {
     struct CopyWeight
@@ -102,10 +105,10 @@ namespace layers {
 				    &precedingLayer)
         , m_inputWeightsPerBlock   (inputWeightsPerBlock)
         , m_internalWeightsPerBlock(internalWeightsPerBlock)
-        , m_bias              (layerChild->HasMember("bias") ? 
-			       static_cast<real_t>((*layerChild)["bias"].GetDouble()) : 0)
-        , m_learningRate      (layerChild->HasMember("learningRate") ? 
-			       static_cast<real_t>((*layerChild)["learningRate"].GetDouble()) : -1)
+        , m_bias          (layerChild->HasMember("bias") ? 
+			   static_cast<real_t>((*layerChild)["bias"].GetDouble()) : 0)
+        , m_learningRate  (layerChild->HasMember("learningRate") ? 
+			   static_cast<real_t>((*layerChild)["learningRate"].GetDouble()) : -1)
 	, m_weightNum (-1)
 	, m_optOpt    (0)
 	, m_specialInitialization (NNTRAINABLELAYER_SPECIAL_INI_0)
@@ -157,11 +160,11 @@ namespace layers {
             if (inputWeightsChild.Size() != (this->size() * inputWeightsPerBlock *
 					     this->precedingLayer().size())){
 		if (inputWeightsPerBlock == 0){
-		    printf("\n\tWARNING: the network file has no input weight for layer %s. ",
+		    printf("\n\tWARNING: the network file has no input weight for layer %s",
 			   this->name().c_str());
-		    printf("\n\tIgnore this warning if this layer is SkipAdd or SkipIni.");
+		    printf("\n\tIgnore this warning if this layer is SkipAdd or SkipIni");
 		}else{
-		    throw std::runtime_error(std::string("Invalid number of input weight for layer")
+		    throw std::runtime_error(std::string("Invalid number of input weight:")
 					     + this->name());
 		}
 	    }
@@ -171,14 +174,14 @@ namespace layers {
 			   this->name().c_str());
 		    printf("\n\tIgnore this warning if this layer is SkipAdd or SkipIni.");
 		}else{
-		    throw std::runtime_error(std::string("Invalid number of bias weight for layer") 
-					     + this->name() + "'");
+		    throw std::runtime_error(std::string("Invalid number of bias weight:") 
+					     + this->name());
 		}
 	    }
             if (internalWeightsChild.Size() != this->size() * internalWeightsPerBlock)
-                throw std::runtime_error(std::string("Invalid number of internal weight for layer'")
-					 + this->name() + "'");
-
+                throw std::runtime_error(std::string("Invalid number of internal weight:'")
+					 + this->name());
+	    
 	    
 	    if ((inputWeightsPerBlock + internalWeightsPerBlock) == 0){
 		// skip reading the weight
@@ -244,20 +247,43 @@ namespace layers {
 		    for (size_t i = 0; i < weights.size(); ++i)
 			weights[i] = dist(*gen);
 		}
+		
 	    }else if (m_specialInitialization == NNTRAINABLELAYER_SPECIAL_INI_1 ||
-		      m_specialInitialization == NNTRAINABLELAYER_SPECIAL_INI_2){
+		      m_specialInitialization == NNTRAINABLELAYER_SPECIAL_INI_2 ||
+		      m_specialInitialization == NNTRAINABLELAYER_SPECIAL_INI_3){
+
+		// special initialization strategy
 		if (inputWeightsPerBlock == 1 && internalWeightsPerBlock == 0){
+
 		    
 		    if (m_specialInitialization == NNTRAINABLELAYER_SPECIAL_INI_1){
+			// w = 0, b=2.0
 			printf("w = 0.0, bias = %f", NNTRAINABLELAYER_BIAS_INI_2);
-			thrust::fill(weights.begin(), weights.end(), NNTRAINABLELAYER_BIAS_INI_2);
-		    }else{
+			
+			thrust::fill(weights.begin(), weights.end(),
+				     NNTRAINABLELAYER_BIAS_INI_2);
+			    
+			thrust::fill(weights.begin(),
+				     weights.begin() +
+				     this->size() * this->precedingLayer().size(),
+				     0.0);
+			
+		    }else if (m_specialInitialization == NNTRAINABLELAYER_SPECIAL_INI_2){
+			// w = 0, b = 0.0
 			printf("w = 0.0, bias = %f", NNTRAINABLELAYER_BIAS_INI_0);
-			thrust::fill(weights.begin(), weights.end(), NNTRAINABLELAYER_BIAS_INI_0);
+			thrust::fill(weights.begin(), weights.end(), 0.0);
+			
+		    }else{
+			// w = 1/layer_size, b = 0.0
+			printf("w = %f, bias = 0",
+			       1.0/(this->size() * this->precedingLayer().size()));
+			thrust::fill(weights.begin(), weights.end(), 0.0);
+			thrust::fill(weights.begin(),
+				     weights.begin() +
+				     this->size() * this->precedingLayer().size(),
+				     1.0/(this->size() * this->precedingLayer().size()));
 		    }
-		    thrust::fill(weights.begin(),
-				 weights.begin() + this->size() * this->precedingLayer().size(),
-				 0.0);
+		    
 		}else{
 		    throw std::runtime_error("specialInitialization 1/2 only for feedforward");
 		}

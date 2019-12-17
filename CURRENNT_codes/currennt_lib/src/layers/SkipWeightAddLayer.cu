@@ -136,10 +136,11 @@ namespace layers{
 					std::vector<Layer<TDevice>*> &precedingLayers,
 					int maxSeqLength,
 					int layerID)
-	// use preLayers[0] as fake preceding layers
 	: SkipLayer<TDevice>(layerChild, weightsSection, precedingLayers,
 			     maxSeqLength, layerID, false)
     {
+
+	/* ------------ Load configuration ------------ */
 	
 	// Link previous layers
 	m_previousSkipStr = (layerChild->HasMember("preSkipLayer") ? 
@@ -149,19 +150,17 @@ namespace layers{
 	m_weightLayerStr  = (layerChild->HasMember("preWeightLayer") ? 
 			     ((*layerChild)["preWeightLayer"].GetString()) : "");
 
-
 	// Mode of weighted sum
-	
 	m_mode  = (layerChild->HasMember("sumMode") ? 
 		   ((*layerChild)["sumMode"].GetInt()) : SKIPWEIGHTADDLAYER_SIGMOID_ADD);
-	
-	
+
 	m_z_scale = (layerChild->HasMember("weightScale") ? 
 		     ((*layerChild)["weightScale"].GetDouble()) : 1.0);
 
 	m_z_shift = (layerChild->HasMember("weightShift") ? 
 		     ((*layerChild)["weightShift"].GetDouble()) : 0.0);
-	
+
+	/* ------------ Initial check ---------------- */
 	// Initial check
 	if (precedingLayers.size() < 3)
 	    throw std::runtime_error("Error: skipweightadd needs 3 skip layers");
@@ -193,6 +192,7 @@ namespace layers{
 	    }
 	}
 
+	/* ------------ After check ------------- */
 	if (this->PreLayers().size() != 3){
 	    printf("Error: skipweightadd cannot find the three input layers\n");
 	    throw std::runtime_error("Error: please check \"preWeightLayer\" and \"preSkipLayer\"");
@@ -213,10 +213,10 @@ namespace layers{
 	}
 
 	if (m_mode == SKIPWEIGHTADDLAYER_HARD_ADD)
-	    printf("\n\tBinary choise: ((z*%f+%f) > 0)*x + ((z%f+%f) < 0)*y,",
+	    printf("\n\tBinary choise: ((z*%0.3f+%0.3f) > 0)*x + ((z%0.3f+%0.3f) < 0)*y,",
 		   m_z_scale, m_z_shift, m_z_scale, m_z_shift);
 	else
-	    printf("\n\tWeighted sum: sig(z*%f+%f)*x + (1-sig(z%f+%f))*y,",
+	    printf("\n\tWeighted sum: sigmoid(z*%0.3f+%0.3f)*x + (1-sigmoid(z%0.3f+%0.3f))*y,",
 		   m_z_scale, m_z_shift, m_z_scale, m_z_shift);
 	printf("\n\tx is given by %s", this->PreLayers()[0]->name().c_str());
 	printf("\n\ty is given by %s", this->PreLayers()[1]->name().c_str());
@@ -239,7 +239,6 @@ namespace layers{
 	if (this->getSaveMemoryFlag())
 	    throw std::runtime_error("Memory save mode should be turned off");
 	
-
 	// initialization for backward pass
 	// (because gradients will be accumulated from multiple layers)
 	if (this->flagTrainingMode()){

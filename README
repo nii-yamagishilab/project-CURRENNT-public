@@ -2,17 +2,16 @@
 ##  prodject-CURRENNT-public -------------------------------------------  #
 ###########################################################################
 ##                         Author: Xin Wang                               #
-##                         Date:   2016 - 2018                            #
+##                         Date:   2016 - 2019                            #
 ##                         Contact: wangxin at nii.ac.jp                  #
 ###########################################################################
 
 CURRENNT_codes: modified CURRENNT source codes
 
-scripts:        Example scripts to use CURRENNT
-                This scripts may be unnecessary complicated.
-	        Specific scripts for specific models/systems can be 
-		found at https://github.com/nii-yamagishilab/project-CURRENNT-scripts
+scripts:        Obsolete scripts.
+		Update-to-date scripts can be found at
+		https://github.com/nii-yamagishilab/project-CURRENNT-scripts
 
-pyTools:        Python tools used by scripts above
+pyTools:        Python tools
 
 Please follow the REAMD in CURRENNT_codes and pyTools for installation.
