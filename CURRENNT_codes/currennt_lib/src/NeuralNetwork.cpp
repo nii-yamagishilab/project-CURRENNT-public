@@ -830,6 +830,10 @@ void NeuralNetwork<TDevice>::__InitializeNetworkLayerIdx(const helpers::JsonDocu
 		// do nothing
 	    }   
 	}
+
+	if (m_waveNetMemSaveFlag == NETWORK_WAVENET_SAVE_MA)
+	    printf("\nGenerating in GPU memory-save mode\n");
+	
 	
     }catch (const std::exception &e) {
         throw std::runtime_error(std::string("Invalid network file: ") + e.what());
@@ -2941,6 +2945,7 @@ void NeuralNetwork<TDevice>::computeForwardPassGen(const data_sets::DataSetFract
 	
 	// NSF
 	if (m_waveNetMemSaveFlag == NETWORK_WAVENET_SAVE_MA){
+
 	    // normal NSF without any feedback feedback_hidden
 	    if (m_feedBackHiddenLayers.empty() && m_feedBackLayers.empty()){
 		this->__computeGenPass_LayerByLayer_mem(fraction, curMaxSeqLength, generationOpt);
