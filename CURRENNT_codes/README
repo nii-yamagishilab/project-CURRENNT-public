@@ -39,7 +39,10 @@ Toolkit", Journal of Machine Learning Research, 2014.
 +=============================================================================+
 | 1. Building on Linux                                                        |
 +=============================================================================+
-Building on Linux requires the following:
+
++----------------------------------------
+| Building on Linux requires:
++----------------------------------------
 
    1 netcdf http://www.unidata.ucar.edu/software/netcdf/
        The version Xin Wang uses is 4.3.3.1.
@@ -98,7 +101,10 @@ Building on Linux requires the following:
        http://sourceforge.net/p/currennt/discussion/general/thread/df6eeece/
        http://sourceforge.net/p/currennt/discussion/general/thread/e10ef414/
 
-To build CURRENNT execute:
+
++----------------------------------------
+| To build CURRENNT execute:
++----------------------------------------
 1. In the root of CURRENNT_codes
    $: cp CMakeLists.txt_template CMakeLists.txt
 
@@ -124,6 +130,7 @@ To build CURRENNT execute:
 
       For example, it is $: cmake -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda ../ on my machine
 
+
    2. If CUDA does not support gcc on your machine, you may see
       "...host_config.h:119:2: error: #error -- unsupported GNU version! gcc versions later than 6 are not supported!"
 
@@ -138,13 +145,31 @@ To build CURRENNT execute:
    $: cmake -DCUDA_TOOLKIT_ROOT_DIR=XXX -DCMAKE_C_COMPILER=YYY ../
 
 
-You might get many warnings like 'Cannot tell what pointer points to, assuming
-global memory space' or '***operator()" was declared but never referenced'. 
+3. If you want to build CURRENNT for debugging, you can use
+   $: mkdir build_debug && cd builde_debug
+   $: cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS=-g ../
+   $: make
+   
+   After that, you can use gdb to debug
+   $: gdb --args currennt XXXXXX
+   where XXXXXX is the string of arguments with which you want to debug.
+
+   If the debugging version is successfully built, you will see something like
+   ----
+   GNU gdb (GDB) 8.3
+   ...
+   Reading symbols from currennt
+   (gdb)
+   ----
+   
+During compiling, you might get many warnings on boost or other messages
+like 'Cannot tell what pointer points to, assuming global memory space' or
+'***operator()" was declared but never referenced'. 
 These are totally OK.
 
 
 +=============================================================================+
-| 2. Building on Windows                                                      |
+| 2. Building on Windows (not verified, by Xin)                               |
 +=============================================================================+
 Building on Windows requires the following:
 * Visual Studio 2010

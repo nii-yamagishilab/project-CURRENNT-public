@@ -1,8 +1,8 @@
 /******************************************************************************
- * This file is modified version 
+ * This file is heavily modified by
  * Xin WANG
  * National Institute of Informatics, Japan
- * 2016
+ * 2016 - 2019
  * 
  * Copyright (c) 2013 Johannes Bergmann, Felix Weninger, Bjoern Schuller
  * Institute for Human-Machine Communication
@@ -678,10 +678,10 @@ namespace {
     {
 	// A layer's memory should be NOT released in Non-AR WaveModel when
 	//  1. this layer resolution is not at the waveform level
-	//  2. this layer is in the condition module
+	//  
 	//  3. this layer will be the actual output layer
-	if (layerResolution > 1 || layerID < sourceExcitationLayerID ||
-	    layerID >= totalNumLayers - 2)
+	
+	if (layerResolution > 1 || layerID >= totalNumLayers - 2)
 	    return false;
 	else
 	    return true;
@@ -978,7 +978,7 @@ void NeuralNetwork<TDevice>::__CreateNetworkLayers(const helpers::JsonDocument &
 		
 		// post processing for waveNet / NSF or other waveform models
 		// This part should be modified so that other networks using WaveNetCore/DFT layer
-		// will not be into memory-save mode
+		// will not go into the memory-save mode
 		if (m_wavNetCoreFirstIdx > 0 || m_dftLayerIdx > 0){
 		    
 		    // for wavenet, link the wavenet block and allocate memory
