@@ -510,7 +510,10 @@ namespace{
 	int layerSize;
 	int parallel;
 	int maxLength;
+	int pNoiseType;
 
+	real_t voicedMag;
+	
 	real_t *addNoise;
 	real_t *outputData;
 	real_t *uvFlag;
@@ -555,8 +558,18 @@ namespace{
 		    
 		    // assign the value
 		    noisePtr = timeBlock - timePtr;
-
+		    
 		    t.get<0>() = addNoise[noisePtr * layerSize + dimIndex];
+		    
+		    if (pNoiseType == 2 &&
+			outputData[timeBlock * layerSize + dimIndex] > 0.0){
+
+			if (t.get<0>() > 0)
+			    t.get<0>() += voicedMag;
+			else
+			    t.get<0>() -= voicedMag;
+		    }
+		    
 		}
 	    }
 	    return;
@@ -710,6 +723,8 @@ namespace layers{
 	    if (m_noiseMag == NN_SIGGEN_NOISE_FLOOR)
 		printf("\n\tNoise magnitude is floored to %f in voiced region",
 		       m_noiseMag);
+	    else
+		printf("\n\tNoise magnitude: %f", m_noiseMag);
 	}else{
 	    // if noise is to be generated
 	    printf("\n\tNoise magnitude %f", m_noiseMag);
@@ -1203,7 +1218,9 @@ namespace layers{
 		    fn6.layerSize  = this->size();
 		    fn6.parallel   = this->parallelSequences();
 		    fn6.maxLength  = timeLengthTotal;
-
+		    fn6.pNoiseType = this->m_periodicNoise;
+		    fn6.voicedMag  = this->m_freqSignalMag;
+			
 		    fn6.addNoise   = helpers::getRawPointer(this->m_noiseInput);
 		    fn6.outputData = helpers::getRawPointer(this->outputs());
 		    fn6.patTypes   = helpers::getRawPointer(this->patTypes());
