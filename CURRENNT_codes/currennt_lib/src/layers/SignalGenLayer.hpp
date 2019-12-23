@@ -79,10 +79,18 @@ namespace layers{
 	int             m_noiseShareAcrDim;
 
 	int             m_sin2pulse;
+
+	int             m_periodicNoise;
+
 	
 	void __loadOpts(const helpers::JsonValue &layerChild);
+
+	void __printOpts();
+	
 	void __setLayerMode();
+	
 	void __allocateLocalMem();
+	
 	void __clearLocalMem();
 	
     public:

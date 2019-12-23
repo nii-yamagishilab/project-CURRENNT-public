@@ -81,6 +81,7 @@
 #include "layers/MutualInforPostOutputLayer.hpp"
 #include "layers/LayerNorm.hpp"
 #include "layers/BatchNormNew.hpp"
+#include "layers/SpecialFeedBackLayer.hpp"
 #include <stdexcept>
 
 
@@ -223,7 +224,11 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
 						       *precedingLayer, maxSeqLength, layerID);
     else if (layerType == "batchnorm_new_relu")
     	return new BatchNormNewLayer<TDevice, Relu>(layerChild, weightsSection,
-						   *precedingLayer, maxSeqLength, layerID);    
+						   *precedingLayer, maxSeqLength, layerID);
+
+    else if (layerType == "simple_feedback")
+    	return new SpecialFeedBackLayer<TDevice>(layerChild, weightsSection,
+						 *precedingLayer, maxSeqLength, layerID);    
 
     else if (layerType == "sse"                       || layerType == "weightedsse"  || 
 	     layerType == "rmse"                      || layerType == "ce"  || 

@@ -261,7 +261,11 @@ namespace{
 			    addtiveNoise[timeIdxPhy * (hnmNum + 1) + dimIdx] = 0.0;
 			
 		}else{
-		    
+
+		    // write the U/V flag
+		    if (dimIdx == 0)
+			uvFlag[timeIdx] = 0.0;
+
 		    // for unvoiced segment, keep the initial phase, set data = 0
 		    spPhase = initPhase;
 
@@ -500,6 +504,65 @@ namespace{
 	}
     };
 
+
+    struct periodicNoise
+    {
+	int layerSize;
+	int parallel;
+	int maxLength;
+
+	real_t *addNoise;
+	real_t *outputData;
+	real_t *uvFlag;
+	
+	const char *patTypes;
+	
+	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
+	{
+	    int timeBlock = t.get<1>() / layerSize;
+	    int dimIndex  = t.get<1>() % layerSize;
+
+	    bool hit_epoch = false;
+	    int timePtr;
+	    int noisePtr;
+	    
+	    if (patTypes[timeBlock] == PATTYPE_NONE){
+		// current time step is void
+		t.get<0>() = 0.0;
+		
+	    }else{
+		// current time step is not void
+		
+		if (uvFlag[timeBlock] < 1){
+		    // current step is unvoiced
+		    t.get<0>() = outputData[t.get<1>()];
+		    
+		}else{
+		    // current step is voiced
+
+		    // find the segment boundary or the location of pulse
+		    for (timePtr = timeBlock; timePtr > 0; timePtr = timePtr - parallel){
+			if (uvFlag[timePtr] < 1 ||
+			    outputData[timePtr * layerSize + dimIndex] > 0.0){
+			    hit_epoch = true;
+			    break;
+			}
+		    }
+
+		    // if not find
+		    if (hit_epoch == false)
+			timePtr = 0;
+		    
+		    // assign the value
+		    noisePtr = timeBlock - timePtr;
+
+		    t.get<0>() = addNoise[noisePtr * layerSize + dimIndex];
+		}
+	    }
+	    return;
+	}
+    };
+
 }    
 }
 
@@ -539,6 +602,9 @@ namespace layers{
 
 	// allocate memory
 	this->__allocateLocalMem();
+
+	// print information
+	this->__printOpts();
     }
 
     template <typename TDevice>
@@ -549,7 +615,8 @@ namespace layers{
     template <typename TDevice>
     void SignalGenLayer<TDevice>::__loadOpts(const helpers::JsonValue &layerChild)
     {
-	// Read flags
+	// Read flags & configurations
+	// 
 	m_freqDim = (layerChild->HasMember("frequencyDim")?
 		     static_cast<real_t>((*layerChild)["frequencyDim"].GetInt()) :
 		     this->precedingLayer().size()-1);
@@ -583,24 +650,44 @@ namespace layers{
 	m_noiseType = (layerChild->HasMember("noiseType") ? 
 			   static_cast<real_t>((*layerChild)["noiseType"].GetInt()):
 		       NN_SIGGEN_LAYER_NOISE_GAUSSIAN);
-
 	m_noNoiseInSine = (layerChild->HasMember("noNoiseInSine") ? 
 			   static_cast<real_t>((*layerChild)["noNoiseInSine"].GetInt()):0);
-
 	m_noiseShareAcrDim = (layerChild->HasMember("shareNoiseAcrossDim") ? 
 			      static_cast<real_t>((*layerChild)["shareNoiseAcrossDim"].GetInt()):0);
 
+	// convert sine to pulse train
 	m_sin2pulse = (layerChild->HasMember("sin2pulse") ? 
 		       ((*layerChild)["sin2pulse"].GetInt()):0);
 	
+	// produce periodic noise as source 
+	m_periodicNoise = (layerChild->HasMember("periodicNoise") ? 
+			   ((*layerChild)["periodicNoise"].GetInt()):0);
+	if (m_periodicNoise) m_sin2pulse = 0;
+	
+	// Load F0 mean / std
 	const Configuration &config = Configuration::instance();
 	if (config.f0dataMean_signalgen() > 0)
 	    m_freqDataM = config.f0dataMean_signalgen();
 	if (config.f0dataStd_signalgen() > 0)
 	    m_freqDataS = config.f0dataStd_signalgen();
 
+	// Check the m_noiseMag
+	// otherwise, m_equalNoiseSinePower will lead to nan in sinWaveGenerator_accum
+	if (m_noiseMag < NN_SIGGEN_NOISE_FLOOR &&
+	    m_equalNoiseSinePower && m_freqDim >= 0){
+	    m_noiseMag = NN_SIGGEN_NOISE_FLOOR;
+	}
+
+	// Done
+    }
+
+    template <typename TDevice>
+    void SignalGenLayer<TDevice>::__printOpts()
+    {
+	
 	printf("\n\tSource module info:\n");
 	if (m_freqDim >=0){
+	    // if periodic source is to be generated
 	    printf("\n\tTake the %d-th dimension of previous layer's output as F0:\n", m_freqDim);
 	    if (m_freqOpt == NN_OPE_FREGEN_F0_LF0)
 		printf("\n\tInput F0 is log-F0. ");
@@ -610,29 +697,34 @@ namespace layers{
 		printf("\n\tInput F0 is linear F0. ");
 	    else
 		throw std::runtime_error("Unknown F0 input type (frequencyOpt)");
+	    
 	    printf("Denormalize F0 using mean/std: %f %f.", m_freqDataM, m_freqDataS);
 	    printf("\n\tSine wave sampling rate %f", m_freqSR);
 	    printf("\n\tSine wave magnitude %f", m_freqSignalMag);
 	    printf("\n\tSine wave harmonics %d", m_freqHmn);
+	    
 	    if (m_freqBins)
 		printf("\n\tSine wave used phase match in training");
 	    if (m_noNoiseInSine)
 		printf("\n\tSine wave will have no additive noise");
-
-	    // otherwise, m_equalNoiseSinePower will lead to nan in sinWaveGenerator_accum
-	    if (m_noiseMag < NN_SIGGEN_NOISE_FLOOR && m_equalNoiseSinePower){
-		m_noiseMag = NN_SIGGEN_NOISE_FLOOR;
-		printf("\n\tNoise magnitude is floored to %f in voiced region", m_noiseMag);
-	    }
+	    if (m_noiseMag == NN_SIGGEN_NOISE_FLOOR)
+		printf("\n\tNoise magnitude is floored to %f in voiced region",
+		       m_noiseMag);
 	}else{
+	    // if noise is to be generated
 	    printf("\n\tNoise magnitude %f", m_noiseMag);
 	}
 	
 	if (m_noiseShareAcrDim)
 	    printf("\n\tNoise shared across dim");
 	
-    }
+	if (m_sin2pulse)
+	    printf("\n\tGenerate pulse train as source");
 
+	if (m_periodicNoise)
+	    printf("\n\tGenerate periodic noise as source");
+    }
+    
     template <typename TDevice>
     void SignalGenLayer<TDevice>::__setLayerMode()
     {
@@ -764,6 +856,10 @@ namespace layers{
 	if (m_sin2pulse)
 	    (*layersArray)[layersArray->Size() - 1].AddMember("sin2pulse",
 							      m_sin2pulse,
+							      allocator);
+	if (m_periodicNoise)
+	    (*layersArray)[layersArray->Size() - 1].AddMember("periodicNoise",
+							      m_periodicNoise,
 							      allocator);
     }
 
@@ -1062,34 +1158,73 @@ namespace layers{
 	    }
 
 	    // if we need to convert sine waveforms to pulse train
-	    if (m_sin2pulse){
+	    // or periodic noise sequence
+	    if (m_sin2pulse || m_periodicNoise){
 
+		// use the m_phaseNoise as a temporary buffer, although
+		// it doesn't contain phase noise 
 		thrust::fill(m_phaseNoise.begin(), m_phaseNoise.end(), 0.0);
 
+		long int tmp_length = timeLengthTotal * this->size();
+		
 		{
-		internal::sin2pulse fn5;
+		    internal::sin2pulse fn5;
 
-		fn5.layerSize  = this->size();
-		fn5.parallel   = this->parallelSequences();
-		fn5.maxLength  = timeLengthTotal;
+		    fn5.layerSize  = this->size();
+		    fn5.parallel   = this->parallelSequences();
+		    fn5.maxLength  = timeLengthTotal;
 
-		fn5.addNoise   = helpers::getRawPointer(this->m_noiseInput);
-		fn5.outputData = helpers::getRawPointer(this->outputs());
-		fn5.patTypes   = helpers::getRawPointer(this->patTypes());
-		fn5.uvFlag     = helpers::getRawPointer(this->m_uvflag);
-		thrust::for_each(
-                 thrust::make_zip_iterator(
-		   thrust::make_tuple(
-			m_phaseNoise.begin(),
-			thrust::counting_iterator<int>(0))),
-		 thrust::make_zip_iterator(
-	           thrust::make_tuple(
-			m_phaseNoise.begin() + timeLengthTotal * this->size(),
-			thrust::counting_iterator<int>(0)+timeLengthTotal * this->size())),
-		 fn5);
+		    fn5.addNoise   = helpers::getRawPointer(this->m_noiseInput);
+		    fn5.outputData = helpers::getRawPointer(this->outputs());
+		    fn5.patTypes   = helpers::getRawPointer(this->patTypes());
+		    fn5.uvFlag     = helpers::getRawPointer(this->m_uvflag);
+		    
+		    thrust::for_each(
+		      thrust::make_zip_iterator(
+			thrust::make_tuple(
+			   m_phaseNoise.begin(),
+			   thrust::counting_iterator<int>(0))),
+		      thrust::make_zip_iterator(
+	                thrust::make_tuple(
+			  m_phaseNoise.begin() + tmp_length,
+			  thrust::counting_iterator<int>(0) + tmp_length)),
+		      fn5);
 		}
+
+		// copy the pulse train back to output buffer
 		thrust::copy(m_phaseNoise.begin(), m_phaseNoise.end(),
 			     this->outputs().begin());
+
+
+		// if periodic noise is to be used based on the pulse train
+		if (m_periodicNoise){
+		    internal::periodicNoise fn6;
+
+		    fn6.layerSize  = this->size();
+		    fn6.parallel   = this->parallelSequences();
+		    fn6.maxLength  = timeLengthTotal;
+
+		    fn6.addNoise   = helpers::getRawPointer(this->m_noiseInput);
+		    fn6.outputData = helpers::getRawPointer(this->outputs());
+		    fn6.patTypes   = helpers::getRawPointer(this->patTypes());
+		    fn6.uvFlag     = helpers::getRawPointer(this->m_uvflag);
+		    
+		    thrust::for_each(
+		      thrust::make_zip_iterator(
+			thrust::make_tuple(
+			   m_phaseNoise.begin(),
+			   thrust::counting_iterator<int>(0))),
+		      thrust::make_zip_iterator(
+	                thrust::make_tuple(
+			  m_phaseNoise.begin() + tmp_length,
+			  thrust::counting_iterator<int>(0) + tmp_length)),
+		      fn6);
+
+		    // copy it again
+		    thrust::copy(m_phaseNoise.begin(), m_phaseNoise.end(),
+				 this->outputs().begin());
+
+		}
 	    }
 	}
 

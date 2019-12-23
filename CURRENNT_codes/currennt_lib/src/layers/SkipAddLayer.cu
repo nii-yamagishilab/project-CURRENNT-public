@@ -94,6 +94,12 @@ namespace layers{
 	// Link previous layers
 	m_previousSkipStr = (layerChild->HasMember("preSkipLayer") ? 
 			     ((*layerChild)["preSkipLayer"].GetString()) : "");
+
+	// Show some warining
+	if (this->type() == "skipini" && m_previousSkipStr.size())
+	    printf("\n\tWARNING: skipini should have no preSkipLayer in configuration");
+	    
+	
 	if (m_previousSkipStr.size()){
 
 	    // previous layers are specified by preSkipLayer

@@ -114,22 +114,33 @@ private:
 
     // vector of feedback layer index
     std::vector<int> m_feedBackLayers;
+
     // vector of vae or vqvae layer index
     std::vector<int> m_vaeLayers;
+
     // vector of normflow layer index
     std::vector<int> m_normflowLayers;
+
     // vector of distilling layer index
     std::vector<int> m_distillingLayers;
+
     // vector of signalgen layer index 
     std::vector<int> m_signalGenLayerId;
+
     // vector of featureTransform (feattrans featsse) layer index
     std::vector<int> m_featTransNetRange;
+
     // vector of feedback_hidden layer index
     std::vector<int> m_feedBackHiddenLayers;
+
     // vector of feedback_hidden layer time resolutions
     std::vector<int> m_feedBackHiddenLayersTimeResos;
+
     // vector of InterMetric layers
     std::vector<int> m_interMetricLayers;
+
+    // vector of special feedback layers
+    std::vector<int> m_specialFeedbackLayers;
     
     // vector of temporary layer index used in AR dependency building
     std::vector<int> m_tmpLayerIdx;

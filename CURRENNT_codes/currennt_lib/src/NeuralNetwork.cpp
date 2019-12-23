@@ -724,6 +724,8 @@ void NeuralNetwork<TDevice>::__InitializeNetworkLayerIdx(const helpers::JsonDocu
 	m_feedBackHiddenLayers.clear();
 	m_feedBackHiddenLayersTimeResos.clear();
 	m_interMetricLayers.clear();
+	m_specialFeedbackLayers.clear();
+
 	
 	m_firstFeedBackLayer    = -1;     // Idx of the first feedback layer
 	m_middlePostOutputLayer = -1;     // Idx of the PostOutputLayer inside the network
@@ -825,7 +827,9 @@ void NeuralNetwork<TDevice>::__InitializeNetworkLayerIdx(const helpers::JsonDocu
 	    }else if (layerType == "mutual_weave"){
 		// inter weave layer index
 		m_interWeaveIdx = counter;
-		
+	    }else if (layerType == "simple_feedback"){
+		// 
+		m_specialFeedbackLayers.push_back(counter);
 	    }else{
 		// do nothing
 	    }   
@@ -1280,6 +1284,15 @@ void NeuralNetwork<TDevice>::__LinkNetworkLayers()
 		m_layers[m_dftLayerIdx]->linkTargetLayer(*(m_layers[i].get()));
 	}
 
+	// Link special feedback layers
+	if (!m_specialFeedbackLayers.empty()){
+	    // link the target layers
+	    for (size_t i = 0; i < m_specialFeedbackLayers.size(); i++)
+		for (size_t j = 0; j < m_totalNumLayers; j++)
+		    m_layers[m_specialFeedbackLayers[i]]->linkTargetLayer(*(m_layers[j].get()));
+	}
+
+	
 	// Link the target layer with inter_weave layer
 	if (m_interWeaveIdx > 0){
 	    m_layers[m_interWeaveIdx]->linkTargetLayer(*(m_layers.back().get()));
