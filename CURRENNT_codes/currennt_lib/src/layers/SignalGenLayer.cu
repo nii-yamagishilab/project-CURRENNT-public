@@ -546,7 +546,7 @@ namespace{
 		    // find the segment boundary or the location of pulse
 		    for (timePtr = timeBlock; timePtr > 0; timePtr = timePtr - parallel){
 			if (uvFlag[timePtr] < 1 ||
-			    outputData[timePtr * layerSize + dimIndex] > 0.0){
+			    outputData[timePtr * layerSize + dimIndex] != 0.0){
 			    hit_epoch = true;
 			    break;
 			}
