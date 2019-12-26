@@ -71,6 +71,7 @@ namespace layers{
 	real_vector     m_signalStatic;	
 
 	real_vector     m_uvflag;
+	real_vector     m_f0inHz;
 	
 	int             m_equalNoiseSinePower;
 	int             m_noiseType;
