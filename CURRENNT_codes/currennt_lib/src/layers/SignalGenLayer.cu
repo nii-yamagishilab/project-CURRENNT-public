@@ -146,6 +146,7 @@ namespace{
 	int HmnNum;
 	int noNoiseInSince;
 	
+	int periodicNFlag;
 	
 	real_t *targetData;
 	real_t *sourceData;
@@ -246,7 +247,13 @@ namespace{
 			spPhase = spPhase + 2.0 * PI_DEFINITION;
 
 		    // sine wavefor value of current time step
-		    sigValue = sin(spPhase) * f0Mag;
+		    if (periodicNFlag == NN_SIGGEN_PERIODIC_NOISE_DECAYED){
+			// for periodic, use cos 
+			sigValue = cos(spPhase) * f0Mag;
+		    }else{
+			// in default cases, use sin
+			sigValue = sin(spPhase) * f0Mag;
+		    }
 		    
 		    // store the signal value
 		    if (flagPhaseMatch){
@@ -459,7 +466,8 @@ namespace{
 	int layerSize;
 	int parallel;
 	int maxLength;
-
+	int forPeriodicN;
+	
 	real_t *addNoise;
 	real_t *outputData;
 	real_t *uvFlag;
@@ -483,9 +491,46 @@ namespace{
 		if (uvFlag[timeBlock] < 1){
 		    // current step is unvoiced
 		    t.get<0>() = outputData[t.get<1>()];
+		    
+		}else if (forPeriodicN == NN_SIGGEN_PERIODIC_NOISE_DECAYED){
+		    
+		    // generating the pulse train for locating periodic noise
+
+		    if (prev_step > 0 && next_step < maxLength &&
+			uvFlag[prev_step] > 0.0 && uvFlag[next_step] > 0.0){
+			// if this is inside a voice segment
+			if ((outputData[t.get<1>()] - addNoise[t.get<1>()]) >=
+			    (outputData[prev_step * layerSize + dimIndex] -
+			     addNoise[prev_step * layerSize + dimIndex])&&
+			    (outputData[t.get<1>()] - addNoise[t.get<1>()]) >=
+			    (outputData[next_step * layerSize + dimIndex] -
+			     addNoise[next_step * layerSize + dimIndex])){   
+			    // current step is a local maximum
+			    t.get<0>() = outputData[t.get<1>()];
+			}else{
+			    t.get<0>() = 0.0;
+			}
+			
+		    }else if (prev_step > 0 && next_step < maxLength){
+			// if this is inside a utterance, but near the boundary of voiced segment
+			// assign the starting point as pulse
+			if (uvFlag[prev_step] == 0)
+			    t.get<0>() = outputData[t.get<1>()];
+			else
+			    t.get<0>() = 0.0;
+		    }else if (next_step < maxLength){
+			// if this is the begining of the utterance
+			t.get<0>() = outputData[t.get<1>()];
+			
+		    }else{
+			// other cases
+			t.get<0>() = 0.0;
+		    }
+		    
 		}else{
 		    // current step is voiced
 		    
+		    // for the case of using normal pulse train as the source
 		    if (prev_step < 0 || next_step > maxLength ||
 			patTypes[prev_step] == PATTYPE_NONE ||
 			patTypes[next_step] == PATTYPE_NONE ||
@@ -494,8 +539,6 @@ namespace{
 			// current step is near the boundary of voiced segment
 			t.get<0>() = 0.0;
 		    }else{
-
-			
 			// current step is inside a voiced segment
 			if ((outputData[t.get<1>()] - addNoise[t.get<1>()]) >=
 			    (outputData[prev_step * layerSize + dimIndex] -
@@ -1078,6 +1121,8 @@ namespace layers{
 		fn1.noNoiseInSince = m_noNoiseInSine;
 		fn1.parallel       = this->parallelSequences();
 
+		fn1.periodicNFlag = this->m_periodicNoise;
+		
 		// output buffer to store sine waveforms
 		fn1.genSignalBuff  = helpers::getRawPointer(this->outputs());
 		// input buffer with F0 values
@@ -1152,6 +1197,8 @@ namespace layers{
 		fn1.HmnNum         = this->m_freqHmn;
 		
 		fn1.parallel       = this->parallelSequences();
+		fn1.periodicNFlag  = this->m_periodicNoise;
+		
 		fn1.genSignalBuff  = helpers::getRawPointer(m_freqSignalBuff);
 		fn1.sourceData     = helpers::getRawPointer(this->precedingLayer().outputs());
 		fn1.patTypes       = helpers::getRawPointer(this->patTypes());
@@ -1268,7 +1315,8 @@ namespace layers{
 		    fn5.layerSize  = this->size();
 		    fn5.parallel   = this->parallelSequences();
 		    fn5.maxLength  = timeLengthTotal;
-
+		    fn5.forPeriodicN = this->m_periodicNoise;
+		    
 		    fn5.addNoise   = helpers::getRawPointer(this->m_noiseInput);
 		    fn5.outputData = helpers::getRawPointer(this->outputs());
 		    fn5.patTypes   = helpers::getRawPointer(this->patTypes());
