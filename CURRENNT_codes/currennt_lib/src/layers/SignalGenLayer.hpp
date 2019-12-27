@@ -82,7 +82,7 @@ namespace layers{
 	int             m_sin2pulse;
 
 	int             m_periodicNoise;
-
+	real_t          m_periodicNoiseDecay;
 	
 	void __loadOpts(const helpers::JsonValue &layerChild);
 

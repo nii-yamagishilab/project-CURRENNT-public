@@ -74,6 +74,10 @@
 #define NN_SIGGEN_LAYER_NOISE_GAUSSIAN 2 // Gaussian noise
 
 #define NN_SIGGEN_NOISE_FLOOR 0.000001
+
+// exp(-1.0 n / T) < 0.01 => n > -log(0.01)*T = 4.60*T
+#define NN_SIGGEN_EXPONENTIAL_DECAY 4.60
+
 namespace internal{
 namespace{
     
@@ -636,6 +640,7 @@ namespace{
 
 	real_t freqSR;
 	real_t voicedMag;
+	real_t decayRate;
 	
 	real_t *addNoise;
 	real_t *outputData;
@@ -663,8 +668,7 @@ namespace{
 
 		period_value = freqSR / f0inHz[timeBlock];
 		tmp_value = 0;
-
-		
+			
 		for (timePtr = 0; timePtr < maxLength; timePtr += parallel){
 		    // convolution over pulse train * noise
 		    if ((timeBlock - timePtr) >= 0 &&
@@ -672,12 +676,11 @@ namespace{
 			uvFlag[timeBlock - timePtr] > 0 &&
 			outputData[(timeBlock-timePtr)*layerSize+dimIndex] != 0.0){
 			tmp_value += addNoise[timePtr * layerSize + dimIndex] *
-			    exp(-1.0 * (timePtr / parallel) / period_value);
+			    exp(-1.0 * (timePtr / parallel) / (period_value * decayRate));
 		    }
 		    
 		    // stop the convolution if the decayed factor is small
-		    // exp(-1.0 n / T) < 0.01 => n > -log(0.01)*T = 4.60*T
-		    if ((timePtr / parallel) > (4.60 * period_value))
+		    if ((timePtr / parallel) > (NN_SIGGEN_EXPONENTIAL_DECAY * period_value))
 			break;
 		}
 		t.get<0>() = tmp_value;
@@ -787,6 +790,8 @@ namespace layers{
 	// produce periodic noise as source 
 	m_periodicNoise = (layerChild->HasMember("periodicNoise") ? 
 			   ((*layerChild)["periodicNoise"].GetInt()):NN_SIGGEN_PERIODIC_NOISE_NONE);
+	m_periodicNoiseDecay = (layerChild->HasMember("periodicNoiseDecay")?
+				static_cast<real_t>((*layerChild)["periodicNoiseDecay"].GetDouble()):-1);
 	if (m_periodicNoise) m_sin2pulse = 0;
 	
 	// Load F0 mean / std
@@ -849,15 +854,22 @@ namespace layers{
 	    printf("\n\tGenerate pulse train as source");
 
 	if (m_periodicNoise){
-	    if (m_periodicNoise == NN_SIGGEN_PERIODIC_NOISE_DEFAULT)
+	    if (m_periodicNoise == NN_SIGGEN_PERIODIC_NOISE_DEFAULT){
 		printf("\n\tGenerate periodic noise as source");
-	    else if (m_periodicNoise == NN_SIGGEN_PERIODIC_NOISE_WITH_PULSE)
+	    }else if (m_periodicNoise == NN_SIGGEN_PERIODIC_NOISE_WITH_PULSE){
 		printf("\n\tGenerate periodic noise + pulse as source");
-	    else if (m_periodicNoise == NN_SIGGEN_PERIODIC_NOISE_DECAYED)
+	    }else if (m_periodicNoise == NN_SIGGEN_PERIODIC_NOISE_DECAYED){
 		printf("\n\tGenerate decayed periodic noise");
-	    else
+		if (m_periodicNoiseDecay < 0)
+		    printf(" with decay rate as default exp(-1.0 t / T)");
+		else
+		    printf(" with decay rate as exp(-1.0 t / (%f * T))",
+			   m_periodicNoiseDecay);
+	    }else{
 		throw std::runtime_error("Error: unknown periodicNoise");
+	    }
 	}
+	printf("\n");
     }
     
     template <typename TDevice>
@@ -994,10 +1006,15 @@ namespace layers{
 	    (*layersArray)[layersArray->Size() - 1].AddMember("sin2pulse",
 							      m_sin2pulse,
 							      allocator);
-	if (m_periodicNoise)
+	if (m_periodicNoise){
 	    (*layersArray)[layersArray->Size() - 1].AddMember("periodicNoise",
 							      m_periodicNoise,
 							      allocator);
+	    if (m_periodicNoiseDecay > 0)
+		(*layersArray)[layersArray->Size() - 1].AddMember("periodicNoiseDecay",
+								  m_periodicNoiseDecay,
+								  allocator);
+	}
     }
 
     template <typename TDevice>
@@ -1351,7 +1368,8 @@ namespace layers{
 			fn6.pNoiseType = this->m_periodicNoise;
 			fn6.voicedMag  = this->m_freqSignalMag;
 			fn6.freqSR     = (real_t)this->m_freqSR;
-
+			fn6.decayRate  = ((this->m_periodicNoiseDecay > 0)?
+					  this->m_periodicNoiseDecay : 1.0);
 			
 			fn6.addNoise   = helpers::getRawPointer(this->m_noiseInput);
 			fn6.outputData = helpers::getRawPointer(this->outputs());
