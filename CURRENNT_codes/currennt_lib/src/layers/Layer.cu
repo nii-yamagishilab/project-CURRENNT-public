@@ -398,6 +398,8 @@ namespace layers {
     {
 	m_outputs.clear();
 	m_outputs.shrink_to_fit();
+	real_vector tmp(0);
+	tmp.swap(m_outputs);
     }
     
     template <typename TDevice>
