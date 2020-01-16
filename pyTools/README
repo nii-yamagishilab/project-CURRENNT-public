@@ -19,13 +19,10 @@ N###########################################################################
 ##                         Contact: wangxin at nii.ac.jp                  #
 ###########################################################################
 
-Tools based on Python (Python 2.7)
+Tools based on Python (Python 2.7, not fully test on Python3.5)
 
-To use it:
-:~$ sh setup.sh
-:~$ export PYTHONPATH=PATH_TO_THIS_DIRECTORY:$PYTHONPATH
-
-You need Cython to compile.
+To add this pyTools to python path, please
+$: export PYTHONPATH=PATH_TO_THIS_DIRECTORY:$PYTHONPATH
 
 There tools are used in CURRENNT_SCIRPTS implicitly. So, no need to write
 instruction here.
@@ -39,3 +36,9 @@ See the example below to read and write binary data
 >> from ioTools import readwrite as py_rw
 >> data = py_rw.read_raw_mat(PATH_TO_BINARY_DATA, DIMENSION_OF_DATA)
 >> py_rw.write_raw_mat(data, PATH_TO_BINARY_DATA)
+
+
+Optional:
+If you want to use a compiled data IO interface:
+$: sh setup.sh
+You need Cython to compil.e
