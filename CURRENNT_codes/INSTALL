@@ -1,0 +1,137 @@
+INSTALL
+copied from README
+
++=============================================================================+
+| Building on Linux                                                        |
++=============================================================================+
+
++----------------------------------------
+| 1 Installation for voice-privacy participants
++----------------------------------------
+For voice-privacy challenge participants, the baseline recipe will download
+the dependency and install the software for you.
+
+For other users, please check 1.2 Manual installation
+
+
++----------------------------------------
+| 2 Manual installation
++----------------------------------------
+
+--- Building on Linux requires:
+
+   1 netcdf http://www.unidata.ucar.edu/software/netcdf/
+     The version Xin Wang uses is 4.3.3.1.
+       
+     For compatiblity, please do
+     $: ./configure --disable-netcdf-4 --prefix=PATH_TO_INSTALL
+     $: make
+     $: make install
+
+     Note that PATH_TO_INSTALL is the your path to store the bin and lib
+       
+     After compiling, nc-config can be used to print the configuration of netCDF.
+       
+     $: PATH_TO_INSTALL/nc-config --all
+     This netCDF 4.3.3.1 has been built with the following features: 
+
+        --cc        -> gcc
+	--cflags    ->  -I/home/smg/wang/TOOL/bin/netcdf_220/include 
+	--libs      -> -L/home/smg/wang/TOOL/bin/netcdf_220/lib -lnetcdf
+
+	--has-c++   -> no
+ 	--cxx       -> 
+ 	--has-c++4  -> no
+ 	--cxx4      -> 
+
+ 	--fc        -> 
+ 	--fflags    -> 
+ 	--flibs     -> 
+ 	--has-f90   -> no
+
+ 	--has-dap   -> yes
+ 	--has-nc2   -> yes
+ 	--has-nc4   -> no
+	--has-hdf5  -> no
+ 	--has-hdf4  -> no
+ 	--has-pnetcdf-> no
+
+ 	--prefix    -> /home/smg/wang/TOOL/bin/netcdf_220
+ 	--includedir-> /home/smg/wang/TOOL/bin/netcdf_220/include
+ 	--version   -> netCDF 4.3.3.1
+     In my case, /home/smg/wang/TOOL/bin/netcdf_220 is my PATH_TO_INSTALL
+	
+   2 Boost  (headers and compiled library) http://www.boost.org
+     The version Xin Wang uses is boost_1_59_0.
+     Although Boost is head-file library, some of the sub-libraries must be compiled.
+       
+     Particularly, "program_options system filesystem random thread" should be compiled.
+     Please do this:
+     $: ./bootstrap.sh --with-libraries=program_options,filesystem,system,random,thread
+     $: ./b2 --prefix=PATH_TO_INSTALL
+
+   3 CUDA > 6.5
+     The modified CURRENNT can be compiled with CUDA7.0, 8.0, 9.0, and 10.0.
+     This modified CURRENNT has covered the issues mentioned in
+     http://sourceforge.net/p/currennt/discussion/general/thread/df6eeece/
+     http://sourceforge.net/p/currennt/discussion/general/thread/e10ef414/
+
+---- To build CURRENNT execute:
+
+   $: mkdir build && cd build
+   $: cmake .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=XXX -DNETCDF_LIB=YYY
+   $: make
+   
+   XXX is the path of Boost (specified by --prefix during boost installation)
+   YYY is the path of netCDF library 
+   After compiling, the executable file 'currennt' will be in CURRENNT_codes/build
+
+   For trouble shooting:
+   1. If CUDA is not installed in the default path, you may see
+      "Could NOT find CUDA (missing: CUDA_INCLUDE_DIRS CUDA_CUDART_LIBRARY) ... ".
+
+      Then, please add this option with cmake
+      $: cmake .. -DCUDA_TOOLKIT_ROOT_DIR=XXX
+      where XXX is the path to CUDA on your machine.
+
+      For example, on my machine, it is
+      $: cmake .. -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda 
+
+   2. If CUDA does not support gcc on your machine, you may see
+      "...host_config.h:119:2: error: #error -- unsupported GNU version! gcc versions 
+      later than 6 are not supported!"
+
+      Then, please install gcc 6 or older versions.
+      Then, please use this option with cmake
+      $: cmake .. -DCMAKE_C_COMPILER=YYY
+      where YYY is the path to gcc on your machine
+
+      For example, on my machine, it is
+      $: cmake .. -DCMAKE_C_COMPILER=/usr/bin/gcc-5 -DBOOST_ ...
+      
+   Of course, you need to specify all the flags -D*** after cmake
+   $: cmake .. -DCUDA_TOOLKIT_ROOT_DIR=XXX -DCMAKE_C_COMPILER=YYY -DBOOST_ROOT=ZZZ
+
+
+---- To build CURRENNT execute for debugging:
+
+   $: mkdir build_debug && cd builde_debug
+   $: cmake ../ -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS=-g -DBOOST_ROOT -DNETCDF_LIB
+   $: make
+   
+   After that, you can use gdb to debug
+   $: gdb --args currennt XXXXXX
+   where XXXXXX is the string of arguments with which you want to debug.
+
+   If the debugging version is successfully built, you will see something like
+   ----
+   GNU gdb (GDB) 8.3
+   ...
+   Reading symbols from currennt
+   (gdb)
+   ----
+   
+During compiling, you might get many warnings on boost or other messages
+like 'Cannot tell what pointer points to, assuming global memory space' or
+'***operator()" was declared but never referenced'. 
+These are totally OK.

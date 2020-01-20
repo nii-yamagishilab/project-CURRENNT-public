@@ -252,7 +252,7 @@ namespace{
 
 		    // sine wavefor value of current time step
 		    if (periodicNFlag == NN_SIGGEN_PERIODIC_NOISE_DECAYED){
-			// for periodic, use cos 
+			// for periodic, use cos so that initial phase is the maximum value of cos waveform
 			sigValue = cos(spPhase) * f0Mag;
 		    }else{
 			// in default cases, use sin

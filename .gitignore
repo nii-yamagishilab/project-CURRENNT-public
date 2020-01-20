@@ -2,7 +2,7 @@ CURRENNT_codes/build
 CURRENNT_codes/build_debug
 CURRENNT_codes/build_temp
 CURRENNT_codes/build_debug_temp
-CURRENNT_codes/CMakeLists.txt
+CURRENNT_codes/CMakeLists.txt_old
 pyTools/binaryTools/readwrite.*
 pyTools/scripts/utilities-new/wavGen_STRAIGHT/Config.pm
 pyTools/scripts/utilities-new/wavGen_WORLD/Config.pm
