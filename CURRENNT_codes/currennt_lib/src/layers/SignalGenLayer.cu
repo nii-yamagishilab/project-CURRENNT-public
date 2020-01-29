@@ -1512,6 +1512,74 @@ namespace layers{
 	this->__allocateLocalMem();
     }
 
+    template <typename TDevice>
+    void SignalGenLayer<TDevice>::logAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+						bool flag_add)
+    {
+	// for output buffer
+	Layer<TDevice>::logAllBuffers(vecPoolMng, flag_add);
+
+	// noiseInput, phaseNoise
+	vecPoolMng.addOrRemoveNewVec(this->size(), flag_add);
+	vecPoolMng.addOrRemoveNewVec(this->size(), flag_add);
+
+	// uvflag, f0inHz
+	vecPoolMng.addOrRemoveNewVec(this->size()/this->size(), flag_add);
+	vecPoolMng.addOrRemoveNewVec(this->size()/this->size(), flag_add);
+
+	switch (this->getLayerMode()) {
+	case NN_SIGGEN_LAYER_MODE_NOISE_ONLY:
+	case NN_SIGGEN_LAYER_MODE_SINE_SIMPLE:
+	    break;
+	case NN_SIGGEN_LAYER_MODE_SINE_HARMO:
+	    // m_freqHmnBuff
+	    vecPoolMng.addOrRemoveNewVec(m_freqHmn, flag_add);	    
+	case NN_SIGGEN_LAYER_MODE_SINE_PHASE:
+	    // m_freqSignalBuff
+	    vecPoolMng.addOrRemoveNewVec(m_freqBins, flag_add);
+	    break;
+	default:
+	    break;
+	}
+    }
+    
+    template <typename TDevice>
+    void SignalGenLayer<TDevice>::swapAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+						 bool flag_get)
+    {
+	Layer<TDevice>::swapAllBuffers(vecPoolMng, flag_get);
+	
+	vecPoolMng.getSwapVector(m_noiseInput, this->getLayerID(), this->size(), flag_get);
+	vecPoolMng.getSwapVector(m_phaseNoise, this->getLayerID(), this->size(), flag_get);
+	
+	vecPoolMng.getSwapVector(m_uvflag, this->getLayerID(), 1, flag_get);
+	vecPoolMng.getSwapVector(m_f0inHz, this->getLayerID(), 1, flag_get);
+	
+	switch (this->getLayerMode()) {
+	case NN_SIGGEN_LAYER_MODE_NOISE_ONLY:
+	case NN_SIGGEN_LAYER_MODE_SINE_SIMPLE:
+	    break;
+	case NN_SIGGEN_LAYER_MODE_SINE_HARMO:
+	    vecPoolMng.getSwapVector(m_freqHmnBuff, this->getLayerID(), m_freqHmn, flag_get);
+	case NN_SIGGEN_LAYER_MODE_SINE_PHASE:
+	    vecPoolMng.getSwapVector(m_freqSignalBuff, this->getLayerID(), m_freqBins, flag_get);
+
+	    // for small memory, do the same as __allocate and __clearLocalMem
+	    if (flag_get){
+		m_freqErrorBuff.resize((m_freqBins + m_freqHmn) * this->parallelSequences(),
+				       0.0);
+		m_signalStatic.resize((m_freqBins + m_freqHmn + 1) * this->parallelSequences() * 2,
+				      0.0);
+	    }else{
+		m_freqErrorBuff.clear();  m_freqErrorBuff.shrink_to_fit();
+		m_signalStatic.clear();   m_signalStatic.shrink_to_fit();
+	    }
+	    
+	    break;
+	default:
+	    break;
+	}	
+    }
     
     template class SignalGenLayer<Cpu>;
     template class SignalGenLayer<Gpu>;

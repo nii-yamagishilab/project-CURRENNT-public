@@ -740,6 +740,49 @@ namespace layers {
 	this->__allocateLocalMem();
     }
 
+    template <typename TDevice, typename TActFn>
+    void LayerNormLayer<TDevice, TActFn>::logAllBuffers(
+			helpers::vecPoolManager<TDevice> &vecPoolMng,
+			bool flag_add)
+    {
+	// for output buffer
+	Layer<TDevice>::logAllBuffers(vecPoolMng, flag_add);
+	// for m_stats
+	vecPoolMng.addOrRemoveNewVec(this->size()/this->size() * 2, flag_add);
+	// for m_buff
+	vecPoolMng.addOrRemoveNewVec(this->size(), flag_add);
+	// for outNormed
+	vecPoolMng.addOrRemoveNewVec(this->size(), flag_add);
+	// for oneVector
+	vecPoolMng.addOrRemoveNewVec(this->size()/this->size(), flag_add);
+
+    }
+    
+    template <typename TDevice, typename TActFn>
+    void LayerNormLayer<TDevice, TActFn>::swapAllBuffers(
+			helpers::vecPoolManager<TDevice> &vecPoolMng,
+			bool flag_get)
+    {
+	Layer<TDevice>::swapAllBuffers(vecPoolMng, flag_get);
+	// for m_buff
+	vecPoolMng.getSwapVector(m_stats,
+				 this->getLayerID(), 2,            flag_get);
+	// for m_buff
+	vecPoolMng.getSwapVector(m_buff,
+				 this->getLayerID(), this->size(), flag_get);
+	// for outNormed
+	vecPoolMng.getSwapVector(m_outNormed,
+				 this->getLayerID(), this->size(), flag_get);
+	// for oneVector
+	vecPoolMng.getSwapVector(m_oneVector,
+				 this->getLayerID(), 1,            flag_get);
+
+	if (flag_get){
+	    thrust::fill(m_oneVector.begin(), m_oneVector.end(), 1.0);
+	    thrust::fill(m_stats.begin(), m_stats.end(), 0.0);
+	}
+	    
+    }
     
     // explicit template instantiations
     template class LayerNormLayer<Cpu, activation_functions::Tanh>;

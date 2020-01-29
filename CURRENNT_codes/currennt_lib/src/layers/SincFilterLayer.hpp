@@ -123,6 +123,12 @@ namespace layers {
 	void clearAllBuffers();
 
 	void resizeAllBuffers(const int timeLength);
+
+	virtual void logAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+				   bool flag_add);
+	
+	virtual void swapAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+				    bool flag_get);	
 	
     };
 

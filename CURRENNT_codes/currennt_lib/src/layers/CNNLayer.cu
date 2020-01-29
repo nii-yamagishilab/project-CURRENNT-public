@@ -2,14 +2,9 @@
  * This file is an addtional component of CURRENNT. 
  * Xin WANG
  * National Institute of Informatics, Japan
- * 2016
+ * 2016 - 2020
  *
- * This file is part of CURRENNT. 
- * Copyright (c) 2013 Johannes Bergmann, Felix Weninger, Bjoern Schuller
- * Institute for Human-Machine Communication
- * Technische Universitaet Muenchen (TUM)
- * D-80290 Munich, Germany
- *
+ * This file is part of CURRENNT.
  *
  * CURRENNT is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1699,7 +1694,28 @@ namespace layers {
 	this->resizeOutputBuffer(timeLength * this->parallelSequences() * this->size());
 	this->__allocateLocalMem();
     }
-
+    
+    template <typename TDevice>
+    void CNNLayer<TDevice>::logAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+					  bool flag_add)
+    {
+	// for output buffer
+	Layer<TDevice>::logAllBuffers(vecPoolMng, flag_add);
+	// for m_conBuffer
+	vecPoolMng.addOrRemoveNewVec(m_winTotalL, flag_add);
+    }
+    
+    template <typename TDevice>
+    void CNNLayer<TDevice>::swapAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+					   bool flag_get)
+    {
+	Layer<TDevice>::swapAllBuffers(vecPoolMng, flag_get);
+	
+	// for m_conBuffer
+	vecPoolMng.getSwapVector(m_conBuffer,
+				 this->getLayerID(), m_winTotalL, flag_get);
+    }
+    
     template class CNNLayer<Gpu>;
     template class CNNLayer<Cpu>;
 }

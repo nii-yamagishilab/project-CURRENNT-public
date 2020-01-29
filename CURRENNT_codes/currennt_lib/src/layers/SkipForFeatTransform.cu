@@ -318,6 +318,27 @@ namespace layers{
 	}	
     }    
 
+
+    template <typename TDevice>
+    void SkipForFeatTrans<TDevice>::logAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+					      bool flag_add)
+    {
+	if (!m_virtualLayer){
+	    Layer<TDevice>::logAllBuffers(vecPoolMng, flag_add);
+	}
+    }
+
+    template <typename TDevice>
+    void SkipForFeatTrans<TDevice>::swapAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+					       bool flag_get)
+    {
+	if (!m_virtualLayer){
+	    Layer<TDevice>::swapAllBuffers(vecPoolMng, flag_get);
+	}	
+    }    
+
+
+    
     template class SkipForFeatTrans<Cpu>;
     template class SkipForFeatTrans<Gpu>;
     

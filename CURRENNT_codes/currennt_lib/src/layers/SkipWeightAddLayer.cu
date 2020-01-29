@@ -508,6 +508,20 @@ namespace layers{
 	this->resizeOutputBuffer(timeLength * this->parallelSequences() * this->size());	
     }    
 
+    template <typename TDevice>
+    void SkipWeightAddLayer<TDevice>::logAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+						    bool flag_add)
+    {
+	Layer<TDevice>::logAllBuffers(vecPoolMng, flag_add);
+    }
+
+    template <typename TDevice>
+    void SkipWeightAddLayer<TDevice>::swapAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+						     bool flag_get)
+    {
+	Layer<TDevice>::swapAllBuffers(vecPoolMng, flag_get);
+    }
+    
     template class SkipWeightAddLayer<Cpu>;
     template class SkipWeightAddLayer<Gpu>;
     

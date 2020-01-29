@@ -296,11 +296,12 @@ namespace {
 namespace layers {
 
     template <typename TDevice, typename TActFn>
-    BatchNormNewLayer<TDevice, TActFn>::BatchNormNewLayer(const helpers::JsonValue &layerChild, 
-							const helpers::JsonValue &weightsSection, 
-							Layer<TDevice> &precedingLayer,
-							int             maxSeqLength,
-							int             layerID)
+    BatchNormNewLayer<TDevice, TActFn>::BatchNormNewLayer(
+	const helpers::JsonValue &layerChild, 
+	const helpers::JsonValue &weightsSection, 
+	Layer<TDevice> &precedingLayer,
+	int             maxSeqLength,
+	int             layerID)
         : TrainableLayer<TDevice>(layerChild, weightsSection, 0, 4,
 				  precedingLayer, maxSeqLength, layerID)
     {
@@ -308,10 +309,10 @@ namespace layers {
 	if (this->size() != this->precedingLayer().size())
 	    throw std::runtime_error("layernorm layer size != preceding layer size");
 	
-	/* ------- initialization ------- */
+	// initialization
 	this->__batchnorm_ini(weightsSection);
 	
-	/* ------- allocate memory ------ */
+	// allocate memory
 	this->__allocateLocalMem();
     }
 
@@ -329,7 +330,7 @@ namespace layers {
 	// all-one vector for vector summation
 	tmp.resize(this->outputs().size()/this->size(), 1.0);
 	m_oneVector = tmp;
-	    
+	
 	// a tempopary buff
 	m_buff      = this->outputs();
 	m_outNormed = this->outputs();
@@ -403,8 +404,6 @@ namespace layers {
         }    
         return s;
     }
-
-
     
     template <typename TDevice, typename TActFn>
     void BatchNormNewLayer<TDevice, TActFn>::__batchnorm_computeForwardPass(const int nnState)
@@ -835,6 +834,43 @@ namespace layers {
 	this->__allocateLocalMem();
     }
 
+
+    template <typename TDevice, typename TActFn>
+    void BatchNormNewLayer<TDevice, TActFn>::logAllBuffers(
+			helpers::vecPoolManager<TDevice> &vecPoolMng,
+			bool flag_add)
+    {
+	// for output buffer
+	Layer<TDevice>::logAllBuffers(vecPoolMng, flag_add);
+	// for m_buff
+	vecPoolMng.addOrRemoveNewVec(this->size(), flag_add);
+	// for outNormed
+	vecPoolMng.addOrRemoveNewVec(this->size(), flag_add);
+	// for oneVector
+	vecPoolMng.addOrRemoveNewVec(this->size()/this->size(), flag_add);
+	
+    }
+    
+    template <typename TDevice, typename TActFn>
+    void BatchNormNewLayer<TDevice, TActFn>::swapAllBuffers(
+			helpers::vecPoolManager<TDevice> &vecPoolMng,
+			bool flag_get)
+    {
+	Layer<TDevice>::swapAllBuffers(vecPoolMng, flag_get);
+	
+	// for m_buff
+	vecPoolMng.getSwapVector(m_buff,
+				 this->getLayerID(), this->size(), flag_get);
+	// for outNormed
+	vecPoolMng.getSwapVector(m_outNormed,
+				 this->getLayerID(), this->size(), flag_get);
+	// for oneVector
+	vecPoolMng.getSwapVector(m_oneVector,
+				 this->getLayerID(), 1,            flag_get);
+	if (flag_get)
+	    thrust::fill(m_oneVector.begin(), m_oneVector.end(), 1.0);
+    }
+    
     
     // explicit template instantiations
     template class BatchNormNewLayer<Cpu, activation_functions::Tanh>;

@@ -258,20 +258,18 @@ namespace layers {
 	m_mat_v = tmp;
 	m_mat_k = tmp;
 	m_mat_q = tmp;
-
 	m_grad_buf = tmp;
+
 	
 	tmp.resize((this->outputs().size()/this->size()/this->parallelSequences()) *
 		   (this->outputs().size()/this->size()),
 		   0.0);
-	
 	m_align = tmp;
 	m_align_grad = tmp;
 
 
 	tmp.resize(this->outputs().size()/this->size(),0.0);
 	m_softmax_buf = tmp;
-
 	m_one_vector = tmp;
 	thrust::fill(m_one_vector.begin(), m_one_vector.end(), 1.0);
     }
@@ -279,7 +277,17 @@ namespace layers {
     template <typename TDevice>
     void SelfAttentionLayer<TDevice>::__clearLocalMem()
     {
-	// to be implemented
+	m_mat_v.clear(); m_mat_v.shrink_to_fit();
+	m_mat_k.clear(); m_mat_k.shrink_to_fit();	
+	m_mat_q.clear(); m_mat_q.shrink_to_fit();
+	
+	m_grad_buf.clear(); m_grad_buf.shrink_to_fit();
+
+	m_align.clear(); m_align.shrink_to_fit();
+	m_align_grad.clear(); m_align_grad.shrink_to_fit();
+	m_softmax_buf.clear(); m_softmax_buf.shrink_to_fit();
+	
+	m_one_vector.clear(); m_one_vector.shrink_to_fit();
 	return;
     }
 
@@ -655,7 +663,58 @@ namespace layers {
 	this->__allocateLocalMem();
     }
 
+    template <typename TDevice>
+    void SelfAttentionLayer<TDevice>::logAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+						    bool flag_add)
+    {
+	// for output buffer
+	Layer<TDevice>::logAllBuffers(vecPoolMng, flag_add);
+	// for m_mat_v, mat_k, mat_q, grad_buf
+	vecPoolMng.addOrRemoveNewVec(this->size(), flag_add);
+	vecPoolMng.addOrRemoveNewVec(this->size(), flag_add);
+	vecPoolMng.addOrRemoveNewVec(this->size(), flag_add);
+	vecPoolMng.addOrRemoveNewVec(this->size(), flag_add);
+	
+	// for align and align_grad
+	vecPoolMng.addOrRemoveNewVec(this->maxSeqLength(), flag_add);
+	vecPoolMng.addOrRemoveNewVec(this->maxSeqLength(), flag_add);	
+	
+	// for oneVector and m_softmax_buf
+	vecPoolMng.addOrRemoveNewVec(this->size()/this->size(), flag_add);
+	vecPoolMng.addOrRemoveNewVec(this->size()/this->size(), flag_add);
+    }
     
+    template <typename TDevice>
+    void SelfAttentionLayer<TDevice>::swapAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+						     bool flag_get)
+    {
+	Layer<TDevice>::swapAllBuffers(vecPoolMng, flag_get);
+	// for m_mat_v, k, q, grad_buf
+	vecPoolMng.getSwapVector(m_mat_v,
+				 this->getLayerID(), this->size(), flag_get);
+	vecPoolMng.getSwapVector(m_mat_k,
+				 this->getLayerID(), this->size(), flag_get);
+	vecPoolMng.getSwapVector(m_mat_q,
+				 this->getLayerID(), this->size(), flag_get);
+	vecPoolMng.getSwapVector(m_grad_buf,
+				 this->getLayerID(), this->size(), flag_get);
+
+	// for align and align_grad
+	vecPoolMng.getSwapVector(m_align,
+				 this->getLayerID(), this->maxSeqLength(), flag_get);
+	vecPoolMng.getSwapVector(m_align_grad,
+				 this->getLayerID(), this->maxSeqLength(), flag_get);
+
+	// for oneVector
+	vecPoolMng.getSwapVector(m_one_vector,
+				 this->getLayerID(), 1,            flag_get);
+	vecPoolMng.getSwapVector(m_softmax_buf,
+				 this->getLayerID(), 1,            flag_get);
+
+	if (flag_get)
+	    thrust::fill(m_one_vector.begin(), m_one_vector.end(), 1.0);
+    }
+
     // explicit template instantiations
     template class SelfAttentionLayer<Cpu>;
     template class SelfAttentionLayer<Gpu>;

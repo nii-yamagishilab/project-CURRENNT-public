@@ -2,14 +2,9 @@
  * This file is an addtional component of CURRENNT. 
  * Xin WANG
  * National Institute of Informatics, Japan
- * 2016
+ * 2016 - 2020
  *
  * This file is part of CURRENNT. 
- * Copyright (c) 2013 Johannes Bergmann, Felix Weninger, Bjoern Schuller
- * Institute for Human-Machine Communication
- * Technische Universitaet Muenchen (TUM)
- * D-80290 Munich, Germany
- *
  *
  * CURRENNT is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -50,10 +45,13 @@
 #include <boost/shared_ptr.hpp>
 #include <boost/algorithm/string.hpp>
 #include <vector>
- 
-#define DISTILLING_TYPE_LIKELIHOOD    0  // Assume Gaussian, only consider the mean
-#define DISTILLING_TYPE_KLD_GAUSSIAN  1  // TYPE 0 + beta * MSE
-#define DISTILLING_TYPE_AFTER_TRAINING -1 // 
+
+// Assume Gaussian, only consider the mean
+#define DISTILLING_TYPE_LIKELIHOOD      0
+// TYPE 0 + beta * MSE
+#define DISTILLING_TYPE_KLD_GAUSSIAN    1
+// 
+#define DISTILLING_TYPE_AFTER_TRAINING -1 
 
 namespace internal{
 namespace{
@@ -1295,8 +1293,21 @@ namespace layers{
     {
 	// do nothing for distilling layer
     }
-	
     
+    template <typename TDevice>
+    void DistillingLayer<TDevice>::logAllBuffers(
+		helpers::vecPoolManager<TDevice> &vecPoolMng,
+		bool flag_add)
+    {
+    }
+    
+    template <typename TDevice>
+    void DistillingLayer<TDevice>::swapAllBuffers(
+		helpers::vecPoolManager<TDevice> &vecPoolMng,
+		bool flag_get)
+    {
+    }
+	    
     
     template <typename TDevice>
     real_t DistillingLayer<TDevice>::intermediateError()

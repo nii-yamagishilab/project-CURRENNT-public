@@ -1924,6 +1924,86 @@ namespace layers {
     }
 
     
+    template <typename TDevice, typename TActFn>
+    void FeedForwardLayer<TDevice, TActFn>::logAllBuffers(
+			helpers::vecPoolManager<TDevice> &vecPoolMng,
+			bool flag_add)
+    {
+	// for output buffer
+	Layer<TDevice>::logAllBuffers(vecPoolMng, flag_add);
+	
+	if (this->m_batchNorm){
+	    // for m_buff
+	    vecPoolMng.addOrRemoveNewVec(this->size(), flag_add);
+	    // for outNormed
+	    vecPoolMng.addOrRemoveNewVec(this->size(), flag_add);
+	    // for oneVector
+	    vecPoolMng.addOrRemoveNewVec(this->size()/this->size(), flag_add);
+
+	}else if (this->m_layerNorm){
+	    // for m_stats
+	    vecPoolMng.addOrRemoveNewVec(this->size()/this->size() * 2, flag_add);
+	    // for m_buff
+	    vecPoolMng.addOrRemoveNewVec(this->size(), flag_add);
+	    // for outNormed
+	    vecPoolMng.addOrRemoveNewVec(this->size(), flag_add);
+	    // for oneVector
+	    vecPoolMng.addOrRemoveNewVec(this->size()/this->size(), flag_add);
+	    
+	}else{
+	    // nothing for weight normalization
+	}	
+    }
+    
+    template <typename TDevice, typename TActFn>
+    void FeedForwardLayer<TDevice, TActFn>::swapAllBuffers(
+			helpers::vecPoolManager<TDevice> &vecPoolMng,
+			bool flag_get)
+    {
+	Layer<TDevice>::swapAllBuffers(vecPoolMng, flag_get);
+
+	if (this->m_batchNorm){
+	    // for m_buff
+	    vecPoolMng.getSwapVector(m_buff,
+				     this->getLayerID(), this->size(), flag_get);
+	    // for outNormed
+	    vecPoolMng.getSwapVector(m_outNormed,
+				     this->getLayerID(), this->size(), flag_get);
+	    // for oneVector
+	    vecPoolMng.getSwapVector(m_oneVector,
+				     this->getLayerID(), 1,            flag_get);
+
+	    if (flag_get)
+		thrust::fill(m_oneVector.begin(), m_oneVector.end(), 1.0);
+	    
+	}else if (this->m_layerNorm){
+	    // for m_buff
+	    vecPoolMng.getSwapVector(m_stats,
+				     this->getLayerID(), 2,            flag_get);
+	    // for m_buff
+	    vecPoolMng.getSwapVector(m_buff,
+				     this->getLayerID(), this->size(), flag_get);
+	    // for outNormed
+	    vecPoolMng.getSwapVector(m_outNormed,
+				     this->getLayerID(), this->size(), flag_get);
+	    // for oneVector
+	    vecPoolMng.getSwapVector(m_oneVector,
+				     this->getLayerID(), 1,            flag_get);
+
+	    if (flag_get){
+		thrust::fill(m_oneVector.begin(), m_oneVector.end(), 1.0);
+		thrust::fill(m_stats.begin(), m_stats.end(), 0.0);
+	    }
+	}else{
+	    // nothing for weight normalization
+	}
+	
+	
+    }
+
+
+    
+    
     // explicit template instantiations
     template class FeedForwardLayer<Cpu, activation_functions::Tanh>;
     template class FeedForwardLayer<Gpu, activation_functions::Tanh>;

@@ -39,6 +39,7 @@
 
 #include "helpers/JsonClasses.hpp"
 #include "helpers/dataProcess.hpp"
+#include "helpers/beamSearcher.hpp"
 #include "MacroDefine.hpp"
 
 #include "helpers/misFuncs.hpp"
@@ -70,517 +71,6 @@
 #define NETWORK_WAVENET_SAVE_NO 0         // not save memory in WaveNet
 #define NETWORK_WAVENET_SAVE_AR 1         // save memory for AR WaveNet
 #define NETWORK_WAVENET_SAVE_MA 2         // save memory for Non-AR WaveModel
-
-/* ----- Definition for beam-search generation ----- */
-/*   Internal class defined for NeuralNetwork only   */
-/* --------------------------------------------------*/
-namespace beamsearch{
-
-    // Search state
-    template <typename TDevice>
-    class searchState
-    {
-	typedef typename TDevice::real_vector real_vector;
-	typedef typename Cpu::real_vector     cpu_real_vec;
-	typedef typename TDevice::int_vector  int_vector;
-	typedef typename Cpu::int_vector      cpu_int_vec;
-
-    private:
-	int              m_stateID;    // ID of the current state
-	real_t           m_prob;       // probability
-	int              m_timeStep;
-	cpu_int_vec      m_stateTrace; // trace of the state ID
-	cpu_real_vec     m_probTrace;  // trace of the probability distribution
-
-	std::vector<int>          m_netStateSize;   // pointer in m_netState
-	std::vector<cpu_real_vec> m_netState;     // hidden variables of the network
-	
-	
-    public:
-	searchState();
-	searchState(std::vector<int> &netStateSize, const int maxSeqLength, const int stateNM);
-	~searchState();
-
-	const int      getStateID();
-	const real_t   getProb();
-	      int      getStateID(const int id);
-	      real_t   getProb(const int id);
-	const int      getTimeStep();
-	cpu_int_vec&    getStateTrace();
-	cpu_real_vec&   getProbTrace();
-	cpu_real_vec&   getNetState(const int id);
-	
-	void setStateID(const int stateID);
-	void setTimeStep(const int timeStep);
-	void setProb(const real_t prob);
-	void mulProb(const real_t prob);
-	void setStateTrace(const int time, const int stateID);
-	void setProbTrace(const int time, const real_t prob);
-	void setNetState(const int layerID, cpu_real_vec& state);
-	void liteCopy(searchState<TDevice>& sourceState);
-	void fullCopy(searchState<TDevice>& sourceState);
-	void print();
-    };
-
-    template <typename TDevice>
-    searchState<TDevice>::searchState()
-	: m_stateID(-1)
-	, m_prob(1.0)
-	, m_timeStep(-1)
-    {
-	m_netState.clear();
-	m_stateTrace.clear();
-	m_probTrace.clear();
-	m_netStateSize.clear();
-    }
-    
-    template <typename TDevice>
-    searchState<TDevice>::searchState(std::vector<int> &netStateSize,
-				      const int maxSeqLength, const int stateNM)
-	: m_stateID(-1)
-	, m_prob(0.0)
-	, m_timeStep(-1)
-    {
-	m_netState.resize(netStateSize.size());
-	
-	cpu_real_vec tmp;
-	int tmpBuf = 0;
-	for (int i = 0; i < netStateSize.size(); i++) {
-	    tmpBuf += netStateSize[i];
-	    tmp.resize(netStateSize[i], 0.0);
-	    m_netState[i] = tmp;
-	}
-
-	m_netStateSize = netStateSize;
-
-	cpu_real_vec tmp2(maxSeqLength * stateNM, 0.0);
-	m_probTrace = tmp2;
-
-	cpu_int_vec tmp3(maxSeqLength, 0);
-	m_stateTrace = tmp3;
-	
-    }
-    
-    template <typename TDevice>
-    searchState<TDevice>::~searchState()
-    {
-    }
-
-    template <typename TDevice>
-    const int searchState<TDevice>::getStateID()
-    {
-	return m_stateID;
-    }
-
-    template <typename TDevice>
-    const real_t searchState<TDevice>::getProb()
-    {
-	return m_prob;
-    }
-    
-    template <typename TDevice>
-    const int searchState<TDevice>::getTimeStep()
-    {
-	return m_timeStep;
-    }
-
-    template <typename TDevice>
-    int searchState<TDevice>::getStateID(const int id)
-    {
-	if (id >= m_stateTrace.size())
-	    throw std::runtime_error("state ID is larger than expected");
-	return m_stateTrace[id];
-    }
-
-    template <typename TDevice>
-    typename searchState<TDevice>::cpu_int_vec& searchState<TDevice>::getStateTrace()
-    {
-	return m_stateTrace;
-    }
-
-    template <typename TDevice>
-    typename searchState<TDevice>::cpu_real_vec& searchState<TDevice>::getProbTrace()
-    {
-	return m_probTrace;
-    }
-
-    template <typename TDevice>
-    void searchState<TDevice>::liteCopy(searchState<TDevice>& sourceState)
-    {
-	m_stateID    = sourceState.getStateID();
-	m_prob       = sourceState.getProb();
-	m_timeStep   = sourceState.getTimeStep();
-	thrust::copy(sourceState.getStateTrace().begin(),
-		     sourceState.getStateTrace().end(), m_stateTrace.begin());
-	thrust::copy(sourceState.getProbTrace().begin(),
-		     sourceState.getProbTrace().end(), m_probTrace.begin());
-    }
-
-    template <typename TDevice>
-    void searchState<TDevice>::fullCopy(searchState<TDevice>& sourceState)
-    {
-	m_stateID    = sourceState.getStateID();
-	m_prob       = sourceState.getProb();
-	m_timeStep   = sourceState.getTimeStep();
-	thrust::copy(sourceState.getStateTrace().begin(),
-		     sourceState.getStateTrace().end(), m_stateTrace.begin());
-	thrust::copy(sourceState.getProbTrace().begin(),
-		     sourceState.getProbTrace().end(), m_probTrace.begin());
-	for (int i = 0; i < m_netStateSize.size(); i++){
-	    this->setNetState(i, sourceState.getNetState(i));
-	}
-    }
-
-    template <typename TDevice>
-    real_t searchState<TDevice>::getProb(const int id)
-    {
-	if (id >= m_probTrace.size())
-	    throw std::runtime_error("prob ID is larger than expected");
-	return m_probTrace[id];
-    }
-
-    template <typename TDevice>
-    typename searchState<TDevice>::cpu_real_vec& searchState<TDevice>::getNetState(
-	const int id)
-    {
-	if (id >= m_netStateSize.size())
-	    throw std::runtime_error("layer ID is larger than expected");
-	return m_netState[id];
-    }
-    
-    template <typename TDevice>
-    void searchState<TDevice>::setStateID(const int stateID)
-    {
-	m_stateID = stateID;
-    }
-
-    template <typename TDevice>
-    void searchState<TDevice>::setTimeStep(const int timeStep)
-    {
-	m_timeStep = timeStep;
-    }
-
-    template <typename TDevice>
-    void searchState<TDevice>::setProb(const real_t prob)
-    {
-	m_prob = prob;
-    }
-
-    template <typename TDevice>
-    void searchState<TDevice>::mulProb(const real_t prob)
-    {
-	if (prob < 1.1754944e-038f)
-	    m_prob += (-1e30f);
-	else
-	    m_prob += std::log(prob);
-    }
-    
-    template <typename TDevice>
-    void searchState<TDevice>::setStateTrace(const int time, const int stateID)
-    {
-	if (time >= m_stateTrace.size())
-	    throw std::runtime_error("setStateTrace, time is larger than expected");
-	m_stateTrace[time] = stateID;
-    }
-
-    template <typename TDevice>
-    void searchState<TDevice>::setProbTrace(const int time, const real_t prob)
-    {
-	if (time >= m_probTrace.size())
-	    throw std::runtime_error("setProbTrace, time is larger than expected");
-	m_probTrace[time] = prob;
-    }
-
-    template <typename TDevice>
-    void searchState<TDevice>::setNetState(const int layerID, cpu_real_vec& state)
-    {
-	if (layerID >= m_netStateSize.size())
-	    throw std::runtime_error("setNetState, time is larger than expected");
-	if (m_netStateSize[layerID] > 0)
-	    thrust::copy(state.begin(), state.begin()+m_netStateSize[layerID],
-			 m_netState[layerID].begin());
-    }
-
-    template <typename TDevice>
-    void searchState<TDevice>::print()
-    {
-	printf("%d:%d\t%f\t", m_timeStep, m_stateID, m_prob);
-	//printf("%d", m_stateTrace.size());
-	cpu_int_vec tmp = m_stateTrace;
-	for (int i = 0; i <= m_timeStep; i++)
-	    printf("%d ", tmp[i]);
-	printf("\n");
-    }
-    
-
-    //
-    struct sortUnit{
-	real_t prob;
-	int    idx;
-    };
-    
-    bool compareFunc(const sortUnit& a, const sortUnit& b){
-	return a.prob >= b.prob;
-    }
-
-    
-    // Macro search state
-    template <typename TDevice>
-    class searchEngine
-    {
-	typedef typename TDevice::real_vector real_vector;
-	typedef typename Cpu::real_vector cpu_real_vector;
-	typedef typename TDevice::int_vector  int_vector;
-	typedef typename Cpu::int_vector      cpu_int_vector;
-	
-    private:
-	std::vector<searchState<TDevice> > m_stateSeq;
-	std::vector<sortUnit> m_sortUnit;
-	
-	int m_beamSize;
-	int m_stateLength;
-	int m_validStateNum;
-	
-    public:
-	searchEngine(const int beamSize);	
-	~searchEngine();
-	
-
-	void setState(const int id, searchState<TDevice> &state);
-	void setSortUnit(const int id, searchState<TDevice> &state);
-	void setValidBeamSize(const int num);
-	
-	void addState(searchState<TDevice> &state);
-	void sortSet(const int size);
-	void printBeam();
-	
-	searchState<TDevice>& retrieveState(const int id);
-	int  getBeamSize();
-	int  getValidBeamSize();
-
-    };
-
-    
-    template <typename TDevice>
-    searchEngine<TDevice>::searchEngine(const int beamSize)
-	: m_beamSize(beamSize)
-	, m_stateLength(0)
-	, m_validStateNum(0)
-    {
-	m_stateSeq.clear();
-    }
-
-    template <typename TDevice>
-    searchEngine<TDevice>::~searchEngine()
-    {
-    }
-
-    template <typename TDevice>
-    void searchEngine<TDevice>::addState(searchState<TDevice> &state)
-    {
-	sortUnit tmp;
-	m_stateSeq.push_back(state);
-	m_sortUnit.push_back(tmp);
-    }
-
-    template <typename TDevice>
-    void searchEngine<TDevice>::setState(const int id, searchState<TDevice> &state)
-    {
-	if (id > m_stateSeq.size())
-	    throw std::runtime_error("beam search state not found");
-	m_stateSeq[id].fullCopy(state);
-    }
-    
-    template <typename TDevice>
-    void searchEngine<TDevice>::setSortUnit(const int id, searchState<TDevice> &state)
-    {
-	if (id > m_sortUnit.size())
-	    throw std::runtime_error("beam search state not found");
-	m_sortUnit[id].prob = state.getProb();
-	m_sortUnit[id].idx  = id;
-    }
-
-    template <typename TDevice>
-    void searchEngine<TDevice>::setValidBeamSize(const int num)
-    {
-	m_validStateNum = num;
-    }
-
-    template <typename TDevice>
-    int searchEngine<TDevice>::getBeamSize()
-    {
-	return m_beamSize;
-    }
-
-    template <typename TDevice>
-    int searchEngine<TDevice>::getValidBeamSize()
-    {
-	return m_validStateNum;
-    }
-
-    template <typename TDevice>
-    searchState<TDevice>& searchEngine<TDevice>::retrieveState(const int id)
-    {
-	if (id > m_stateSeq.size())
-	    throw std::runtime_error("beam search state not found");
-	return m_stateSeq[id];
-    }
-	
-    template <typename TDevice>
-    void searchEngine<TDevice>::sortSet(const int size)
-    {
-	m_validStateNum = (m_beamSize < size)?(m_beamSize):(size);
-	std::sort(m_sortUnit.begin(), m_sortUnit.begin() + size, compareFunc);
-	for (int i = 0; i < m_validStateNum; i++){
-	    if ((m_beamSize + m_sortUnit[i].idx) < m_stateSeq.size())
-		m_stateSeq[i] = m_stateSeq[m_beamSize + m_sortUnit[i].idx];
-	    else{
-		printf("beam search %d unit invalid", m_beamSize + m_sortUnit[i].idx);
-		throw std::runtime_error("beam search sort error");
-	    }
-	}
-    }
-
-    template <typename TDevice>
-    void searchEngine<TDevice>::printBeam()
-    {
-	for (int i = 0; i < m_validStateNum; i++)
-	    m_stateSeq[i].print();
-    }
-}
-
-
-namespace network_helpers{
-
-    layerDep::layerDep(const int layerID)
-    {
-	m_layerID = layerID;
-	m_fromwhich.clear();
-	m_towhich.clear();
-    }
-
-    layerDep::~layerDep()
-    {
-    }
-    
-    std::vector<int>& layerDep::get_towhich()
-    {
-	return m_towhich;
-    }
-
-    std::vector<int>& layerDep::get_fromwhich()
-    {
-	return m_fromwhich;
-    }
-
-    int layerDep::get_layerID()
-    {
-	return m_layerID;
-    }
-
-    void layerDep::add_towhich(std::vector<int> &outs)
-    {
-	m_towhich.insert(m_towhich.end(), outs.begin(), outs.end());
-    }
-
-    void layerDep::add_towhich(const int outs)
-    {
-	m_towhich.insert(m_towhich.end(), outs);
-    }
-
-    void layerDep::del_towhich(const int outs)
-    {
-	for (size_t idx=0; idx < m_towhich.size(); idx++)
-	    if (m_towhich[idx] == outs)
-		m_towhich[idx] = -1;
-    }
-
-    void layerDep::nul_towhich()
-    {
-	this->m_towhich.clear();
-    }
-
-    bool layerDep::empty_towhich()
-    {
-	bool any_val = true;
-	for (size_t idx=0; idx < m_towhich.size(); idx++)
-	    any_val = (m_towhich[idx]>0)?(false):(any_val);
-	return any_val;
-    }
-    
-    void layerDep::add_fromwhich(std::vector<int> &ins)
-    {
-	m_fromwhich.insert(m_fromwhich.end(), ins.begin(), ins.end());
-    }
-
-    void layerDep::add_fromwhich(const int ins)
-    {
-	m_fromwhich.insert(m_fromwhich.end(), ins);
-    }
-
-    void layerDep::del_fromwhich(const int ins)
-    {
-	for (size_t idx=0; idx < m_fromwhich.size(); idx++)
-	    if (m_fromwhich[idx] == ins)
-		m_fromwhich[idx] = -1;
-    }
-    
-    void layerDep::nul_fromwhich()
-    {
-	this->m_fromwhich.clear();
-    }
-
-    bool layerDep::empty_fromwhich()
-    {
-	bool any_val = true;
-	for (size_t idx=0; idx < m_fromwhich.size(); idx++)
-	    any_val = (m_fromwhich[idx]>0)?(false):(any_val);
-	return any_val;
-    }
-
-    networkDepMng::networkDepMng()
-    {
-    }
-
-    
-    networkDepMng::~networkDepMng()
-    {
-    }
-
-    std::vector<layerDep>& networkDepMng::get_layerDeps()
-    {
-	return m_layerDeps;
-    }
-
-    layerDep& networkDepMng::get_layerDep(const int layerID)
-    {
-	if (layerID < 0 || layerID >= m_layerDeps.size())
-	    throw std::runtime_error("\nget_layerDep: input layerId is out of range");
-	return m_layerDeps[layerID];
-    }
-    
-    void networkDepMng::build(const int layerNums)
-    {
-	m_layerDeps.reserve(layerNums);
-	for (int layerIdx = 0; layerIdx < layerNums; layerIdx++){
-	    layerDep tmp_layerDep(layerIdx);
-	    m_layerDeps.push_back(layerIdx);
-	}
-    }
-
-    void networkDepMng::add_layerDep(const int layerId, std::vector<int> depend_layerIDs)
-    {
-	if (layerId < 0 || layerId >= m_layerDeps.size())
-	    throw std::runtime_error("\nadd_layerDep: input layerId is out of range");
-	m_layerDeps[layerId].add_fromwhich(depend_layerIDs);
-	
-	BOOST_FOREACH (int depend_layerID, depend_layerIDs){
-	    if (depend_layerID < 0 || depend_layerID >= m_layerDeps.size())
-		throw std::runtime_error("\nadd_layerDep: depend layerId is out of range");
-	    m_layerDeps[depend_layerID].add_towhich(layerId);
-	}
-    }
-}
 
 
 namespace internal {
@@ -692,6 +182,43 @@ namespace {
 
 /* ----- Definition for NeuralNetwork  ----- */
 /* ------------------------------------------*/
+template <typename TDevice>
+void NeuralNetwork<TDevice>::__InitializeParameters()
+{
+    // all types of layer pointer/counter	
+    m_signalGenLayerId.clear();
+    m_normflowLayers.clear();
+    m_feedBackLayers.clear();
+    m_vaeLayers.clear();
+    m_distillingLayers.clear();
+    m_featTransNetRange.clear();
+    m_feedBackHiddenLayers.clear();
+    m_feedBackHiddenLayersTimeResos.clear();
+    m_interMetricLayers.clear();
+    m_specialFeedbackLayers.clear();
+    
+    
+    m_firstFeedBackLayer    = -1;     // Idx of the first feedback layer
+    m_middlePostOutputLayer = -1;     // Idx of the PostOutputLayer inside the network
+    m_featMatchLayer        = -1;     // Idx of the featMatching layer (for GAN)
+    m_vaeLayer              = -1;     // Idx of the VAE interface layer
+    
+    m_vaeNetworkType = VAENETWORKTYPE_0;
+	
+    m_trainingEpoch         = -1;     // initialize the training epoch counter
+    m_trainingFrac          = -1;     // initialize the training data counter
+    m_trainingState         = -1;     // initialize the training state of the network
+    
+    m_wavNetCoreFirstIdx    = -1;     // Idx of the first waveNet core module (for waveNet)
+    m_dftLayerIdx           = -1;     // index of DFT error layer
+    m_interWeaveIdx         = -1;
+    
+    m_waveNetMemSaveFlag    = NETWORK_WAVENET_SAVE_NO;
+	
+    // get a total number of layers
+    m_totalNumLayers = 0;
+
+}
 
 template <typename TDevice>
 void NeuralNetwork<TDevice>::__InitializeNetworkLayerIdx(const helpers::JsonDocument &jsonDoc)
@@ -712,37 +239,6 @@ void NeuralNetwork<TDevice>::__InitializeNetworkLayerIdx(const helpers::JsonDocu
                 throw std::runtime_error("Section 'weights' is not an object");
             weightsSection = helpers::JsonValue(&(*jsonDoc)["weights"]);
         }
-	
-	/* ------- Initialization ------- */
-	// all types of layer pointer/counter	
-	m_signalGenLayerId.clear();
-	m_normflowLayers.clear();
-	m_feedBackLayers.clear();
-	m_vaeLayers.clear();
-	m_distillingLayers.clear();
-	m_featTransNetRange.clear();
-	m_feedBackHiddenLayers.clear();
-	m_feedBackHiddenLayersTimeResos.clear();
-	m_interMetricLayers.clear();
-	m_specialFeedbackLayers.clear();
-
-	
-	m_firstFeedBackLayer    = -1;     // Idx of the first feedback layer
-	m_middlePostOutputLayer = -1;     // Idx of the PostOutputLayer inside the network
-	m_featMatchLayer        = -1;     // Idx of the featMatching layer (for GAN)
-	m_vaeLayer              = -1;     // Idx of the VAE interface layer
-
-	m_vaeNetworkType = VAENETWORKTYPE_0;
-	
-	m_trainingEpoch         = -1;     // initialize the training epoch counter
-	m_trainingFrac          = -1;     // initialize the training data counter
-	m_trainingState         = -1;     // initialize the training state of the network
-
-	m_wavNetCoreFirstIdx    = -1;     // Idx of the first waveNet core module (for waveNet)
-	m_dftLayerIdx           = -1;     // index of DFT error layer
-	m_interWeaveIdx         = -1;
-	
-	m_waveNetMemSaveFlag    = NETWORK_WAVENET_SAVE_NO;
 	
 	// get a total number of layers
 	m_totalNumLayers = 0;
@@ -1418,8 +914,12 @@ NeuralNetwork<TDevice>::NeuralNetwork(const helpers::JsonDocument &jsonDoc,
 				      int maxSeqLength,
 				      int inputSizeOverride,
 				      int outputSizeOverride)
+    : m_networkMng ()
+    , m_vecPoolMng (maxSeqLength, parallelSequences)
 {
-
+    // Initialzie a few parameters
+    this->__InitializeParameters();
+    
     // Initialize the network layer indices
     this->__InitializeNetworkLayerIdx(jsonDoc);
     
@@ -1434,7 +934,7 @@ NeuralNetwork<TDevice>::NeuralNetwork(const helpers::JsonDocument &jsonDoc,
 
     // create the dependency graph
     this->__CreateDependency();
-	
+
 }
 
 template <typename TDevice>
@@ -1460,7 +960,7 @@ void NeuralNetwork<TDevice>::printLayerDependecy()
 	}
 	
 	dotPlot::printDotHead(ofs);
-	BOOST_FOREACH (network_helpers::layerDep layerDep_tmp, this->m_networkMng.get_layerDeps()){
+	BOOST_FOREACH (helpers::layerDep layerDep_tmp, this->m_networkMng.get_layerDeps()){
 	    BOOST_FOREACH (int towhich, layerDep_tmp.get_towhich()){
 		dotPlot::printDotNode(ofs, layerDep_tmp.get_layerID(),
 				      m_layers[layerDep_tmp.get_layerID()]->name(),
@@ -1502,14 +1002,6 @@ layers::InputLayer<TDevice>& NeuralNetwork<TDevice>::inputLayer()
     return static_cast<layers::InputLayer<TDevice>&>(*m_layers.front());
 }
 
-/* Modify 04-08 to tap in the output of arbitary layer */
-/*template <typename TDevice>
-  layers::TrainableLayer<TDevice>& NeuralNetwork<TDevice>::outputLayer()
-  {
-    return static_cast<layers::TrainableLayer<TDevice>&>(*m_layers[m_totalNumLayers-2]);
-  }
-*/
-
 template <typename TDevice>
 layers::Layer<TDevice>& NeuralNetwork<TDevice>::outputLayer(const int layerID)
 {
@@ -1521,7 +1013,15 @@ layers::Layer<TDevice>& NeuralNetwork<TDevice>::outputLayer(const int layerID)
     // check
     if (tmpLayerID > (m_totalNumLayers-1))
 	throw std::runtime_error(std::string("Invalid output_tap ID (out of range)"));
-    
+
+    /* Modify 04-08 to tap in the output of arbitary layer */
+    /*template <typename TDevice>
+      layers::TrainableLayer<TDevice>& NeuralNetwork<TDevice>::outputLayer()
+      {
+      return static_cast<layers::TrainableLayer<TDevice>&>(*m_layers[m_totalNumLayers-2]);
+      }
+    */
+
     return (*m_layers[tmpLayerID]);
 }
 
@@ -2133,25 +1633,68 @@ void NeuralNetwork<TDevice>::__computeGenPass_LayerByLayer_mem(
 						const int curMaxSeqLength, 
 						const real_t generationOpt)
 {
-    // Make a copy of the network layer dependency
-    network_helpers::networkDepMng tmp_networkMng = this->m_networkMng;
-	
-    // mem save generation mode for Non-AR WaveModel
     int layerID = 0;
+
+    /**
+     * Step1. get the required GPU resources and allocate memory
+     */
+    if (m_vecPoolMng.empty()){
+	// get network dependency map
+	helpers::networkDepMng tmp_networkMng2 = this->m_networkMng;
+	
+	BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
+	    
+	    // only count layers that can be optimized
+	    if (this->flagLayerCanbeOptimizedMA(layerID)){
+		if (!(tmp_networkMng2.get_layerDep(layerID).empty_towhich())){
+		    layer->logAllBuffers(m_vecPoolMng, true);
+		}
+		
+		// release the memory of layers that send input data to this layer
+		BOOST_FOREACH (int fromwhich,
+			       tmp_networkMng2.get_layerDep(layerID).get_fromwhich()){
+		    
+		    if (this->flagLayerCanbeOptimizedMA(fromwhich)){
+			
+			tmp_networkMng2.get_layerDep(fromwhich).del_towhich(layerID);
+			
+			if (tmp_networkMng2.get_layerDep(fromwhich).empty_towhich())
+			    this->m_layers[fromwhich]->logAllBuffers(m_vecPoolMng, false);
+		    }
+		}
+		// Delete the dependency fromwhich
+		tmp_networkMng2.get_layerDep(layerID).nul_fromwhich();
+	    }	    
+	    layerID++;
+	}
+	m_vecPoolMng.createVecPool();
+    }
+
+
+    /**
+     * Step2. layer by layer generation with memory swap
+     */
+    
+    // get network dependency map
+    helpers::networkDepMng tmp_networkMng = this->m_networkMng;
+
+    // reset the layer counter
+    layerID = 0;
+    
+    // layer by layer generation mode for Non-AR WaveModel
     BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
 
 	// print out the index every 10 layers
 	if (layerID % 10 == 0) std::cout << layerID << " " << std::flush;
-
-	    
+	
 	if (!(this->flagLayerCanbeOptimizedMA(layerID))){	
 	    // This layer can not be optimized in memory, do normal propagation
 	    layer->loadSequences(fraction, m_trainingState);
-	    layer->computeForwardPass(m_trainingState);    
+	    layer->computeForwardPass(m_trainingState);
+	    
 	}else{
-
 	    // If this layer can be optimized, do the memory-save operation
-		
+	    
 	    // check each layer in fromwhich layers
 	    BOOST_FOREACH (int fromwhich,
 			   tmp_networkMng.get_layerDep(layerID).get_fromwhich()){
@@ -2159,13 +1702,14 @@ void NeuralNetwork<TDevice>::__computeGenPass_LayerByLayer_mem(
 		    throw std::runtime_error("Error from which");
 	    }
 
-	    if (tmp_networkMng.get_layerDep(layerID).empty_towhich()){
-		// no other layer needs the output of this layer, skip propagation
-	    }else{
-		layer->resizeAllBuffers(curMaxSeqLength);
+	    // allocate memory and do propagation
+	    if (!(tmp_networkMng.get_layerDep(layerID).empty_towhich())){
+		// layer->resizeAllBuffers(curMaxSeqLength);
+		layer->swapAllBuffers(m_vecPoolMng, true);
 		layer->loadSequences(fraction, m_trainingState);
 		layer->computeForwardPass(m_trainingState);
-	    }	
+	    }
+	    
 	    // release the memory of layers that send input data to this layer
 	    BOOST_FOREACH (int fromwhich,
 			   tmp_networkMng.get_layerDep(layerID).get_fromwhich()){
@@ -2174,16 +1718,21 @@ void NeuralNetwork<TDevice>::__computeGenPass_LayerByLayer_mem(
 		    // If the 'input' layer can be optimized
 		    // Delete dependency temporarily
 		    tmp_networkMng.get_layerDep(fromwhich).del_towhich(layerID);
+		    
 		    // If the 'input' layer is no longer needed by any layer, release the mem
-		    if (tmp_networkMng.get_layerDep(fromwhich).empty_towhich())
-			this->m_layers[fromwhich]->clearAllBuffers();
+		    if (tmp_networkMng.get_layerDep(fromwhich).empty_towhich()){
+			//this->m_layers[fromwhich]->clearAllBuffers();
+			this->m_layers[fromwhich]->swapAllBuffers(m_vecPoolMng, false);
+		    }
 		}
 	    }
+	    
 	    // Delete the dependency fromwhich
 	    tmp_networkMng.get_layerDep(layerID).nul_fromwhich();	    
 	}
 	layerID++;
     }
+    return;
 }
 
 template <typename TDevice>
@@ -2865,7 +2414,7 @@ void NeuralNetwork<TDevice>::__computeGenPass_special_NSF_FBH(
 
     // LayerByLayer_mem
     // Make a copy of the network layer dependency
-    network_helpers::networkDepMng tmp_networkMng = this->m_networkMng;
+    helpers::networkDepMng tmp_networkMng = this->m_networkMng;
 	
     int layerID = 0;
     BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
@@ -4147,12 +3696,6 @@ int NeuralNetwork<TDevice>::outputPatternSize(const real_t mdnoutput)
     }
     
 }
-
-template class beamsearch::searchEngine<Gpu>;
-template class beamsearch::searchEngine<Cpu>;
-
-template class beamsearch::searchState<Gpu>;
-template class beamsearch::searchState<Cpu>;
 
 // explicit template instantiations
 template class NeuralNetwork<Cpu>;

@@ -551,7 +551,18 @@ namespace layers{
     {
     }    
 
+    template <typename TDevice>
+    void InterWeaveLayer<TDevice>::logAllBuffers(
+		helpers::vecPoolManager<TDevice> &vecPoolMng, bool flag_add)
+    {
+    }
 
+    template <typename TDevice>
+    void InterWeaveLayer<TDevice>::swapAllBuffers(
+		helpers::vecPoolManager<TDevice> &vecPoolMng, bool flag_get)
+    {
+    }
+    
     template <typename TDevice>
     void InterWeaveLayer<TDevice>::linkTargetLayer(Layer<TDevice> &targetLayer)
     {

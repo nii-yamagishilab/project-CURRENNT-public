@@ -31,7 +31,10 @@
 #include "layers/vqLayer.hpp"
 
 #include "data_sets/DataSet.hpp"
+
 #include "helpers/JsonClassesForward.hpp"
+#include "helpers/layerDependency.hpp"
+#include "helpers/vecPoolManager.hpp"
 
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
@@ -47,55 +50,6 @@
  *
  * @param TDevice The computation device
  *********************************************************************************************************************/
-
-namespace network_helpers{
-
-    class layerDep
-    {
-    private:
-	int m_layerID;
-	std::vector<int> m_towhich;     // ID of layers which depends on this layer
-	std::vector<int> m_fromwhich;   // ID of layers on which this layer depends on
-	
-    public:
-	layerDep(const int layerID);
-	~layerDep();
-	
-	std::vector<int>& get_towhich();
-	std::vector<int>& get_fromwhich();
-	int get_layerID();
-
-	void add_towhich(std::vector<int> &outs);
-	void add_towhich(const int outs);
-	void del_towhich(const int outs);
-	void nul_towhich();
-	bool empty_towhich();
-	
-	void add_fromwhich(std::vector<int> &ins);
-	void add_fromwhich(const int ins);
-	void del_fromwhich(const int ins);
-	void nul_fromwhich();
-	bool empty_fromwhich();
-    };
-
-    // manage the dependency between layers of network
-    class networkDepMng
-    {
-    private:
-	std::vector<layerDep> m_layerDeps;
-
-    public:
-	networkDepMng();
-	~networkDepMng();
-	
-	void build(const int layerNums);
-	void add_layerDep(const int layerID, std::vector<int> depend_layerIDs);
-	std::vector<layerDep>& get_layerDeps();
-	layerDep& get_layerDep(const int layerID);
-    };
-
-}
-
 
 
 
@@ -163,16 +117,28 @@ private:
 
     int m_interWeaveIdx;
     
-    network_helpers::networkDepMng m_networkMng;
+    helpers::networkDepMng m_networkMng;
 
+    helpers::vecPoolManager<TDevice> m_vecPoolMng;
+    
+    // initialize parameters
+    void __InitializeParameters();
+    
     // initialize the layer indices by readong jsonDoc
     void __InitializeNetworkLayerIdx(const helpers::JsonDocument &jsonDoc);
+
+    // create the network structure
     void __CreateNetworkLayers(const helpers::JsonDocument &jsonDoc,
 			       int parallelSequences,  int maxSeqLength, int inputSizeOverride);
+    
+    // check the created layers
     void __CheckNetworkLayers();
+    
+    // link the layers 
     void __LinkNetworkLayers();
-    void __CreateDependency();
 
+    // create the dependency map
+    void __CreateDependency();
 
     // Training forward parts:
     //  layer by layer (normal mode)

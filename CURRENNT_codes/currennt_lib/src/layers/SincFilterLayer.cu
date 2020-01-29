@@ -714,6 +714,39 @@ namespace layers {
 	this->__allocateLocalMem();
     }
 
+    template <typename TDevice>
+    void SincFilterLayer<TDevice>::logAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+						bool flag_add)
+    {
+	// for output buffer
+	Layer<TDevice>::logAllBuffers(vecPoolMng, flag_add);
+	// m_sig_lp_buf, m_sig_hp_buf
+	vecPoolMng.addOrRemoveNewVec(this->size(), flag_add);
+	vecPoolMng.addOrRemoveNewVec(this->size(), flag_add);
+	// m_lp_coeff, m_hp_coeff
+	vecPoolMng.addOrRemoveNewVec(this->size() * m_num_tap, flag_add);
+	vecPoolMng.addOrRemoveNewVec(this->size() * m_num_tap, flag_add);
+	// m_coef_scale_buf
+	vecPoolMng.addOrRemoveNewVec(this->size() * 2, flag_add);
+    }
+
+    template <typename TDevice>
+    void SincFilterLayer<TDevice>::swapAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+						 bool flag_get)
+    {
+	Layer<TDevice>::swapAllBuffers(vecPoolMng, flag_get);
+	
+	vecPoolMng.getSwapVector(m_sig_lp_buf, this->getLayerID(), this->size(), flag_get);
+	vecPoolMng.getSwapVector(m_sig_hp_buf, this->getLayerID(), this->size(), flag_get);
+
+	vecPoolMng.getSwapVector(m_lp_coeff, this->getLayerID(),
+				 this->size() * m_num_tap, flag_get);
+	vecPoolMng.getSwapVector(m_hp_coeff, this->getLayerID(),
+				 this->size() * m_num_tap, flag_get);
+
+	vecPoolMng.getSwapVector(m_coef_scale_buf, this->getLayerID(),
+				 this->size() * 2, flag_get);
+    }
     
     // explicit template instantiations
     template class SincFilterLayer<Cpu>;

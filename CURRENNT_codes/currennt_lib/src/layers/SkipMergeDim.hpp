@@ -96,7 +96,11 @@ namespace layers {
 	void clearAllBuffers();
 
 	void resizeAllBuffers(const int timeLength);
-
+	
+	void logAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng, bool flag_add);
+	
+	void swapAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng, bool flag_get);
+	
 
     };
 

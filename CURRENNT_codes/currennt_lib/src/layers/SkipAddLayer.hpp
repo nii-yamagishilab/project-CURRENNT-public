@@ -49,7 +49,8 @@ namespace layers {
         
     private:
 
-	bool                         m_flagSkipInit; // this layer SkipInit or SkipAdd
+	// this layer SkipInit or SkipAdd
+	bool                         m_flagSkipInit; 
 	bool                         m_virtualLayer;
 	real_t                       m_noiseRatio;
 	std::string                  m_previousSkipStr;
@@ -105,6 +106,9 @@ namespace layers {
 
 	void resizeAllBuffers(const int timeLength);
 
+	void logAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng, bool flag_add);
+	
+	void swapAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng, bool flag_get);	
 
     };
 

@@ -2,14 +2,9 @@
  * This file is an addtional component of CURRENNT. 
  * Xin WANG
  * National Institute of Informatics, Japan
- * 2016
+ * 2016 - 2020
  *
  * This file is part of CURRENNT. 
- * Copyright (c) 2013 Johannes Bergmann, Felix Weninger, Bjoern Schuller
- * Institute for Human-Machine Communication
- * Technische Universitaet Muenchen (TUM)
- * D-80290 Munich, Germany
- *
  *
  * CURRENNT is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,23 +28,28 @@
 
 namespace layers {
 
-    /******************************************************************************************//**
+    /**********************************************************************//**
      * CNN layer 
-     *********************************************************************************************/
+     *************************************************************************/
     template <typename TDevice>
     class CNNLayer : public TrainableLayer<TDevice>
     {
+	// declaration
 	typedef typename TDevice::real_vector real_vector;
 	typedef typename Cpu::real_vector cpu_real_vector;
 	typedef typename TDevice::int_vector int_vector;
 	typedef typename Cpu::int_vector cpu_int_vector;
 
     protected:
-	int             m_winNumOrignal;  //
 	
-	cpu_int_vector  m_winWidth_H;     // filter dimension (width of the filter window)
-	int_vector      m_winWidth_D;     // (dimension = this->size())
-	std::string     m_winWidth_Opt;   //
+	int             m_winNumOrignal;
+
+	// filter dimension (width of the filter window)
+	cpu_int_vector  m_winWidth_H;
+	
+	// (dimension = this->size())
+	int_vector      m_winWidth_D;     
+	std::string     m_winWidth_Opt;   
 
 	cpu_int_vector  m_winWidth_Cum_H;   // cumsum of the filter dimension
 	int_vector      m_winWidth_Cum_D;   // cumsum of the filter dimension
@@ -109,15 +109,20 @@ namespace layers {
 	int             m_1DCNNOnly;        // whether the CNN is only 1-D
 
 	int             m_repeatpadding;    // repeat the elements on the boundary for padding
-	
+
+	/**
+	 * private methods to manage memory
+	 */ 
 	void  __allocateLocalMem();
+	
 	void  __clearLocalMem();
 	
     public:
 	// initializer and destructor
 	CNNLayer(const helpers::JsonValue &layerChild,
 		 const helpers::JsonValue &weightsSection,
-		 Layer<TDevice> &precedingLayer, int maxSeqLength, int layerID);
+		 Layer<TDevice> &precedingLayer,
+		 int maxSeqLength, int layerID);
 
 	virtual ~CNNLayer();
 
@@ -145,6 +150,13 @@ namespace layers {
 	void clearAllBuffers();
 
 	void resizeAllBuffers(const int timeLength);
+
+	
+	void logAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+			   bool flag_add);
+	
+	void swapAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+			    bool flag_get);	
 	
     };
     

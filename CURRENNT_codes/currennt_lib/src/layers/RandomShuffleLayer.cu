@@ -295,7 +295,19 @@ namespace layers{
     template <typename TDevice>
     void RandomShuffleLayer<TDevice>::resizeAllBuffers(const int timeLength)
     {
-    }    
+    }
+
+    template <typename TDevice>
+    void RandomShuffleLayer<TDevice>::logAllBuffers(
+		helpers::vecPoolManager<TDevice> &vecPoolMng, bool flag_add)
+    {
+    }
+
+    template <typename TDevice>
+    void RandomShuffleLayer<TDevice>::swapAllBuffers(
+		helpers::vecPoolManager<TDevice> &vecPoolMng, bool flag_get)
+    {
+    }
 
     template <typename TDevice>
     typename RandomShuffleLayer<TDevice>::real_vector& RandomShuffleLayer<TDevice>::__dataIndex()

@@ -2,14 +2,9 @@
  * This file is an addtional component of CURRENNT. 
  * Xin WANG
  * National Institute of Informatics, Japan
- * 2016
+ * 2016 - 2020
  *
  * This file is part of CURRENNT. 
- * Copyright (c) 2013 Johannes Bergmann, Felix Weninger, Bjoern Schuller
- * Institute for Human-Machine Communication
- * Technische Universitaet Muenchen (TUM)
- * D-80290 Munich, Germany
- *
  *
  * CURRENNT is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -53,13 +48,19 @@ namespace layers{
 	std::string     m_featConfig;
 	cpu_int_vector  m_featConfigVecH;
 	int_vector      m_featConfigVecD;
-	
-	cpu_int_vector  m_segBoundaryH;    // position of the end of segment (for each frame)
-	int_vector      m_segBoundaryD;
-	int             m_segLevel;        // which level to be used ?
 
-	real_vector     m_featMeanVec;     // buffer for mean feature of each segment
-	real_vector     m_featVarVec;     // buffer for mean feature of each segment
+	// position of the end of segment (for each frame)
+	cpu_int_vector  m_segBoundaryH;    
+	int_vector      m_segBoundaryD;
+	
+	// which level to be used ?
+	int             m_segLevel;        
+
+	// buffer for mean feature of each segment
+	real_vector     m_featMeanVec;
+	
+	// buffer for mean feature of each segment	
+	real_vector     m_featVarVec;    
 	
 	FeatExtract(
 	    const helpers::JsonValue &layerChild,
@@ -99,7 +100,7 @@ namespace layers{
 	void clearAllBuffers();
 
 	void resizeAllBuffers(const int timeLength);
-
+	
     };
     
 }

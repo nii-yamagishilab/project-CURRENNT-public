@@ -203,6 +203,18 @@ namespace layers {
     {
     }
 
+    template <typename TDevice>
+    void InterMetricLayer_sse<TDevice>::logAllBuffers(
+		helpers::vecPoolManager<TDevice> &vecPoolMng, bool flag_add)
+    {
+    }
+
+    template <typename TDevice>
+    void InterMetricLayer_sse<TDevice>::swapAllBuffers(
+		helpers::vecPoolManager<TDevice> &vecPoolMng, bool flag_get)
+    {
+    }
+
 
     
     // explicit template instantiations

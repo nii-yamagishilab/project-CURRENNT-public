@@ -541,7 +541,20 @@ namespace layers{
 	this->resizeOutputBuffer(timeLength * this->parallelSequences() * this->size());
     }    
 
-    
+    template <typename TDevice>
+    void SkipCatLayer<TDevice>::logAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+					      bool flag_add)
+    {
+	Layer<TDevice>::logAllBuffers(vecPoolMng, flag_add);
+    }
+
+    template <typename TDevice>
+    void SkipCatLayer<TDevice>::swapAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+					       bool flag_get)
+    {
+	Layer<TDevice>::swapAllBuffers(vecPoolMng, flag_get);
+    }    
+
     template class SkipCatLayer<Cpu>;
     template class SkipCatLayer<Gpu>;
     

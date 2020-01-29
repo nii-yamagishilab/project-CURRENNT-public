@@ -2,12 +2,7 @@
  * This file is an addtional component of CURRENNT. 
  * Xin WANG
  * National Institute of Informatics, Japan
- * 2016
- *
- * Copyright (c) 2013 Johannes Bergmann, Felix Weninger, Bjoern Schuller
- * Institute for Human-Machine Communication
- * Technische Universitaet Muenchen (TUM)
- * D-80290 Munich, Germany
+ * 2016 - 2020
  *
  * This file is part of CURRENNT.
  *
@@ -30,18 +25,17 @@
 
 #include "TrainableLayer.hpp"
 
-
 namespace layers {
 
-    /******************************************************************************************//**
+    /************************************************************************//**
      * Represents a feed forward layer in the neural network
      *
      * @param TDevice The computation device (Cpu or Gpu)
      * @param TActFn  The activation function to use
      * 
-     * This code is directly built based on FeedForwardLayer.hpp and FeedForwardLayer.cu
+     * This code is based on FeedForwardLayer.hpp and FeedForwardLayer.cu
      * Different from BatchNorm: this BatchNormNew layer has activation function
-     *********************************************************************************************/
+     *************************************************************************/
     template <typename TDevice, typename TActFn>
     class BatchNormNewLayer : public TrainableLayer<TDevice>
     {
@@ -50,21 +44,32 @@ namespace layers {
 	typedef typename TDevice::bool_vector bool_vector;
 	typedef typename TDevice::pattype_vector pattype_vector;
 
-	int  m_batchNormGenUseTrainMV;    // whether to use mean and std of training data to normalize
-	
-	real_vector m_stats;              // buffer to store mean and std
-	real_vector m_outNormed;          // normed data output without being scaled
-	
-	real_t      m_stdConst;           // const floor for the var
-	real_t      m_batchCnt;           // counter for batch normalization
-	
-	
-	int         m_preEpoch;           // epoch number counter
-	real_t      m_batchSize;          // number of data (frames) in a mini-batch
+	// whether to use mean and std of training data to normalize
+	int  m_batchNormGenUseTrainMV;    
 
-	real_vector m_oneVector;          // temporary buffer to store a all-one vector
-	real_vector m_buff;               // temporary buffer
+	// buffer to store mean and std
+	real_vector m_stats;
+	
+	// normed data output without being scaled
+	real_vector m_outNormed;          
 
+	// const floor for the var
+	real_t      m_stdConst;
+	
+	// counter for batch normalization
+	real_t      m_batchCnt;           
+	
+	// epoch number counter
+	int         m_preEpoch;
+	
+	// number of data (frames) in a mini-batch
+	real_t      m_batchSize;          
+
+	// temporary buffer to store a all-one vector
+	real_vector m_oneVector;
+	
+	// temporary buffer
+	real_vector m_buff;                
 
 
 	// common methods to allocate / release memory
@@ -77,11 +82,13 @@ namespace layers {
 	// forward computation (normal case, given one sequence of input)
 	void __batchnorm_computeForwardPass(const int nnState);
 	
-	// forward computation (online case, given one frame of input data per step)
-	void __batchnorm_computeForwardPass(const int timeStep, const int nnState,
-					    const int effTimeStart, const int effTimeEnd,
-					    const int shiftIn,      const int shiftOut);
-	
+	// forward computation (online case, given one frame of input data)
+	void __batchnorm_computeForwardPass(const int timeStep,
+					    const int nnState,
+					    const int effTimeStart,
+					    const int effTimeEnd,
+					    const int shiftIn,
+					    const int shiftOut);	
 
 	// backward computation sub-routines
 	void __batchnorm_computeBackwardPass(const int nnState);
@@ -91,7 +98,7 @@ namespace layers {
         /**
          * Constructs the Layer
          *
-         * @param layerChild     The layer child of the JSON configuration for this layer
+         * @param layerChild     The layer child of the JSON 
          * @param weightsSection The weights section of the JSON configuration
          * @param precedingLayer The layer preceding this one
          */
@@ -118,21 +125,19 @@ namespace layers {
          */
         virtual void computeForwardPass(const int nnState);
 
-         /**
+	/**
          * @see Layer::computeBackwardPass()
          */
         virtual void computeBackwardPass(const int nnState);
 
 	
-	/***
+	/** 
 	 * 
 	 */
 	virtual void computeForwardPass(const int timeStep, const int nnState);
 
 	virtual void computeBackwardPass(const int timeStep, const int nnState);
 	
-
-	// export
 	virtual void exportLayer(const helpers::JsonValue &layersArray, 
 				 const helpers::JsonAllocator &allocator) const;
 
@@ -141,13 +146,19 @@ namespace layers {
 	 */
 	virtual void reduceOutputBuffer();
 
-	virtual int outputBufPtrBias(const int timeStepTimesParallel, const int nnState);
+	virtual int outputBufPtrBias(const int timeStepTimesParallel,
+				     const int nnState);
 
 	void clearAllBuffers();
 
 	void resizeAllBuffers(const int timeLength);
 
 	
+	void logAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+			   bool flag_add);
+	
+	void swapAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+			    bool flag_get);	
     };
 
 } // namespace layers

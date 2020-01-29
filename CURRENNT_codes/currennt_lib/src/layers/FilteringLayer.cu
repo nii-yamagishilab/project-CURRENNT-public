@@ -759,7 +759,7 @@ namespace layers {
     template <typename TDevice>
     void FilteringLayer<TDevice>::resizeAllBuffers(const int timeLength)
     {
-	this->resizeOutputBuffer(timeLength * this->size());
+	this->resizeOutputBuffer(timeLength * this->parallelSequences() * this->size());
     }
 
     template class FilteringLayer<Cpu>;

@@ -26,80 +26,130 @@
 #include "../Types.hpp"
 #include "../data_sets/DataSetFraction.hpp"
 #include "../helpers/JsonClassesForward.hpp"
+#include "../helpers/vecPoolManager.hpp"
 
 #include <string>
 
 
 namespace layers {
 
-    /******************************************************************************************//**
+    /********************************************************************//**
      * Represents a layer in the neural network
      *
      * @param TDevice The computation device (Cpu or Gpu)
-     *********************************************************************************************/
+     ***********************************************************************/
     template <typename TDevice>
     class Layer
     {
+	// declaration of the vector type
         typedef typename TDevice::real_vector    real_vector;
         typedef typename TDevice::pattype_vector pattype_vector;
 	typedef typename Cpu::real_vector        cpu_real_vector;
 	typedef typename Cpu::pattype_vector     cpu_pattype_vector;
 	
     private:
+
+	/**
+	 * Fixed attributes of one layer 
+	 */
+	
+	// layer name
         const std::string m_name;
+
+	// layer size
         const int         m_size;
-        const int         m_parallelSequences;
-        const int         m_maxSeqLength;
-	const int         m_timeResolution;    // time resolution, >= 1
+	
+	// layer index
 	const int         m_layerID;
+
+	// number of utterances in one parallel processing
+        const int         m_parallelSequences;
+
+	// maximum utterance length in whole database
+        const int         m_maxSeqLength;
+
+	// time resolution (relative to time resolution of 1)
+	const int         m_timeResolution;
+
 	
-        int               m_curMaxSeqLength;
+	/**
+	 *   Atributes of one layer that can be changed 
+	 */
+	
+	// maximum utterance length in this training "batch"
+	int               m_curMaxSeqLength;
+
+	// minimum utterance length in this training "batch"
         int               m_curMinSeqLength;
+
+	// number of utterances in this training "batch"
         int               m_curNumSeqs;
-	int               m_layerMode;         //
-	
-        real_vector       m_outputs;
-        real_vector       m_outputErrors;
-        pattype_vector    m_patTypes;
-	
-	/* Add 16-02-22 Wang: for WE updating */
-	bool              m_InputWeUpdate;     // the whether layer is the input layer with WE 
-	                                       // to be updated ?
-	                                       // We can not define it in Trainablelayer 
-	                                       // because input layer only inherits from layer
-	cpu_real_vector   m_outputErrorsCopy;  // make a CPU copy
 
-	/* Add 16-09-28 Wang: the current training epoch */
-	int               m_currTrainingEpoch; // epoch number 
-	int               m_currTrainingFrac;  // frac number in each epoch
+	// a flag used by derived layer type
+	int               m_layerMode;        
 
+	// a string to indicate layer sub-type
+	std::string       m_layerFlag;
+
+	// index of current training epoch
+	int               m_currTrainingEpoch;
+
+	// index of currennt training "batch"
+	int               m_currTrainingFrac;
+
+	// flag to indicate the training / generation
 	bool              m_flagTrainingMode;
 
-	Layer<TDevice>   *m_precedingLayer;
-	Layer<TDevice>   *m_followingLayer;
-	
-	
-	/* Add 17-09-06 Wang: for optimizing the memory usage during generation */
+	// flag to indicate whether memory save mode is used
 	bool              m_flagSaveOutputMemory;
 
-	std::string       m_layerFlag;          // a general flag
+	// flag to indicate for word-embedding layer (obsolete)
+	bool              m_InputWeUpdate; 
 	
+		
+	/**
+	 * Data buffer
+	 */
+
+	// output of this layer
+        real_vector       m_outputs;
+
+	// training error w.r.t output of this layer
+        real_vector       m_outputErrors;
+
+	// flag to indicate start/middle/end of this utterance
+        pattype_vector    m_patTypes;
+	
+	// cpu data buffer to copy training error
+	cpu_real_vector   m_outputErrorsCopy; 
+
+
+	/**
+	 * pointers 
+	 */
+	
+	// pointer to preceding layer (in *.jsn)
+	Layer<TDevice>   *m_precedingLayer;
+
+	// pointer to following layer (in *.jsn)
+	Layer<TDevice>   *m_followingLayer;
+
+      
     protected:
+
+	// return the output buffer
         real_vector& _outputs();
-	
-	/* Add 16-02-22 Wang: for WE updating */
+
+	// set m_InputWeUpdate (obsolete)
 	bool         _setInputWeUpdate(const bool& flag);
 	
     public:
-
-	/* Add 16-02-22 Wang: for WE updating */
-	bool&        inputWeUpdate();
 	
         /**
          * Constructs the Layer
          *
          * @param layerChild        The layer child of the JSON configuration for this layer
-         * @param parallelSequences The maximum number of sequences  computed in parallel
+         * @param parallelSequences The maximum number of sequences computed in parallel
          * @param maxSeqLength      The maximum length of a sequence
          * @param createOutputs     If false, then the outputs vector will be left empty
          */
@@ -129,7 +179,6 @@ namespace layers {
          * 
          * @return The number of blocks in the layer
          */
-	// modify 0612: to virtual size so that LstmLayerChaW can be supported
         virtual int size() const;
 
         /**
@@ -174,7 +223,6 @@ namespace layers {
          */
         virtual real_vector& outputErrors();
 
-	
 	cpu_real_vector& outputErrorsCpu();   
 
         /**
@@ -198,12 +246,15 @@ namespace layers {
          */
         virtual real_vector& outputs();
 
+	void copyOutputs(real_vector& dataBuffer);
+
         /**
          * Loads sequences from a data set
          *
          * @param fraction The fraction of the data set to load
          */
-        virtual void loadSequences(const data_sets::DataSetFraction &fraction, const int nnState);
+        virtual void loadSequences(const data_sets::DataSetFraction &fraction,
+				   const int nnState);
 
         /**
          * Computes the forward pass
@@ -225,17 +276,11 @@ namespace layers {
 				 const helpers::JsonAllocator &allocator) const;
 
 	/**
-	 * Re-initialize the network
-	   only defines for Trainable Layers
-	 */
-	virtual void reInitWeight() = 0;
-	
-
-	/*
-	  
+	 * Methods to link target layer (overridden by derived layer classes)
+	 * 
 	 */
 	virtual void linkTargetLayer(Layer<TDevice> &targetLayer);
-
+	
 	virtual void linkFollowingLayer(Layer<TDevice> &targetLayer);
 
 	virtual int returnTargetLayerID();
@@ -316,7 +361,6 @@ namespace layers {
         const Layer<TDevice>& precedingLayer() const;
         const Layer<TDevice>& followingLayer() const;
 
-
 	/*
 	 * Return the ID of layers that this layer depends on
 	 */
@@ -327,27 +371,39 @@ namespace layers {
 	 */
 	virtual real_t intermediateError();
 
-
-	/*
-           Memory management
+	/** 
+	 * Memory management
 	 */
+	// functions for auto-regressive generation
 	virtual void reduceOutputBuffer();
 
-	void         resizeOutputBuffer(const int bufferSize);
+	virtual int  outputBufPtrBias(const int timeStepTimesParallel,
+				      const int nnState);
 
-	virtual int  outputBufPtrBias(const int timeStepTimesParallel, const int nnState);
-
-
+	// functions for layer-by-layer memory save generation
 	virtual void clearAllBuffers();
 
 	virtual void resizeAllBuffers(const int timeLength);
 	
 	void clearOutputBuffer();
+
+	void resizeOutputBuffer(const int bufferSize);
 	
 	void setSaveMemoryFlag(const bool newFlag);
+	
 	bool getSaveMemoryFlag() const;
+	
+	virtual void logAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+				   bool flag_add);
+	
+	virtual void swapAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+				    bool flag_get);
 
-	void copyOutputs(real_vector& dataBuffer);
+	/**
+	 * For word-embedding layers (obsolete)
+	 */
+	virtual void reInitWeight() = 0;
+	bool&        inputWeUpdate();
 	
     };
 

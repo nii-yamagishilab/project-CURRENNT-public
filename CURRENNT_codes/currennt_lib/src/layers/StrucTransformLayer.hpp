@@ -108,6 +108,10 @@ namespace layers {
 
 	void resizeAllBuffers(const int timeLength);
 
+	void logAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng, bool flag_add);
+	
+	void swapAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng, bool flag_get);
+
 	// load sequences
         virtual void loadSequences(const data_sets::DataSetFraction &fraction, const int nnState);
 

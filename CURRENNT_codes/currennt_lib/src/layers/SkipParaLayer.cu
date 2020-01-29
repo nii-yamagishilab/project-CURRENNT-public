@@ -765,6 +765,18 @@ namespace layers{
     {
     }    
 
+    template <typename TDevice, typename TActFn>
+    void SkipParaLayer<TDevice,TActFn>::logAllBuffers(
+		helpers::vecPoolManager<TDevice> &vecPoolMng, bool flag_add)
+    {
+    }
+
+    template <typename TDevice, typename TActFn>
+    void SkipParaLayer<TDevice,TActFn>::swapAllBuffers(
+		helpers::vecPoolManager<TDevice> &vecPoolMng, bool flag_get)
+    {
+    }
+    
     
     template class SkipParaLayer<Cpu, activation_functions::Tanh>;
     template class SkipParaLayer<Gpu, activation_functions::Tanh>;

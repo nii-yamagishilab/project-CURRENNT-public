@@ -100,6 +100,18 @@ namespace layers{
     template <typename TDevice>
     void SkipLayer<TDevice>::resizeAllBuffers(const int timeLength)
     {
+    }
+    
+    template <typename TDevice>
+    void SkipLayer<TDevice>::logAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+					   bool flag_add)
+    {
+    }
+
+    template <typename TDevice>
+    void SkipLayer<TDevice>::swapAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+					       bool flag_get)
+    {
     }    
     
     template class SkipLayer<Cpu>;

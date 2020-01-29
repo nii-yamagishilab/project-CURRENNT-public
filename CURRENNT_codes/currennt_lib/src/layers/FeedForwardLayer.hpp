@@ -1,4 +1,9 @@
 /******************************************************************************
+ * This file is an addtional component of CURRENNT. 
+ * Xin WANG
+ * National Institute of Informatics, Japan
+ * 2016 - 2020
+ * 
  * Copyright (c) 2013 Johannes Bergmann, Felix Weninger, Bjoern Schuller
  * Institute for Human-Machine Communication
  * Technische Universitaet Muenchen (TUM)
@@ -28,61 +33,103 @@
 
 namespace layers {
 
-    /******************************************************************************************//**
+    /*********************************************************************//**
      * Represents a feed forward layer in the neural network
      *
      * @param TDevice The computation device (Cpu or Gpu)
      * @param TActFn  The activation function to use
-     *********************************************************************************************/
+     ************************************************************************/
     template <typename TDevice, typename TActFn>
     class FeedForwardLayer : public TrainableLayer<TDevice>
     {
+	// declarition of data type
 	typedef typename TDevice::real_vector real_vector;
 	typedef typename TDevice::int_vector  int_vector;
 	typedef typename TDevice::bool_vector bool_vector;
 	typedef typename TDevice::pattype_vector pattype_vector;
-	
-	bool m_batchNorm;                 // whether to use batch normalization
-	int  m_batchNormGenUseTrainMV;    // whether to use mean and std of training data to normalize
-                                          // the input test data?
-	
-	bool m_weightNorm;                // whether to use weight normalization (not fully test)
-	real_t      m_weightNormVal;      // 
-	real_t      m_weightNormGrad;
 
-	bool m_layerNorm;                 // layer normalization
+	/**
+	 * Flags for batch-normalization
+	 */
+	// whether to use batch normalization
+	bool m_batchNorm;
 	
-	real_vector m_stats;              // buffer to store mean and std
-	real_vector m_outNormed;          // normed data output without being scaled
+	// whether to use mean and std of training data to normalize
+	// the input test data?
+	int  m_batchNormGenUseTrainMV;
 	
-	real_t      m_stdConst;           // const floor for the var
-	real_t      m_batchCnt;           // counter for batch normalization
+	// counter of training batches
+	real_t      m_batchCnt;           
+
+	// number of data (frames) in a training batch
+	real_t      m_batchSize;
+
 	
+	/***
+	 * Flags for weight-normalization (obsolete)
+	 */
+	// whether to use weight normalization (not fully test)
+	bool     m_weightNorm;
 	
-	int         m_preEpoch;           // epoch number counter
-	real_t      m_batchSize;          // number of data (frames) in a mini-batch
-
-	real_vector m_oneVector;          // temporary buffer to store a all-one vector
-	real_vector m_buff;               // temporary buffer
+	real_t   m_weightNormVal;
+	
+	real_t   m_weightNormGrad;
 
 
+	/**
+	 * Flags for layer normalization
+	 */
+	// whether to use layer normalization
+	bool m_layerNorm;                 
 
-	// common methods to allocate / release memory
+	// buffer to store mean and std
+	real_vector m_stats;
+	
+	// normed data output without being scaled
+	real_vector m_outNormed;          
+
+	
+	/**
+	 * Shared data buffer or statistics
+	 */
+	// const floor for the var
+	real_t      m_stdConst;
+	
+	// epoch number counter
+	int         m_preEpoch;           
+
+	// temporary buffer to store a all-one vector
+	real_vector m_oneVector;
+	
+	// temporary buffer
+	real_vector m_buff;               
+
+
+	
+	/** 
+	 * common methods to allocate / release memory 
+	 */
 	void __allocateLocalMem();
 	void __clearLocalMem();
 
-	// initialization methods for different operation mode
+	/**
+	 * initialization methods for different operation mode
+	 */
 	void __batchnorm_ini(const helpers::JsonValue &weightsSection);
 	void __layernorm_ini(const helpers::JsonValue &weightsSection);
 	void __weightnorm_ini(const helpers::JsonValue &weightsSection);
 
-	// forward computation (normal case, given one sequence of input)
+	/**
+	 * forward computation (normal case, given one sequence of input)
+	 */
 	void __batchnorm_computeForwardPass(const int nnState);
 	void __weightnorm_computeForwardPass(const int nnState);
 	void __layernorm_computeForwardPass(const int nnState);
 	void __computeForwardPass(const int nnState);
 
-	// forward computation (online case, given one frame of input data per step)
+	/**
+	 * forward computation (online case, given one frame of input data per step)
+	 */
 	void __batchnorm_computeForwardPass(const int timeStep, const int nnState,
 					    const int effTimeStart, const int effTimeEnd,
 					    const int shiftIn,      const int shiftOut);
@@ -96,8 +143,9 @@ namespace layers {
 				  const int effTimeStart, const int effTimeEnd,
 				  const int shiftIn,      const int shiftOut);
 
-
-	// backward computation sub-routines
+	/**
+	 * backward computation sub-routines
+	 */
 	void __batchnorm_computeBackwardPass(const int nnState);
 	void __weightnorm_computeBackwardPass_p1(const int nnState);
 	void __weightnorm_computeBackwardPass_p2(const int nnState);
@@ -154,7 +202,7 @@ namespace layers {
 	virtual void exportLayer(const helpers::JsonValue &layersArray, 
 				 const helpers::JsonAllocator &allocator) const;
 
-	/*
+	/***
 	 * to optimize the memory usage
 	 */
 	virtual void reduceOutputBuffer();
@@ -164,7 +212,12 @@ namespace layers {
 	void clearAllBuffers();
 
 	void resizeAllBuffers(const int timeLength);
-
+	
+	void logAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+			   bool flag_add);
+	
+	void swapAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+			    bool flag_get);
 	
     };
 

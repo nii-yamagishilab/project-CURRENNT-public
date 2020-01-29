@@ -857,6 +857,20 @@ namespace layers{
 	this->resizeOutputBuffer(timeLength * this->parallelSequences() * this->size());
 	this->__allocateLocalMem();
     }
+
+    template <typename TDevice>
+    void WavNetCore<TDevice>::logAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+					    bool flag_add)
+    {
+	throw std::runtime_error("logAllBuffers not implemented for wavNetCore");
+    }
+
+    template <typename TDevice>
+    void WavNetCore<TDevice>::swapAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+					     bool flag_get)
+    {
+	throw std::runtime_error("swapAllBuffers not implemented for wavNetCore");
+    }
     
     template class WavNetCore<Cpu>;
     template class WavNetCore<Gpu>;

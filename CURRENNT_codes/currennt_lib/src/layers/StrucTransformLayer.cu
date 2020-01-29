@@ -1294,6 +1294,26 @@ namespace layers{
 	this->__allocateLocalMem();
     }    
 
+    template <typename TDevice>
+    void StructTransLayer<TDevice>::logAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+						  bool flag_add)
+    {
+	Layer<TDevice>::logAllBuffers(vecPoolMng, flag_add);
+	
+	if (m_structReverse == STRUCTTRANS_DIREC_REVERSE){
+	    vecPoolMng.addOrRemoveNewVec(this->size(), flag_add);
+	}
+    }
+
+    template <typename TDevice>
+    void StructTransLayer<TDevice>::swapAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+						   bool flag_get)
+    {
+	Layer<TDevice>::swapAllBuffers(vecPoolMng, flag_get);
+	if (m_structReverse == STRUCTTRANS_DIREC_REVERSE){
+	    vecPoolMng.getSwapVector(m_tempOutput, this->getLayerID(), this->size(), flag_get);
+	}
+    }
     
     template class StructTransLayer<Cpu>;
     template class StructTransLayer<Gpu>;

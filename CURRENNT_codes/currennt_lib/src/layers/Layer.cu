@@ -89,9 +89,11 @@ namespace layers {
     {
         // check if the name and size values exist
         if (!layerChild->HasMember("name"))
-            throw std::runtime_error("Missing value 'name' in layer description");
+            throw std::runtime_error("Missing value 'name' in network.jsn");
+	
         if (m_name.empty())
-            throw std::runtime_error("Empty layer name in layer description");
+            throw std::runtime_error("Empty layer name in network.jsn");
+	
         if (!layerChild->HasMember("size"))
             throw std::runtime_error("Missing 'size' in layer");
 
@@ -121,11 +123,9 @@ namespace layers {
 	// set the flag
 	m_flagTrainingMode  = (flagTrainingMode ? true : false);
 
-	
 	m_layerFlag = (layerChild->HasMember("layerFlag") ? 
 		       (*layerChild)["layerFlag"].GetString() : "");
 	
-
     }
 
     template <typename TDevice>
@@ -237,8 +237,12 @@ namespace layers {
     void Layer<TDevice>::loadSequences(const data_sets::DataSetFraction &fraction,
 				       const int nnState)
     {
-	m_curMaxSeqLength = misFuncs::getResoLength(fraction.maxSeqLength(), m_timeResolution, 1);
-	m_curMinSeqLength = misFuncs::getResoLength(fraction.minSeqLength(), m_timeResolution, 1);
+	m_curMaxSeqLength = misFuncs::getResoLength(fraction.maxSeqLength(),
+						    m_timeResolution, 1);
+	
+	m_curMinSeqLength = misFuncs::getResoLength(fraction.minSeqLength(),
+						    m_timeResolution, 1);
+	
 	m_curNumSeqs      = fraction.numSequences();
 	    
 	if (m_timeResolution == 1){
@@ -249,12 +253,12 @@ namespace layers {
 	    int buffPos   = fraction.patTypesLowTimesResPos(m_timeResolution);
 	    int buffLen   = fraction.patTypesLowTimesResLen(m_timeResolution);
 	    if (buffPos < 0 || buffLen < 0){
-		printf(" %s resolution not found in --resolutions", this->name().c_str());
+		printf(" %s resolution not in --resolutions", this->name().c_str());
 		throw std::runtime_error("Resolution error");
 	    }
 	    if (buffPos > fraction.patTypesLowTimeRes().size() ||
 		(buffLen + buffPos) > fraction.patTypesLowTimeRes().size()){
-		printf(" %s resolution not found in --resolutions", this->name().c_str());
+		printf(" %s resolution not in --resolutions", this->name().c_str());
 		throw std::runtime_error("Resolution error");
 	    }
 	    //m_patTypes.resize(buffLen, PATTYPE_NONE);
@@ -315,11 +319,8 @@ namespace layers {
     template <typename TDevice>
     void Layer<TDevice>::linkTargetLayer(Layer<TDevice> &targetLayer)
     {
-	// do nothing
-	// this function will be override by those layers requiring targetLayer
+	// this function will be override by layers requiring targetLayer
     }
-
-
     
     template <typename TDevice>
     int Layer<TDevice>::returnTargetLayerID()
@@ -360,7 +361,8 @@ namespace layers {
     }
 
     template <typename TDevice>
-    typename Layer<TDevice>::real_vector& Layer<TDevice>::feedbackOutputs(const bool flagTrain)
+    typename Layer<TDevice>::real_vector& Layer<TDevice>::feedbackOutputs(
+						const bool flagTrain)
     {
         return m_outputs;
     }
@@ -431,7 +433,8 @@ namespace layers {
     }
     
     template <typename TDevice>
-    int Layer<TDevice>::outputBufPtrBias(const int timeStepTimesParallel, const int nnState)
+    int Layer<TDevice>::outputBufPtrBias(const int timeStepTimesParallel,
+					 const int nnState)
     {
 	// don't shift
 	return 0;
@@ -515,10 +518,27 @@ namespace layers {
     void Layer<TDevice>::copyOutputs(real_vector& dataBuffer)
     {
 	if (dataBuffer.size() == this->outputs().size())
-	    thrust::copy(dataBuffer.begin(), dataBuffer.end(), this->outputs().begin());
+	    thrust::copy(dataBuffer.begin(),
+			 dataBuffer.end(),
+			 this->outputs().begin());
     }
 
+    template <typename TDevice>
+    void Layer<TDevice>::logAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+				       bool flag_add)
+    {
+	vecPoolMng.addOrRemoveNewVec(this->size(), flag_add);
+    }
     
+    template <typename TDevice>    
+    void Layer<TDevice>::swapAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+					bool flag_get)
+    {
+	vecPoolMng.getSwapVector(m_outputs,
+				 this->getLayerID(), this->size(), flag_get);
+    }
+
+
     
     // explicit template instantiations
     template class Layer<Cpu>;
