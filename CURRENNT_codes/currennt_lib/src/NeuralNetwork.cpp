@@ -1629,9 +1629,9 @@ void NeuralNetwork<TDevice>::computeForwardPass(const int curMaxSeqLength,
 
 template <typename TDevice>
 void NeuralNetwork<TDevice>::__computeGenPass_LayerByLayer_mem(
-						const data_sets::DataSetFraction &fraction,
-						const int curMaxSeqLength, 
-						const real_t generationOpt)
+	const data_sets::DataSetFraction &fraction,
+	const int curMaxSeqLength, 
+	const real_t generationOpt)
 {
     int layerID = 0;
 
@@ -1732,6 +1732,21 @@ void NeuralNetwork<TDevice>::__computeGenPass_LayerByLayer_mem(
 	}
 	layerID++;
     }
+
+    /**
+     * step3. return all the unreturned memory buffer
+     */
+    
+    layerID = 0;
+    // layer by layer generation mode for Non-AR WaveModel
+    BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
+	if (this->flagLayerCanbeOptimizedMA(layerID) &&
+	    !(tmp_networkMng.get_layerDep(layerID).empty_towhich())){
+	    this->m_layers[layerID]->swapAllBuffers(m_vecPoolMng, false);
+	}
+	layerID++;
+    }
+    
     return;
 }
 

@@ -31,7 +31,7 @@
 
 #include <boost/foreach.hpp>
 
-#define __LOCAL_VECPOOL_DEBUG_FLAG true
+#define __LOCAL_VECPOOL_DEBUG_FLAG false
 
 namespace helpers{
 
