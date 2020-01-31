@@ -1137,9 +1137,13 @@ namespace layers {
     }
     
     template <typename TDevice>
-    void MDNLayer<TDevice>::initPreOutput(const MDNLayer<TDevice>::cpu_real_vector &mVec, 
-					  const MDNLayer<TDevice>::cpu_real_vector &vVec)
+    void MDNLayer<TDevice>::initPreOutput()
     {
+	cpu_real_vector mVec(this->size());
+	cpu_real_vector vVec(this->size());
+	cpu_real_vector tmp = this->_mvVector();
+	thrust::copy(tmp.begin(), tmp.begin()+this->size(), mVec.begin());
+	thrust::copy(tmp.begin() + this->size(), tmp.end(), vVec.begin());
 	BOOST_FOREACH (boost::shared_ptr<MDNUnit<TDevice> > &mdnUnit, m_mdnUnits){
 	    mdnUnit->initPreOutput(mVec, vVec);
 	}

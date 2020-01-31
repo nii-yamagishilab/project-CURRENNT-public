@@ -28,8 +28,13 @@
 #include "../Configuration.hpp"
 #include "../helpers/JsonClasses.hpp"
 #include "../MacroDefine.hpp"
+#include "../rapidjson/prettywriter.h"
+#include "../rapidjson/filestream.h"
 
+#include <boost/algorithm/string/replace.hpp>
 #include <limits>
+#include <sstream>
+#include <iomanip>
 
 #include <thrust/transform.h>
 #include <thrust/fill.h>
@@ -840,7 +845,93 @@ namespace optimizers {
         // initialize the current weight updates vectors
         m_curWeightUpdates = m_bestWeights;
     }
+
+
+    template <typename TDevice> 
+    void Optimizer<TDevice>::saveState(const NeuralNetwork<TDevice> &nn, 
+				       const std::string &infoRows,
+				       const real_t nnlr, const real_t welr)
+    {
+
+	if (nnlr > 0){
+	// create the JSON document
+	rapidjson::Document jsonDoc;
+	jsonDoc.SetObject();
+
+	// add the configuration options
+	jsonDoc.AddMember("configuration", 
+			  Configuration::instance().serializedOptions().c_str(), 
+			  jsonDoc.GetAllocator());
+
+	// add the info rows
+	std::string tmp = boost::replace_all_copy(infoRows, "\n", ";;;");
+	jsonDoc.AddMember("info_rows", tmp.c_str(), jsonDoc.GetAllocator());
+
+	// add the network structure and weights
+	nn.exportLayers (&jsonDoc);
+	nn.exportWeights(&jsonDoc);
+
+	// add the state of the optimizer
+	this->exportState(&jsonDoc);
     
+	// open the file
+	std::stringstream autosaveFilename;
+	std::string prefix = Configuration::instance().autosavePrefix(); 
+	autosaveFilename << prefix;
+	if (!prefix.empty())
+	    autosaveFilename << '_';
+	autosaveFilename << "epoch";
+	autosaveFilename << std::setfill('0') << std::setw(3) << this->currentEpoch();
+	autosaveFilename << ".autosave";
+	std::string autosaveFilename_str = autosaveFilename.str();
+	FILE *file = fopen(autosaveFilename_str.c_str(), "w");
+	if (!file)
+	    throw std::runtime_error("Cannot open file");
+	
+	// write the file
+	rapidjson::FileStream os(file);
+	rapidjson::PrettyWriter<rapidjson::FileStream> writer(os);
+	jsonDoc.Accept(writer);
+	fclose(file);
+	}
+
+	if (welr > 0){
+	// save WE
+	// open the file
+	std::stringstream autosaveFilename;
+	std::string prefix = Configuration::instance().autosavePrefix(); 
+	autosaveFilename << prefix;
+	if (!prefix.empty())
+	    autosaveFilename << '_';
+	autosaveFilename << "epoch";
+	autosaveFilename << std::setfill('0') << std::setw(3) << this->currentEpoch();
+	autosaveFilename << ".autosave";
+	autosaveFilename << ".we";
+	if (nn.flagInputWeUpdate()){
+	    if (!nn.saveWe(autosaveFilename.str())){
+		throw std::runtime_error("Fail to save we data");
+	    }
+	}
+	}
+    }
+
+    template <typename TDevice> 
+    void Optimizer<TDevice>::restoreState(const helpers::JsonDocument &jsonDoc,
+					  std::string &infoRows)
+    {
+	//rapidjson::Document jsonDoc;
+	//readJsonFile(&jsonDoc, Configuration::instance().continueFile());
+	
+	// extract info rows
+	if (!jsonDoc->HasMember("info_rows"))
+	    throw std::runtime_error("Missing value 'info_rows'");
+	infoRows = (*jsonDoc)["info_rows"].GetString();
+	boost::replace_all(infoRows, ";;;", "\n");
+	
+	// extract the state of the optimizer
+	this->importState(jsonDoc);
+    }
+
     // explicit template instantiations
     template class Optimizer<Cpu>;
     template class Optimizer<Gpu>;

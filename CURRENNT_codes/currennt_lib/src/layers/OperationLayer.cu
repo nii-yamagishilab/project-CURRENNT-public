@@ -1215,10 +1215,10 @@ namespace layers{
 		m_F0DataStd  = config.f0dataStd_signalgen();
 
 	    if (m_F02UV < 0)
-		printf("\tF0 (mean: %f, std: %f) to U/V, with voice->0, unvoiced->1)",
+		printf("\n\tF0 (mean: %f, std: %f) to U/V, with voice->0, unvoiced->1)",
 		       m_F0DataMean, m_F0DataStd);
 	    else
-		printf("\tF0 (mean: %f, std: %f) to U/V, with voice->1, unvoiced->0)",
+		printf("\n\tF0 (mean: %f, std: %f) to U/V, with voice->1, unvoiced->0)",
 		       m_F0DataMean, m_F0DataStd);
 	    
 	    if (this->size() != 1)
@@ -1440,7 +1440,7 @@ namespace layers{
 	}
 	
 	
-	printf("\tOperator layer: \n");
+	printf("\n\tOperator layer: \n");
 	if (m_noiseSize > 0)
 	    printf("\tinject noise: dim %d, u[-%f, %f]\n", m_noiseSize, m_noiseMag, m_noiseMag);
 

@@ -17,7 +17,7 @@ Toolkit", Journal of Machine Learning Research, 2014.
 
 
 +=============================================================================+
-| Structure                                                                   |
+| Contents                                                                    |
 +=============================================================================+
 1. Building on Linux
    1.1 Installation for voice-privacy participants
@@ -146,10 +146,14 @@ For other users, please check 1.2 Manual installation
 
       For example, on my machine, it is
       $: cmake .. -DCMAKE_C_COMPILER=/usr/bin/gcc-5 -DBOOST_ ...
-      
-   Of course, you need to specify all the flags -D*** after cmake
+   
+   Of course, you need to specify multiple flags -D*** after cmake
    $: cmake .. -DCUDA_TOOLKIT_ROOT_DIR=XXX -DCMAKE_C_COMPILER=YYY -DBOOST_ROOT=ZZZ
 
+   During compiling, you might get many warnings on boost or other messages
+   like 'Cannot tell what pointer points to, assuming global memory space' or
+   '***operator()" was declared but never referenced'. 
+   These are totally OK.
 
 ---- To build CURRENNT execute for debugging:
 
@@ -169,11 +173,36 @@ For other users, please check 1.2 Manual installation
    (gdb)
    ----
    
-During compiling, you might get many warnings on boost or other messages
-like 'Cannot tell what pointer points to, assuming global memory space' or
-'***operator()" was declared but never referenced'. 
-These are totally OK.
 
+---- Errors/warnining when using CURRENNT
+   
+   1. boost::condition_variable::~condition_variable(): Assertion `!ret' failed.
+
+      Maybe due to the incompatibility of netCDF and Boost. 
+      Please make sure you installed and used the correct version.
+
+      If even you have install the correct version for netCDF and Boost, please
+      check whether their libaries are used by CURRENNT during compiling.
+
+      Please use ldd to check the library dependency. For example, on my machine:
+      $: ldd currennt
+      ... 
+      libnetcdf.so.7 => /home/wang/local/lib/libnetcdf.so.7 
+      libboost_program_options.so.1.59.0 => /home/wang/local/lib/libboost_program_options.so
+      libboost_system.so.1.59.0 => /home/wang/local/lib/libboost_system.so.1.59.0
+      libboost_filesystem.so.1.59.0 => /home/smg/wang/local/lib/libboost_filesystem.so.1.59.0
+      libboost_random.so.1.59.0 => /home/smg/wang/local/lib/libboost_random.so.1.59.0
+      libboost_thread.so.1.59.0 => /home/smg/wang/local/lib/libboost_thread.so.1.59.0
+      ...
+    
+    2. terminate called after throwing an instance of 'thrust::system::system_error'
+       what():  device free failed: an illegal memory access was encountered
+
+       GPU memory is insufficient. 
+       or
+       Error in GPU memory management, please report to Xin
+
+    
 
 +=============================================================================+
 | 2. Building on Windows (not verified, by Xin)                               |

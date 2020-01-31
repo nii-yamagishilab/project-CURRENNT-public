@@ -265,9 +265,19 @@ namespace optimizers {
         real_t curValidationErrorSec() const;
 
         real_t curTestErrorSec() const;
-
-       	
+	
 	const std::string& optStatus() const;
+
+
+	// save network with training statistics (*autosave)
+	void saveState(const NeuralNetwork<TDevice> &nn,
+		       const std::string &infoRows,
+		       const real_t nnlr, const real_t welr);
+	
+	// restore state from autosave
+	void restoreState(const helpers::JsonDocument &jsonDoc,
+			  std::string &infoRows);
+	
     };
 
 } // namespace optimizers

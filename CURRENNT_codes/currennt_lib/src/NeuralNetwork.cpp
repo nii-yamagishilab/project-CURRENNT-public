@@ -2,7 +2,7 @@
  * This file is heavily modified by
  * Xin WANG
  * National Institute of Informatics, Japan
- * 2016 - 2019
+ * 2016 - 2020
  * 
  * Copyright (c) 2013 Johannes Bergmann, Felix Weninger, Bjoern Schuller
  * Institute for Human-Machine Communication
@@ -44,6 +44,9 @@
 
 #include "helpers/misFuncs.hpp"
 #include "helpers/dotPlot.hpp"
+
+#include "rapidjson/prettywriter.h"
+#include "rapidjson/filestream.h"
 
 #include <vector>
 #include <set>
@@ -909,6 +912,44 @@ void NeuralNetwork<TDevice>::__CreateDependency()
 
 
 template <typename TDevice>
+void NeuralNetwork<TDevice>::__MiscInitialization(const helpers::JsonDocument &jsonDoc,
+						  int parallelSequences, 
+						  int maxSeqLength)
+{
+    const Configuration &config = Configuration::instance();
+    
+    // for WE updating
+    if (config.weUpdate()){
+	// Load the vector bank
+	this->initWeUpdate(config.weBankPath(), config.weDim(),
+			   config.weIDDim(), maxSeqLength * parallelSequences);
+	    
+	// Initialize the noise to be added for WE (optional)
+	if (!this->initWeNoiseOpt(config.weNoiseStartDim(),
+				  config.weNoiseEndDim(),
+				  config.weNoiseDev())){
+	    throw std::runtime_error("Error in configuration of weNoise");
+	}
+    }
+	
+    // for MSE weight 
+    if (config.mseWeightPath().size()>0)
+	this->initMseWeight(config.mseWeightPath());
+	
+    // weight mask
+    if (config.weightMaskPath().size()>0)
+	this->initWeightMask(config.weightMaskPath(), config.weightMaskOpt());
+
+    // initialization create for MDN
+    if (config.trainingMode() && config.continueFile().empty())
+	this->initOutputForMDN(jsonDoc);
+	
+    return;
+}
+
+
+
+template <typename TDevice>
 NeuralNetwork<TDevice>::NeuralNetwork(const helpers::JsonDocument &jsonDoc,
 				      int parallelSequences, 
 				      int maxSeqLength,
@@ -924,7 +965,8 @@ NeuralNetwork<TDevice>::NeuralNetwork(const helpers::JsonDocument &jsonDoc,
     this->__InitializeNetworkLayerIdx(jsonDoc);
     
     // Create the layers in a network
-    this->__CreateNetworkLayers(jsonDoc, parallelSequences, maxSeqLength, inputSizeOverride);
+    this->__CreateNetworkLayers(jsonDoc, parallelSequences, maxSeqLength,
+				inputSizeOverride);
 
     // prelimary check
     this->__CheckNetworkLayers();
@@ -935,6 +977,9 @@ NeuralNetwork<TDevice>::NeuralNetwork(const helpers::JsonDocument &jsonDoc,
     // create the dependency graph
     this->__CreateDependency();
 
+    // other misc initialization
+    this->__MiscInitialization(jsonDoc, parallelSequences, maxSeqLength);
+    
 }
 
 template <typename TDevice>
@@ -2888,13 +2933,17 @@ void NeuralNetwork<TDevice>::exportWeights(const helpers::JsonDocument& jsonDoc)
     jsonDoc->AddMember("weights", weightsObject, jsonDoc->GetAllocator());
 }
 
+
 template <typename TDevice>
 std::vector<std::vector<std::vector<real_t> > > NeuralNetwork<TDevice>::getOutputs(
 	const real_t mdnoutput)
 {
-    /* All the features should have been generated and saved, by calling computeForwardPassGen.
-       This function only retrieves the desired features from the specified layer, and save them
-       into CPU vectors.
+    /**
+     * Note: 
+     * All the features should have been generated and saved, 
+     * by calling computeForwardPassGen.
+     * This function only retrieves the desired features from 
+     * the specified layer, and save them into CPU vectors.
      */
     
     /* -----  Get configuration ----- */
@@ -2913,7 +2962,7 @@ std::vector<std::vector<std::vector<real_t> > > NeuralNetwork<TDevice>::getOutpu
     const int  saveFrameNum   = config.outputFrameNum();
     
     if (saveFrameNum > 0)
-	printf("\n\tOnly save the first %d frames from the output sequence", saveFrameNum);
+	printf("\n\tOnly save the first %d frames from output sequence", saveFrameNum);
     
     /* ----- Variables and initialization ----- */
     // buffer to store output features
@@ -2921,58 +2970,27 @@ std::vector<std::vector<std::vector<real_t> > > NeuralNetwork<TDevice>::getOutpu
 
     // pointer to highway layers (SkipParaLayer)
     layers::SkipLayer<TDevice> *olg;
+    
     // pointer to MDN layer
     layers::MDNLayer<TDevice>  *olm;
+    
     // pointer to VQVAE layer
     layers::vqLayer<TDevice>   *olq;
 
     // Generation methods
     unsigned char genMethod;
-    enum genMethod {ERROR = 0,VQINDEX,GATEOUTPUT, MDNSAMPLING, MDNPARAMETER, MDNEMGEN, NORMAL};
+    enum genMethod {ERROR = 0, VQINDEX, GATEOUTPUT,
+		    MDNSAMPLING, MDNPARAMETER, MDNEMGEN, NORMAL};
 
-    // a temporary layer ID variable 
-    int tempLayerID;
-
+    // true output layer ID 
+    int outputLayerID;
     
-    /* Old CURRENNT generation methods
-      specify old, olm, tempLayerId
-       -3.0 is chosen for convience.
-       
-       < -3.0: no MDN generation
-       > -3.0 && < -1.5: generating EM-style
-       > -1.5 && < 0.0: generate MDN parameters (mdnoutput = -1.0)
-       > 0.0 : generate samples from MDN with the variance = variance * mdnoutput 
-    if (mdnoutput >= -3.0 && getGateOutput){
-	genMethod = ERROR;
-	throw std::runtime_error("MDN output and gate output can not be generated together");
-
-    }else if (mdnoutput < -3.0 && getGateOutput){
-	olg = outGateLayer(layerID);
-	olm = NULL;
-	tempLayerId = layerID;
-	if (olg == NULL)
-	    throw std::runtime_error("Gate output tap ID invalid\n");
-	genMethod = GATEOUTPUT;
-
-    }else if (mdnoutput >= -3.0 && !getGateOutput){
-	olg = NULL;
-	olm = outMDNLayer();
-	if (olm == NULL)
-	    throw std::runtime_error("No MDN layer in the current network");
-	//olm->getOutput(mdnoutput); // Move to computeForward(curMaxSeqLength, generationOpt)
-	tempLayerId = m_totalNumLayers-1;
-	genMethod = (mdnoutput < 0.0) ? ((mdnoutput < -1.5) ? MDNEMGEN:MDNPARAMETER):MDNSAMPLING;
-	
-    }else{
-	olg = NULL;
-	olm = NULL;
-	tempLayerId = layerID;
-	genMethod = NORMAL;
-    }*/
-
-    /* Since we move the olm->getOutput(mdnoutput) to computeForwardPassGen, mdnoutput is not 
-       necessay here
-    */
+    // Dust B1
+    
+    /**
+     * Since we move the olm->getOutput(mdnoutput) to 
+     * computeForwardPassGen, mdnoutput is not necessay here
+     */
 
 
     /* ----- Determine the output layer ----- */    
@@ -2983,9 +3001,9 @@ std::vector<std::vector<std::vector<real_t> > > NeuralNetwork<TDevice>::getOutpu
 	
 	olm = outMDNLayer(-1);
 	if (olm == NULL)
-	    tempLayerID = this->m_totalNumLayers-2; // layer be postouput
+	    outputLayerID = this->m_totalNumLayers-2; // layer be postouput
 	else
-	    tempLayerID = this->m_totalNumLayers-1; // MDN postoutput layer
+	    outputLayerID = this->m_totalNumLayers-1; // MDN postoutput layer
 	
     }else{
 	
@@ -2996,19 +3014,22 @@ std::vector<std::vector<std::vector<real_t> > > NeuralNetwork<TDevice>::getOutpu
 	    olm = NULL;
 	    olq = NULL;
 	    if (olg == NULL) throw std::runtime_error("Gate output tap ID invalid\n");
+	    
 	}else if (flagVQIndex){
 	    // generate from vqLayer
 	    olg = NULL;
 	    olm = NULL;
 	    olq = outvqLayer(layerID);
-	    if (olq == NULL) throw std::runtime_error("vqLayer ID invalid\n");	    
+	    if (olq == NULL) throw std::runtime_error("vqLayer ID invalid\n");
+	    
 	}else{
 	    // generate from specified layerID
 	    olg = NULL;
 	    olm = outMDNLayer(layerID);
 	    olq = NULL;
+	    
 	}
-	tempLayerID = layerID;
+	outputLayerID = layerID;
     }
 
     
@@ -3020,29 +3041,35 @@ std::vector<std::vector<std::vector<real_t> > > NeuralNetwork<TDevice>::getOutpu
 	    genMethod = NORMAL;
 	else
 	    // output from the MDN layer
-	    genMethod = (mdnoutput<0.0) ? ((mdnoutput < -1.5) ? MDNEMGEN:MDNPARAMETER):MDNSAMPLING;
+	    genMethod = (mdnoutput<0.0) ?
+		((mdnoutput < -1.5) ? MDNEMGEN:MDNPARAMETER):MDNSAMPLING;
+	
     }else if (olq == NULL){
 	// output from the highway gate
 	genMethod = GATEOUTPUT;
+	
     }else{
 	// output from vqLayer by index
 	genMethod = VQINDEX;
+	
     }
 
     /* ----- Retrieve the output from the output layer ------ */
-    layers::Layer<TDevice> &ol      = outputLayer(tempLayerID);
+    layers::Layer<TDevice> &ol      = this->outputLayer(outputLayerID);
     Cpu::pattype_vector tmpPatTypes = ol.patTypes();
-    
+
+    // for parallel generation mode, the original CURRENNT code
+	
     for (int patIdx = 0; patIdx < (int)ol.patTypes().size(); ++patIdx) {
 
 	// If we only save a few frames
 	if (saveFrameNum > 0 && patIdx == saveFrameNum)
 	    break;
-	    
+	
 	switch (tmpPatTypes[patIdx]) {
 	case PATTYPE_FIRST:
 	    outputs.resize(outputs.size() + 1);
-	    
+		
 	case PATTYPE_NORMAL:
 	case PATTYPE_LAST: {
 	    switch (genMethod){
@@ -3051,53 +3078,237 @@ std::vector<std::vector<std::vector<real_t> > > NeuralNetwork<TDevice>::getOutpu
 	    case NORMAL:
 		{
 		    // Save output features from output layers
-		    Cpu::real_vector pattern(ol.outputs().begin() + patIdx * ol.size(), 
-					     ol.outputs().begin() + (patIdx+1) * ol.size());
+		    Cpu::real_vector pattern(
+			ol.outputs().begin() + patIdx * ol.size(), 
+			ol.outputs().begin() + (patIdx+1) * ol.size());
 		    int psIdx = patIdx % ol.parallelSequences();
-		    outputs[psIdx].push_back(std::vector<real_t>(pattern.begin(), pattern.end()));
+		    outputs[psIdx].push_back(std::vector<real_t>(pattern.begin(),
+								 pattern.end()));
 		    break;
 		}
 	    case MDNPARAMETER:
 		{
 		    // Save MDN parameters from MDN layers
 		    Cpu::real_vector pattern(
-				olm->mdnParaVec().begin()+patIdx*olm->mdnParaDim(), 
-				olm->mdnParaVec().begin()+(patIdx+1)*olm->mdnParaDim());
-		    int psIdx = patIdx % ol.parallelSequences();
-		    outputs[psIdx].push_back(std::vector<real_t>(pattern.begin(), pattern.end()));
-		    break;
+			olm->mdnParaVec().begin()+patIdx*olm->mdnParaDim(), 
+			olm->mdnParaVec().begin()+(patIdx+1)*olm->mdnParaDim());
+			int psIdx = patIdx % ol.parallelSequences();
+			outputs[psIdx].push_back(std::vector<real_t>(pattern.begin(),
+								     pattern.end()));
+			break;
 		}
 	    case GATEOUTPUT:
 		{
 		    // Save Highway gate output from Highway layers
-		    Cpu::real_vector pattern(olg->outputFromGate().begin() + patIdx * ol.size(),
-					     olg->outputFromGate().begin()+(patIdx+1) * ol.size());
+		    Cpu::real_vector pattern(olg->outputFromGate().begin() +
+					     patIdx * ol.size(),
+					     olg->outputFromGate().begin() +
+					     (patIdx+1) * ol.size());
 		    int psIdx = patIdx % ol.parallelSequences();
-		    outputs[psIdx].push_back(std::vector<real_t>(pattern.begin(), pattern.end()));
+		    outputs[psIdx].push_back(std::vector<real_t>(pattern.begin(),
+								 pattern.end()));
 		    break;
 		}
 	    case VQINDEX:
 		{
-		    // Save VQVAE code index (maybe from multiple codebooks) from the vqlayer
+		    // Save VQVAE code index (from multiple codebooks) from the vqlayer
 		    Cpu::real_vector pattern(
 			olq->codeIdx().begin() + patIdx     * olq->codeBookNum(),
 			olq->codeIdx().begin() + (patIdx+1) * olq->codeBookNum());
 		    
 		    int psIdx = patIdx % ol.parallelSequences();
-		    outputs[psIdx].push_back(std::vector<real_t>(pattern.begin(), pattern.end()));
+		    outputs[psIdx].push_back(std::vector<real_t>(pattern.begin(),
+								 pattern.end()));
 		    break;
 		}
 	    default:
 		break;   
 	    }
-
+	    
 	}
 	default:
 	    break;
 	}
     }
-
     return outputs;
+}
+
+
+template <typename TDevice>
+std::vector<real_t> NeuralNetwork<TDevice>::getOutputNew(const real_t mdnoutput)
+{
+    
+    /* -----  Get configuration ----- */
+    const Configuration &config = Configuration::instance();
+
+    // specify the layer for generating output features (may not be the last layer)
+    const int  layerID        = config.outputFromWhichLayer();
+    
+    // whether to output highway gate control signals from highway layers?
+    const bool flagGateOutput = config.outputFromGateLayer();
+
+    // whether to output VQ index from vqLayers
+    const int  flagVQIndex    = config.vaeGetVQIndex();
+
+    // if we only want to save a few frames from the output sequences
+    const int  saveFrameNum   = config.outputFrameNum();
+    
+    if (saveFrameNum > 0)
+	printf("\n\tOnly save the first %d frames from output sequence", saveFrameNum);
+    
+    /* ----- Variables and initialization ----- */
+    // pointer to highway layers (SkipParaLayer)
+    layers::SkipLayer<TDevice> *olg;
+    
+    // pointer to MDN layer
+    layers::MDNLayer<TDevice>  *olm;
+    
+    // pointer to VQVAE layer
+    layers::vqLayer<TDevice>   *olq;
+
+    // Generation methods
+    unsigned char genMethod;
+    enum genMethod {ERROR = 0,   VQINDEX,      GATEOUTPUT,
+		    MDNSAMPLING, MDNPARAMETER, MDNEMGEN,
+		    NORMAL};
+
+    // true output layer ID 
+    int outputLayerID = -1;
+
+    // output length
+    size_t outputLength = 0;
+
+    // output dimension
+    int outputDim = -1;
+    
+    /* ----- Determine the output layer ----- */    
+    if (layerID < 0){
+	// If layerID is not specified
+	// generate from the last output/postoutput layer
+	olg = NULL;
+	olq = NULL;
+	
+	olm = outMDNLayer(-1);
+	if (olm == NULL){
+	    // layer be postouput
+	    outputLayerID = this->m_totalNumLayers-2; 
+	}else{
+	    // MDN postoutput layer
+	    outputLayerID = this->m_totalNumLayers-1; 
+	}
+	
+    }else{
+	
+	// If layerID is specified, generate from that layer
+	if (flagGateOutput){
+	    // generate from Highway gate
+	    olg = outGateLayer(layerID);
+	    olm = NULL;
+	    olq = NULL;
+	    if (olg == NULL) throw std::runtime_error("Gate output tap ID invalid\n");
+	    
+	}else if (flagVQIndex){
+	    // generate from vqLayer
+	    olg = NULL;
+	    olm = NULL;
+	    olq = outvqLayer(layerID);
+	    if (olq == NULL) throw std::runtime_error("vqLayer ID invalid\n");
+	    
+	}else{
+	    // generate from specified layerID
+	    olg = NULL;
+	    olm = outMDNLayer(layerID);
+	    olq = NULL;
+	    
+	}
+	outputLayerID = layerID;
+    }
+
+    
+    /* ----- Determine the generation method ----- */
+    // Both output layer type and generation options are taken into consideration
+    if (olg == NULL && olq == NULL){
+	if (olm == NULL){
+	    // output from the layer output
+	    genMethod = NORMAL;
+	}else{
+	    // output from the MDN layer
+	    genMethod = (mdnoutput<0.0) ?
+		((mdnoutput < -1.5) ? MDNEMGEN:MDNPARAMETER):MDNSAMPLING;
+	}
+	
+    }else if (olq == NULL){
+	// output from the highway gate
+	genMethod = GATEOUTPUT;
+	
+    }else{
+	// output from vqLayer by index
+	genMethod = VQINDEX;
+	
+    }
+
+    /* ----- Retrieve the output from the output layer ------ */
+    layers::Layer<TDevice> &ol      = this->outputLayer(outputLayerID);
+
+    // copy the time stap buffer
+    Cpu::pattype_vector tmpPatTypes = ol.patTypes();
+
+    // the data buffer
+    Cpu::real_vector dataBuffer;
+    
+    if (ol.parallelSequences() > 1)
+	throw std::runtime_error("getOutputNew doesn't support parallel mode");
+    if (ol.patTypes().size() < 1)
+	throw std::runtime_error("void utterance");
+    
+    switch (genMethod){
+    case MDNEMGEN:
+    case MDNSAMPLING:
+    case NORMAL:
+	{
+	    dataBuffer = ol.outputs();
+	    outputDim = ol.size();
+	    break;
+	}
+    case MDNPARAMETER:
+	{
+	    dataBuffer = olm->mdnParaVec();
+	    outputDim = olm->mdnParaDim();
+	    break;
+	}
+    case GATEOUTPUT:
+	{
+	    dataBuffer = olg->outputFromGate();
+	    outputDim = ol.size();
+	    break;
+	}
+    case VQINDEX:
+	{
+	    dataBuffer = olq->codeIdx();
+	    outputDim = olq->codeBookNum();
+	    break;
+	}
+    default:
+	break;   
+    }
+
+    // get the length of output vector
+    for (outputLength = 1; outputLength < tmpPatTypes.size(); outputLength++){
+	if (tmpPatTypes[outputLength - 1] == PATTYPE_LAST) break;
+    }
+    outputLength = outputLength * outputDim;
+    
+    // copy to std:vector buffer
+    std::vector<real_t> output_vec(outputLength);
+    thrust::copy(dataBuffer.begin(),
+		 dataBuffer.begin() + outputLength,
+		 output_vec.begin());
+
+    // only keep the first n frames is necessary
+    if (saveFrameNum > 0)
+    	output_vec.resize(saveFrameNum);
+    
+    return output_vec;
 }
 
 
@@ -3105,8 +3316,9 @@ std::vector<std::vector<std::vector<real_t> > > NeuralNetwork<TDevice>::getOutpu
 // Initialization for using external WE bank
 // (read in the word embeddings and save them in a matrix)
 template <typename TDevice>
-bool NeuralNetwork<TDevice>::initWeUpdate(const std::string weBankPath, const unsigned weDim, 
-					  const unsigned weIDDim, const unsigned maxLength)
+bool NeuralNetwork<TDevice>::initWeUpdate(
+	const std::string weBankPath, const unsigned weDim, 
+	const unsigned weIDDim, const unsigned maxLength)
 {
     // check if only the first layer is an input layer
     layers::InputLayer<TDevice>* inputLayer = 
@@ -3119,8 +3331,8 @@ bool NeuralNetwork<TDevice>::initWeUpdate(const std::string weBankPath, const un
 }
 
 template <typename TDevice>
-bool NeuralNetwork<TDevice>::initWeNoiseOpt(const int weNoiseStartDim, const int weNoiseEndDim,
-					    const real_t weNoiseDev)
+bool NeuralNetwork<TDevice>::initWeNoiseOpt(
+	const int weNoiseStartDim, const int weNoiseEndDim, const real_t weNoiseDev)
 {
     // check if only the first layer is an input layer
     layers::InputLayer<TDevice>* inputLayer = 
@@ -3148,6 +3360,7 @@ bool NeuralNetwork<TDevice>::flagInputWeUpdate() const
     else
 	return inputLayer->flagInputWeUpdate();
 }
+
 
 // save the updated we bank in the input layer
 template <typename TDevice>
@@ -3184,7 +3397,8 @@ template <typename TDevice>
 bool NeuralNetwork<TDevice>::initWeightMask(const std::string weightMaskPath,
 					    const int         weightMaskOpt)
 {
-    std::ifstream ifs(weightMaskPath.c_str(), std::ifstream::binary | std::ifstream::in);
+    std::ifstream ifs(weightMaskPath.c_str(),
+		      std::ifstream::binary | std::ifstream::in);
     if (!ifs.good())
 	throw std::runtime_error(std::string("Fail to open") + weightMaskPath);
     
@@ -3223,10 +3437,12 @@ bool NeuralNetwork<TDevice>::initWeightMask(const std::string weightMaskPath,
 		dynamic_cast<layers::TrainableLayer<TDevice>*>(layer.get());
 	    if (weightLayer){
 		if (weightLayer->weightNum()+pos > numEle){
-		    throw std::runtime_error(std::string("Weight mask input is not long enough"));
+		    throw std::runtime_error(
+				std::string("Weight mask input is not long enough"));
 		}else{
-		    weightLayer->readWeightMask(tempVec.begin()+pos, 
-						tempVec.begin()+pos+weightLayer->weightNum());
+		    weightLayer->readWeightMask(
+			tempVec.begin() + pos, 
+			tempVec.begin() + pos + weightLayer->weightNum());
 		    pos = pos+weightLayer->weightNum();
 		}
 		printf("%d ", weightLayer->weightNum());
@@ -3292,7 +3508,8 @@ void NeuralNetwork<TDevice>::updateNNState(const int trainingEpoch, const int fr
 	else if (temp == 2)
 	    m_trainingState = NN_STATE_GAN_DIS_GENDATA;
 	else if (temp == 0)
-	    m_trainingState = (m_featMatchLayer > 0)?(NN_STATE_GAN_GEN_FEATMAT):(NN_STATE_GAN_GEN);
+	    m_trainingState =
+		(m_featMatchLayer > 0)?(NN_STATE_GAN_GEN_FEATMAT):(NN_STATE_GAN_GEN);
 	else
 	    throw std::runtime_error("Undefined nnstate");
     }else{
@@ -3321,26 +3538,23 @@ void NeuralNetwork<TDevice>::reInitWeight()
 }
 
 template <typename TDevice>
-void NeuralNetwork<TDevice>::initOutputForMDN(const helpers::JsonDocument &jsonDoc,
-					      const data_sets::DataSetMV &datamv)
+void NeuralNetwork<TDevice>::initOutputForMDN(const helpers::JsonDocument &jsonDoc)
 {
-    if (jsonDoc->HasMember("weights")) {
-	printf("\nEscapre MDN initialization\n");
-	return;
-    }
-    BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer,
-		   m_layers){
+    
+    BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
 	layers::MDNLayer<TDevice>* mdnLayer = 
 	    dynamic_cast<layers::MDNLayer<TDevice>*>(layer.get());
 	if (mdnLayer){
-	    mdnLayer->initPreOutput(datamv.outputM(), datamv.outputV());
-	    printf("\nRe-initialize the layer before MDN \t");
-	    if (datamv.outputM().size()<1)
-		printf("using global zero mean and uni variance");
-	    else
-		printf("using data mean and variance");
-	}else{
 
+	    if (jsonDoc->HasMember("weights")) {
+		printf("\nEscapre MDN initialization\n");
+	    }else{
+		mdnLayer->initPreOutput();
+		printf("\nRe-initialize the layer before MDN \t");
+	    }
+	    
+	}else{
+	    
 	    layers::NormFlowLayer<TDevice>* nmLayer = 
 		dynamic_cast<layers::NormFlowLayer<TDevice>*>(layer.get());
 	    if (nmLayer){
@@ -3380,8 +3594,8 @@ void NeuralNetwork<TDevice>::importWeights(const helpers::JsonDocument &jsonDoc,
 	if (ctrStr.size() > 0){
 	    // if --trainedModelCtr is given
 	    if (ctrStr.size()!= m_totalNumLayers){
-		printf("\n\tLength of trainedModelCtr is unequal to the number of layers in ");
-		printf("the network to be trained\n");
+		printf("\n\tLength of trainedModelCtr is unequal to the number ");
+		printf("of layers in the network to be trained\n");
 		throw std::runtime_error("Please check trainedModelCtr");
 	    }
 	    for (int i=0; i<ctrStr.size(); i++)
@@ -3609,7 +3823,7 @@ bool NeuralNetwork<TDevice>::externalOutputMV(Cpu::real_vector& mean, Cpu::real_
 }
 
 template <typename TDevice>
-int NeuralNetwork<TDevice>::outputPatternSize(const real_t mdnoutput)
+int NeuralNetwork<TDevice>::outputDimension(const real_t mdnoutput)
 {
     // Get configuration
     const Configuration &config = Configuration::instance();
@@ -3709,9 +3923,194 @@ int NeuralNetwork<TDevice>::outputPatternSize(const real_t mdnoutput)
 		return -1;
 		break;   
     }
-    
 }
+
+
+template <typename TDevice>
+void NeuralNetwork<TDevice>::printNetworkSummary()
+{
+    // get longest name length
+    size_t longest_name_len = 0;
+    for (int layerIdx = 0; layerIdx < m_totalNumLayers; ++layerIdx) 
+	if (this->m_layers[layerIdx]->name().size() > longest_name_len)
+	    longest_name_len = this->m_layers[layerIdx]->name().size();
+
+    // get longest type length
+    size_t longest_type_len = 0;
+    for (int layerIdx = 0; layerIdx < m_totalNumLayers; ++layerIdx) 
+	if (this->m_layers[layerIdx]->type().size() > longest_type_len)
+	    longest_type_len = this->m_layers[layerIdx]->type().size();
+
+    //
+    int weights = 0;
+    
+    // print
+    printf("Network summary: (layer_index) name\ttype\tinformation\n");
+    for (int layerIdx = 0; layerIdx < m_totalNumLayers; ++layerIdx) {
+	
+	// print layer information
+        printf("(%3d) %s", layerIdx, this->m_layers[layerIdx]->name().c_str());
+	for (size_t idx = 0;
+	     idx < (longest_name_len - this->m_layers[layerIdx]->name().size());
+	     idx++)
+	    printf(" ");
+	
+	printf(" %s", this->m_layers[layerIdx]->type().c_str());
+	for (size_t idx = 0;
+	     idx < (longest_type_len - this->m_layers[layerIdx]->type().size());
+	     idx++)
+	    printf(" ");
+	
+        printf(" [size: %d", this->m_layers[layerIdx]->size());
+
+        const layers::TrainableLayer<TDevice>* tl = 
+	    dynamic_cast<const layers::TrainableLayer<TDevice>*>(
+		this->m_layers[layerIdx].get());
+
+	// count the weight size
+        if (tl) {
+            printf(", bias: %.1lf, weights: %d",
+		   (double)tl->bias(), (int)tl->weights().size());
+            weights += (int)tl->weights().size();
+	    
+        }else{
+	    
+	    const layers::MDNLayer<TDevice>* mdnlayer = 
+		dynamic_cast<const layers::MDNLayer<TDevice>*>(
+		    this->m_layers[layerIdx].get());
+	    
+	    if (mdnlayer && mdnlayer -> flagTrainable()){
+		printf(", weights: %d", (int)mdnlayer->weights().size());
+		weights += (int)mdnlayer->weights().size();
+	    }
+	}
+        printf("]\n");
+    }
+
+    // print number of weights
+    printf("Total weights: %d\n\n", weights);
+    return;
+}
+
+template <typename TDevice>
+void NeuralNetwork<TDevice>::saveNetwork(const std::string &filename,
+					 const real_t nnlr, const real_t welr)
+{
+    // save network as *.jsn (no optimizer statistics)
+    if (nnlr >= 0){
+	rapidjson::Document jsonDoc;
+	jsonDoc.SetObject();
+	this->exportLayers (&jsonDoc);
+	this->exportWeights(&jsonDoc);
+	
+	FILE *file = fopen(filename.c_str(), "w");
+	if (!file)
+	    throw std::runtime_error("Cannot open file");
+
+	rapidjson::FileStream os(file);
+	rapidjson::PrettyWriter<rapidjson::FileStream> writer(os);
+	jsonDoc.Accept(writer);
+
+	fclose(file);
+    }
+
+    // save word-embedding bank
+    if (welr > 0){
+	//autosaveFilename << ".we";
+	if (this->flagInputWeUpdate()){
+	    if (!this->saveWe(filename+".we")){
+		throw std::runtime_error("Fail to save we data");
+	    }
+	}    
+    }
+}
+
+template <typename TDevice>
+bool NeuralNetwork<TDevice>::isClassificationNet()
+{
+    return false;
+    // This method is not used to discriminate classification network
+    /*
+        if (dynamic_cast<layers::BinaryClassificationLayer<TDevice>*>(
+	     &neuralNetwork.postOutputLayer()) ||
+	    dynamic_cast<layers::MulticlassClassificationLayer<TDevice>*>(
+	     &neuralNetwork.postOutputLayer())) {
+                classificationTask = true;
+        }
+    */
+}
+
+template <typename TDevice>
+void NeuralNetwork<TDevice>::setDenormalizationMV(cpu_real_vector &outputMeans,
+						  cpu_real_vector &outputStdevs)
+{
+    
+    cpu_real_vector mdnConfigVec = this->getMdnConfigVec();
+    
+    if (!mdnConfigVec.empty()){    
+	// if the unit is sigmoid or softmax, set the mean and std
+	// this is based on MDN definition
+	for (int x = 0; x < (mdnConfigVec.size()-1)/5; x++){
+	    int mdnType  = (int)mdnConfigVec[5+x*5];
+	    if (mdnType == MDN_TYPE_SIGMOID || mdnType == MDN_TYPE_SOFTMAX){
+		int unitSOut = (int)mdnConfigVec[3+x*5];
+		int unitEOut = (int)mdnConfigVec[4+x*5];
+		for (int y = unitSOut; y < unitEOut; y++){
+		    outputMeans[y] = 0.0;
+		    outputStdevs[y] = 1.0;
+		}
+		printf("\n\t de-normalization is skipped for dimension ");
+		printf("from %d to %d\n", unitSOut+1, unitEOut);
+	    }
+	}
+    }
+}
+
 
 // explicit template instantiations
 template class NeuralNetwork<Cpu>;
 template class NeuralNetwork<Gpu>;
+
+
+
+/* Dust 
+B1
+
+    // Old CURRENNT generation methods
+      specify old, olm, tempLayerId
+       -3.0 is chosen for convience.
+       
+       < -3.0: no MDN generation
+       > -3.0 && < -1.5: generating EM-style
+       > -1.5 && < 0.0: generate MDN parameters (mdnoutput = -1.0)
+       > 0.0 : generate samples from MDN with the variance = variance * mdnoutput 
+    if (mdnoutput >= -3.0 && getGateOutput){
+	genMethod = ERROR;
+	throw std::runtime_error("MDN output and gate output can not be generated together");
+
+    }else if (mdnoutput < -3.0 && getGateOutput){
+	olg = outGateLayer(layerID);
+	olm = NULL;
+	tempLayerId = layerID;
+	if (olg == NULL)
+	    throw std::runtime_error("Gate output tap ID invalid\n");
+	genMethod = GATEOUTPUT;
+
+    }else if (mdnoutput >= -3.0 && !getGateOutput){
+	olg = NULL;
+	olm = outMDNLayer();
+	if (olm == NULL)
+	    throw std::runtime_error("No MDN layer in the current network");
+	//olm->getOutput(mdnoutput); // Move to computeForward(curMaxSeqLength, generationOpt)
+	tempLayerId = m_totalNumLayers-1;
+	genMethod = (mdnoutput < 0.0) ? ((mdnoutput < -1.5) ? MDNEMGEN:MDNPARAMETER):MDNSAMPLING;
+	
+    }else{
+	olg = NULL;
+	olm = NULL;
+	tempLayerId = layerID;
+	genMethod = NORMAL;
+    }
+
+
+*/

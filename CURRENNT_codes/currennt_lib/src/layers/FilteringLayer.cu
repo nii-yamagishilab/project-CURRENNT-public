@@ -545,9 +545,9 @@ namespace layers {
 	}
 	
 	if (m_filter_across_dim)
-	    printf(" one filter (length %d) across feature dimension,", m_filter_length);
+	    printf("\n\tone filter (length %d) across feature dimension,", m_filter_length);
 	else
-	    printf(" one filter (length %d) for each feature dimension,", m_filter_length);
+	    printf("\n\tone filter (length %d) for each feature dimension,", m_filter_length);
 
 	if (m_filter_noncausal)
 	    printf(" noncausal,");
@@ -555,9 +555,9 @@ namespace layers {
 	    printf(" causal,");
 
 	if (m_filter_initial_keep)
-	    printf(" boundary smoothed,");
+	    printf("\n\tboundary smoothed,");
 	else
-	    printf(" boundary not smooth,");
+	    printf("\n\tboundary not smooth,");
 
     }
     

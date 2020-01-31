@@ -141,7 +141,7 @@ namespace layers {
 	
 	virtual int          mdnParaDim();
 	
-	virtual void initPreOutput(const cpu_real_vector &mVec, const cpu_real_vector &vVec);
+	virtual void initPreOutput();
 	
 	virtual cpu_real_vector getMdnConfigVec();
 

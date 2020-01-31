@@ -45,12 +45,11 @@
 #include <memory>
 
 
-/*****************************************************************************************************************//**
+/************************************************************************//**
  * Represents the neural network
  *
  * @param TDevice The computation device
- *********************************************************************************************************************/
-
+ ***************************************************************************/
 
 
 template <typename TDevice>
@@ -116,9 +115,11 @@ private:
     int m_dftLayerIdx;
 
     int m_interWeaveIdx;
-    
+
+    // network dependency/topology mangager
     helpers::networkDepMng m_networkMng;
 
+    // network memory manager (only for memory-save mode)
     helpers::vecPoolManager<TDevice> m_vecPoolMng;
     
     // initialize parameters
@@ -140,13 +141,22 @@ private:
     // create the dependency map
     void __CreateDependency();
 
+    // other optional initializations
+    void __MiscInitialization(const helpers::JsonDocument &jsonDoc,
+			      int parallelSequences,  int maxSeqLength);
+    
     // Training forward parts:
     //  layer by layer (normal mode)
     void __computeForward_LayerByLayer(const int curMaxSeqLength, const real_t uttCnt);
+    
     //  layer by layer (for AR model with teacher forcing training)
-    void __computeForward_TeacherForce_LayerByLayer(const int curMaxSeqLength, const real_t uttCnt);
+    void __computeForward_TeacherForce_LayerByLayer(const int curMaxSeqLength,
+						    const real_t uttCnt);
+    
     //  step by step (for AR model with schedule sampling)
-    void __computeForward_ScheduleSamp_LayerByLayer(const int curMaxSeqLength, const real_t uttCnt);
+    void __computeForward_ScheduleSamp_LayerByLayer(const int curMaxSeqLength,
+						    const real_t uttCnt);
+    
     //  step by step (for RNN network with feedback among hidden layers)
     void __computeForward_StepByStep(const int curMaxSeqLength, const real_t uttCnt);
 
@@ -163,6 +173,7 @@ private:
     //  layer by layer (normal mode)
     void __computeGenPass_LayerByLayer(const data_sets::DataSetFraction &fraction,
 				       const int curMaxSeqLength, const real_t generationOpt);
+    
     //  normalization flow (for autoregressive flow, NOT inverse autoregressive flow)
     void __computeGenPass_NormFlow(const data_sets::DataSetFraction &fraction,
 				   const int curMaxSeqLength, const real_t generationOpt);
@@ -184,19 +195,20 @@ private:
     void __computeGenPass_AE(const data_sets::DataSetFraction &fraction,
 			     const int curMaxSeqLength, const real_t generationOpt);
 
-
     //  step by step (for all types of AR model)
     void __computeGenPass_StepByStep_AR(const data_sets::DataSetFraction &fraction,
 					const int curMaxSeqLength, const real_t generationOpt);
+    
     //  step by step (for all types of RNN with feedback in hidden layers)
     void __computeGenPass_StepByStep_RNN_FBH(const data_sets::DataSetFraction &fraction,
-					     const int curMaxSeqLength, const real_t generationOpt);
+					     const int curMaxSeqLength,
+					     const real_t generationOpt);
 
     //  special mode for NSF with FBH
     void __computeGenPass_special_NSF_FBH(const data_sets::DataSetFraction &fraction,
-					  const int curMaxSeqLength, const real_t generationOpt);
+					  const int curMaxSeqLength,
+					  const real_t generationOpt);
 
-    
     // Simple methods
     bool __stopBackPropagation(const int layerID, const int runningMode);
     
@@ -205,7 +217,7 @@ public:
      * Creates the neural network from the process configuration
      *
      * @param jsonDoc           The JSON document containing the network configuration
-     * @param parallelSequences The maximum number of sequences that shall be computed in parallel
+     * @param parallelSequences The maximum number of sequences in parallel
      * @param maxSeqLength      The maximum length of a sequence
      */
     NeuralNetwork(const helpers::JsonDocument &jsonDoc,
@@ -238,8 +250,6 @@ public:
      *
      * @return The output layer
      */
-    /* Modify 04-08 Wang: to tap in the output of arbitary layer */
-    //layers::TrainableLayer<TDevice>& outputLayer();
     layers::Layer<TDevice>& outputLayer(const int layerID=-1);
 
     layers::SkipLayer<TDevice>* outGateLayer(const int layerID);
@@ -316,15 +326,19 @@ public:
      * @return Outputs of the processed fraction
      */
     std::vector<std::vector<std::vector<real_t> > > getOutputs(const real_t  mdnoutput   = -4.0);
+
+    std::vector<real_t> getOutputNew(const real_t  mdnoutput   = -4.0);
     
     /**
      * Read in the weight from trained_network.jsn or .autosave
      * 
      */
     void importWeights(const helpers::JsonDocument &jsonDoc, const std::string &ctrStr);
+
     
-    /* Add 16-02-22 Wang: for WE updating */
-    // repare for we updateing
+    /** 
+     * Support for word-embedding updating (obsolete)
+     */
     bool initWeUpdate(const std::string weBankPath, const unsigned weDim, 
 		      const unsigned weIDDim, const unsigned maxLength);
     
@@ -334,52 +348,48 @@ public:
     bool flagInputWeUpdate() const;
 
     bool saveWe(const std::string weFile) const;
+
     
-    /* Add 04-01 Wang: for RMSE output mask */
+    /**
+     * Funcs for network training
+     */
+    // load RMSE output mask 
     bool initMseWeight(const std::string mseWeightPath);
 
-    /* Add 0413 Wang: for weight mask */
+    // load weight mask 
     bool initWeightMask(const std::string weightMaskPath, const int weightMaskOpt);
 
+    // mask the network weights
     void maskWeight();
     
-    /* Add 0511 Wang: re-initialize the weight*/
+    // re-initialize the network weights
     void reInitWeight();
 
-    /* Add 0514 Wang: initialize the output layer for MDN */
-    void initOutputForMDN(const helpers::JsonDocument &jsonDoc,
-			  const data_sets::DataSetMV &datamv);
-
-    /* Add 1012 Read the mean and variance to the output layer*/
+    // specificla initialization for the layer before MDN
+    void initOutputForMDN(const helpers::JsonDocument &jsonDoc);
+    
+    // Read the mean and variance to the output layer
     void readMVForOutput(const data_sets::DataSetMV &datamv);
     
-    /* Add 0531 Wang: get the mdn config*/
+    // Get the MDN config
     Cpu::real_vector getMdnConfigVec();
-
-    /* Add 0630 Wang: print the binary weight matrix */
-    void printWeightMatrix(const std::string weightPath, const int opt);
     
-    /* Add 0928 Wang: notify the current training epoch to each layer*/
-    void notifyCurrentEpoch(const int trainingEpoch);
-
-    /* Add 0928 Wang: notify the current training epoch to each layer*/
-    void notifyCurrentFrac(const int fracNum);
-
-    /* Add 170515 update the current state*/
+    // Add 170515 update the current state
     void updateNNState(const int trainingEpoch, const int fracNum, const bool backpropagation);
-
+    
     void updateNNStateForGeneration();
     
-    int  layerSize(const int layerID);
-
-    bool isMDNLayer(const int layerID);
     
-    /* Add 17-05-02: support for the GAN training */
+    /**
+     * Functions for GAN training 
+     */
     void cleanGradientsForDiscriminator();
-    
-    //
+
     bool flagNetworkForGAN() const;
 
+    /**
+     * Functions for network structure 
+     */    
     // Whether this layer is AR dependent
     bool flagARdependency(const int layerID);
     bool flagARdependencyEntry(const int layerID);
@@ -388,14 +398,44 @@ public:
     bool flagARdependencyWithLayer(const int layerID, const int checkID);
     bool flagARdependencyWithLayerEntry(const int layerID, const int checkID);
 
+    // Whether this layer can be optimized for MA WaveNet models
+    bool flagLayerCanbeOptimizedMA(const int layerID);
+
+    
+    /**
+     * Misc
+     */
     bool externalOutputMV(Cpu::real_vector& mean, Cpu::real_vector& var);
 
-    int  outputPatternSize(const real_t mdnoutput);
+    int  outputDimension(const real_t mdnoutput);
 
     void printLayerDependecy();
 
-    // Whether this layer can be optimized for MA WaveNet models
-    bool flagLayerCanbeOptimizedMA(const int layerID);
+    void printNetworkSummary();
+    
+    int  layerSize(const int layerID);
+
+    bool isMDNLayer(const int layerID);
+    
+    // print the weight matrix in binary format
+    void printWeightMatrix(const std::string weightPath, const int opt);
+    
+    // notify the current training epoch to each layer
+    void notifyCurrentEpoch(const int trainingEpoch);
+
+    // notify the current training epoch to each layer
+    void notifyCurrentFrac(const int fracNum);
+
+    // save network
+    void saveNetwork(const std::string &filename,
+		     const real_t nnlr, const real_t welr);
+
+    // check network is classification network?
+    bool isClassificationNet();
+
+    // decide de-normalization vectors for MDN network
+    void setDenormalizationMV(cpu_real_vector &outputMeans,
+			      cpu_real_vector &outputStdevs);
     
 };
 
