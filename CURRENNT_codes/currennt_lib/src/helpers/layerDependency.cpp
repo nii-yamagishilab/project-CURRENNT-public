@@ -23,6 +23,7 @@
 #include "layerDependency.hpp"
 #include <cstdio>
 #include <boost/foreach.hpp>
+#include <stdexcept>
 
 namespace helpers{
 
