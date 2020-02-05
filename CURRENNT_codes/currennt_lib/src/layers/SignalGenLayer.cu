@@ -648,6 +648,9 @@ namespace{
 	real_t freqSR;
 	real_t voicedMag;
 	real_t decayRate;
+
+	real_t decayScale;
+	real_t decayShift;
 	
 	real_t *addNoise;
 	real_t *outputData;
@@ -694,6 +697,7 @@ namespace{
 		    tmp_decayRate = sourceData[timeBlock * preLayerDim + decayDim + dimIndex];
 		else
 		    tmp_decayRate = decayRate;
+		tmp_decayRate = tmp_decayRate * decayScale + decayShift;
 		
 		for (timePtr = 0; timePtr < maxLength; timePtr += parallel){
 		    // convolution over pulse train * noise
@@ -729,9 +733,13 @@ namespace{
     // copy segment
     struct CopyGrad
     {
-	real_t *weight;
+	real_t *grad;
 	real_t *target;
-
+	real_t *decayVal;
+	real_t  weightL1;
+	real_t  decayScale;
+	real_t  decayShift;
+	
 	int copyDim;  // dimension of the data to be copied
 
 	int tarDim;
@@ -747,7 +755,20 @@ namespace{
 
 	    if (patTypes != NULL && patTypes[timeIdx] == PATTYPE_NONE)
 		return;
-	    target[timeIdx * tarDim + tarS + dimIdx] = weight[outputIdx] * t.get<0>();
+	    
+	    target[timeIdx * tarDim + tarS + dimIdx] =
+		grad[outputIdx] * t.get<0>() * decayScale;
+
+	    // add gradient w.r.t L1 norm
+	    if (weightL1 > 0){
+		if (decayVal[timeIdx * tarDim + tarS + dimIdx] > 0){
+		    target[timeIdx * tarDim + tarS + dimIdx] += weightL1;
+		}else if (decayVal[timeIdx * tarDim + tarS + dimIdx] < 0){
+		    target[timeIdx * tarDim + tarS + dimIdx] -= weightL1;
+		}else{
+		    // nothing
+		}
+	    }
 	}
     };
 
@@ -854,7 +875,14 @@ namespace layers{
 				static_cast<real_t>((*layerChild)["periodicNoiseDecay"].GetDouble()):-1);
 	m_decayCoefDim = (layerChild->HasMember("periodicNoiseDecayCoefDim")?
 			  (*layerChild)["periodicNoiseDecayCoefDim"].GetInt():-1);
-	
+
+	m_decayCoefL1Weight = (layerChild->HasMember("periodicNoiseDecayCoefL1W")?
+			       static_cast<real_t>((*layerChild)["periodicNoiseDecayCoefL1W"].GetDouble()):-1);
+	m_decayScale = (layerChild->HasMember("periodicNoiseDecayScale")?
+			static_cast<real_t>((*layerChild)["periodicNoiseDecayScale"].GetDouble()):1.0);
+	m_decayShift = (layerChild->HasMember("periodicNoiseDecayShift")?
+			static_cast<real_t>((*layerChild)["periodicNoiseDecayShift"].GetDouble()):0.0);
+
 	if (m_periodicNoise) m_sin2pulse = 0;
 	
 	// Load F0 mean / std
@@ -932,6 +960,11 @@ namespace layers{
 		printf("\n\tGenerate periodic noise with trainable decay coeff");
 		printf("\n\tDecaying factor is the %d dimension of previous layer's output",
 		       m_decayCoefDim);
+		printf("\n\tInput decayubg factir is transformed as *%f + %f",
+		       m_decayScale, m_decayShift);
+		if (m_decayCoefL1Weight > 0)
+		    printf("\n\tL1 on trainable decay coef with w=%f", m_decayCoefL1Weight);
+		
 	    }else{
 		throw std::runtime_error("Error: unknown periodicNoise");
 	    }
@@ -1091,14 +1124,33 @@ namespace layers{
 	    (*layersArray)[layersArray->Size() - 1].AddMember("periodicNoise",
 							      m_periodicNoise,
 							      allocator);
-	    if (m_periodicNoiseDecay > 0)
-		(*layersArray)[layersArray->Size() - 1].AddMember("periodicNoiseDecay",
-								  m_periodicNoiseDecay,
-								  allocator);
-	    if (m_periodicNoise == NN_SIGGEN_PERIODIC_NOISE_TRAINABLE_DECAY)
+	    
+	    if (m_periodicNoise == NN_SIGGEN_PERIODIC_NOISE_TRAINABLE_DECAY){
+		
 		(*layersArray)[layersArray->Size() - 1].AddMember("periodicNoiseDecayCoefDim",
 								  m_decayCoefDim,
 								  allocator);
+		if (m_decayCoefL1Weight > 0)
+		    (*layersArray)[layersArray->Size() - 1].AddMember("periodicNoiseDecayCoefL1W",
+								      m_decayCoefL1Weight,
+								      allocator);
+		(*layersArray)[layersArray->Size() - 1].AddMember("periodicNoiseDecayScale",
+								  m_decayScale,
+								  allocator);
+		(*layersArray)[layersArray->Size() - 1].AddMember("periodicNoiseDecayShift",
+								  m_decayShift,
+								  allocator);
+		
+	    }else if (m_periodicNoise == NN_SIGGEN_PERIODIC_NOISE_DECAYED){
+		
+		(*layersArray)[layersArray->Size() - 1].AddMember("periodicNoiseDecay",
+								  m_periodicNoiseDecay,
+								  allocator);
+		
+	    }else{
+		// nothing
+	    }
+	    
 	}
     }
 
@@ -1471,11 +1523,16 @@ namespace layers{
 				helpers::getRawPointer(m_periodicNoiseGradient);
 			    fn6.decayDim   = m_decayCoefDim;
 			    fn6.preLayerDim= this->precedingLayer().size();
+			    fn6.decayScale = m_decayScale;
+			    fn6.decayShift = m_decayShift;
+			    
 			}else{
 			    fn6.sourceData = NULL;
 			    fn6.decayGrad  = NULL;
 			    fn6.decayDim   = 0;
 			    fn6.preLayerDim= this->precedingLayer().size();
+			    fn6.decayScale = 1.0;
+			    fn6.decayShift = 0.0;
 			}
 			
 			thrust::for_each(
@@ -1553,15 +1610,18 @@ namespace layers{
 			 this->precedingLayer().outputErrors().end(), 0.0);
 	    
 	    internal::CopyGrad fn;
-	    fn.target  = helpers::getRawPointer(this->precedingLayer().outputErrors());
+	    
 	    fn.tarDim  = this->precedingLayer().size();
 	    fn.tarS    = this->m_decayCoefDim;
-	    	    
-	    fn.weight  = helpers::getRawPointer(m_periodicNoiseGradient);
-
-	    fn.patTypes = helpers::getRawPointer(this->patTypes());
+	    fn.weightL1= m_decayCoefL1Weight;
+	    fn.grad    = helpers::getRawPointer(m_periodicNoiseGradient);
+	    fn.decayVal= helpers::getRawPointer(this->precedingLayer().outputs());
+	    fn.patTypes= helpers::getRawPointer(this->patTypes());
+	    fn.target  = helpers::getRawPointer(this->precedingLayer().outputErrors());
 	    fn.copyDim = this->size();
-	    
+	    fn.decayScale = m_decayScale;
+	    fn.decayShift = m_decayShift;
+
 	    thrust::for_each(
 	       thrust::make_zip_iterator(
 		   thrust::make_tuple(this->outputErrors().begin(), 

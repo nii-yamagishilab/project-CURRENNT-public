@@ -67,9 +67,6 @@ namespace layers{
 	real_vector     m_uvflag;
 	real_vector     m_f0inHz;
 
-	real_vector     m_periodicNoiseGradient;
-	int             m_decayCoefDim;
-	
 	int             m_equalNoiseSinePower;
 	int             m_noiseType;
 
@@ -80,7 +77,13 @@ namespace layers{
 
 	int             m_periodicNoise;
 	real_t          m_periodicNoiseDecay;
-	
+
+	real_vector     m_periodicNoiseGradient;
+ 	int             m_decayCoefDim;
+	real_t          m_decayCoefL1Weight;
+	real_t          m_decayScale;
+	real_t          m_decayShift;
+		
 	void __loadOpts(const helpers::JsonValue &layerChild);
 
 	void __printOpts();
