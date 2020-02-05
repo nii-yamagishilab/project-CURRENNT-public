@@ -2,13 +2,7 @@
  * This file is an addtional component of CURRENNT. 
  * Xin WANG
  * National Institute of Informatics, Japan
- * 2016
- *
- * This file is part of CURRENNT. 
- * Copyright (c) 2013 Johannes Bergmann, Felix Weninger, Bjoern Schuller
- * Institute for Human-Machine Communication
- * Technische Universitaet Muenchen (TUM)
- * D-80290 Munich, Germany
+ * 2016 - 2020
  *
  *
  * CURRENNT is free software: you can redistribute it and/or modify
@@ -72,6 +66,9 @@ namespace layers{
 
 	real_vector     m_uvflag;
 	real_vector     m_f0inHz;
+
+	real_vector     m_periodicNoiseGradient;
+	int             m_decayCoefDim;
 	
 	int             m_equalNoiseSinePower;
 	int             m_noiseType;

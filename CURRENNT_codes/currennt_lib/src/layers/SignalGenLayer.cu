@@ -2,14 +2,9 @@
  * This file is an addtional component of CURRENNT. 
  * Xin WANG
  * National Institute of Informatics, Japan
- * 2016
+ * 2016 - 2020
  *
  * This file is part of CURRENNT. 
- * Copyright (c) 2013 Johannes Bergmann, Felix Weninger, Bjoern Schuller
- * Institute for Human-Machine Communication
- * Technische Universitaet Muenchen (TUM)
- * D-80290 Munich, Germany
- *
  *
  * CURRENNT is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -57,16 +52,25 @@
 #define NN_OPE_FREGEN_F0_QF0  2   // input is qF0 (after mel)
 #define NN_OPE_FREGEN_F0_PF0  3   // input is normal f0 linear domain
 
-#define NN_SIGGEN_LAYER_MODE_NOISE_ONLY  0   // generate only noise
-#define NN_SIGGEN_LAYER_MODE_SINE_SIMPLE 1   // generate a sine without phase match & harmonics
-#define NN_SIGGEN_LAYER_MODE_SINE_PHASE  2   // generate a sine with phase match, not no harmonics
-#define NN_SIGGEN_LAYER_MODE_SINE_HARMO  3   // generate a sine with phase match and harmonics
+// generate only noise
+#define NN_SIGGEN_LAYER_MODE_NOISE_ONLY  0
+// generate a sine without phase match & harmonics
+#define NN_SIGGEN_LAYER_MODE_SINE_SIMPLE 1
+// generate a sine with phase match, not no harmonics
+#define NN_SIGGEN_LAYER_MODE_SINE_PHASE  2
+// generate a sine with phase match and harmonics
+#define NN_SIGGEN_LAYER_MODE_SINE_HARMO  3   
 
+// not use periodic noise
 #define NN_SIGGEN_PERIODIC_NOISE_NONE 0
-#define NN_SIGGEN_PERIODIC_NOISE_DEFAULT 1    // simply repeat the noise without decaying
-#define NN_SIGGEN_PERIODIC_NOISE_WITH_PULSE 2 // repeat the noise without decaying, adding the pulse
-#define NN_SIGGEN_PERIODIC_NOISE_DECAYED 3   // exponentially decayed periodic noise
-
+// simply repeat the noise without decaying
+#define NN_SIGGEN_PERIODIC_NOISE_DEFAULT 1
+// repeat the noise without decaying, adding the pulse
+#define NN_SIGGEN_PERIODIC_NOISE_WITH_PULSE 2
+// exponentially decayed periodic noise
+#define NN_SIGGEN_PERIODIC_NOISE_DECAYED 3
+// trainable decaying factors
+#define NN_SIGGEN_PERIODIC_NOISE_TRAINABLE_DECAY 4
 
 #define PI_DEFINITION 3.141592654f
 
@@ -631,13 +635,16 @@ namespace{
     };
 
 
-    struct periodicNoise_type3
+    struct periodicNoise_type3_type4
     {
 	int layerSize;
 	int parallel;
 	int maxLength;
 	int pNoiseType;
 
+	int decayDim;
+	int preLayerDim;
+	
 	real_t freqSR;
 	real_t voicedMag;
 	real_t decayRate;
@@ -646,6 +653,9 @@ namespace{
 	real_t *outputData;
 	real_t *uvFlag;
 	real_t *f0inHz;
+
+	real_t *sourceData;
+	real_t *decayGrad;
 	
 	const char *patTypes;
 	
@@ -653,44 +663,94 @@ namespace{
 	{
 	    int timeBlock = t.get<1>() / layerSize;
 	    int dimIndex  = t.get<1>() % layerSize;
-	    int timePtr;
-	    real_t tmp_value;
-	    real_t period_value;
+	    int timePtr   = 0;
+	    
+	    real_t tmp_single_step_value = 0;
+	    real_t tmp_conv_value = 0;
+	    real_t tmp_grad_value = 0;
+	    real_t tmp_decayRate = 0;
+	    
+	    real_t period_value = 0;
+	    
 	    if (patTypes[timeBlock] == PATTYPE_NONE){
 		// current time step is void
 		t.get<0>() = 0.0;
-		
+		if (decayGrad)
+		    decayGrad[t.get<1>()] = 0.0;		
 	    }else if (uvFlag[timeBlock] < 1){
 		// current step is not void but unvoiced
 		t.get<0>() = outputData[t.get<1>()];
-		    
+		if (decayGrad)
+		    decayGrad[t.get<1>()] = 0.0;
 	    }else{
 
 		period_value = freqSR / f0inHz[timeBlock];
-		tmp_value = 0;
-			
+		tmp_single_step_value = 0;
+		tmp_conv_value = 0;
+		tmp_grad_value = 0;
+		
+		// get the decaying factor
+		if (sourceData)
+		    tmp_decayRate = sourceData[timeBlock * preLayerDim + decayDim + dimIndex];
+		else
+		    tmp_decayRate = decayRate;
+		
 		for (timePtr = 0; timePtr < maxLength; timePtr += parallel){
 		    // convolution over pulse train * noise
 		    if ((timeBlock - timePtr) >= 0 &&
 			(timeBlock - timePtr) < maxLength &&
 			uvFlag[timeBlock - timePtr] > 0 &&
 			outputData[(timeBlock-timePtr)*layerSize+dimIndex] != 0.0){
-			tmp_value += addNoise[timePtr * layerSize + dimIndex] *
-			    exp(-1.0 * (timePtr / parallel) / (period_value * decayRate));
+
+			tmp_single_step_value = addNoise[timePtr * layerSize + dimIndex] *
+			    exp(-1.0 * (timePtr / parallel) / (period_value * tmp_decayRate));
+			
+			tmp_conv_value += tmp_single_step_value;
+			
+			tmp_grad_value += (tmp_single_step_value *
+					   (timePtr / parallel) /
+					   (period_value * tmp_decayRate * tmp_decayRate));
 		    }
 		    
 		    // stop the convolution if the decayed factor is small
 		    if ((timePtr / parallel) > (NN_SIGGEN_EXPONENTIAL_DECAY * period_value))
 			break;
 		}
-		t.get<0>() = tmp_value;
+		t.get<0>() = tmp_conv_value;
+
+		if (decayGrad)
+		    decayGrad[t.get<1>()] = tmp_grad_value;
 	    }
 	    
 	    return;
 	}
     };
 
-    
+    // copy segment
+    struct CopyGrad
+    {
+	real_t *weight;
+	real_t *target;
+
+	int copyDim;  // dimension of the data to be copied
+
+	int tarDim;
+	int tarS;     // the first dimension to store the copied data in target stream
+	
+	const char *patTypes;     //
+	
+	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
+	{
+	    int outputIdx = t.get<1>();
+	    int timeIdx   = outputIdx / copyDim;
+	    int dimIdx    = outputIdx % copyDim;
+
+	    if (patTypes != NULL && patTypes[timeIdx] == PATTYPE_NONE)
+		return;
+	    target[timeIdx * tarDim + tarS + dimIdx] = weight[outputIdx] * t.get<0>();
+	}
+    };
+
 }    
 }
 
@@ -792,6 +852,9 @@ namespace layers{
 			   ((*layerChild)["periodicNoise"].GetInt()):NN_SIGGEN_PERIODIC_NOISE_NONE);
 	m_periodicNoiseDecay = (layerChild->HasMember("periodicNoiseDecay")?
 				static_cast<real_t>((*layerChild)["periodicNoiseDecay"].GetDouble()):-1);
+	m_decayCoefDim = (layerChild->HasMember("periodicNoiseDecayCoefDim")?
+			  (*layerChild)["periodicNoiseDecayCoefDim"].GetInt():-1);
+	
 	if (m_periodicNoise) m_sin2pulse = 0;
 	
 	// Load F0 mean / std
@@ -865,6 +928,10 @@ namespace layers{
 		else
 		    printf(" with decay rate as exp(-1.0 t / (%f * T))",
 			   m_periodicNoiseDecay);
+	    }else if (m_periodicNoise == NN_SIGGEN_PERIODIC_NOISE_TRAINABLE_DECAY){
+		printf("\n\tGenerate periodic noise with trainable decay coeff");
+		printf("\n\tDecaying factor is the %d dimension of previous layer's output",
+		       m_decayCoefDim);
 	    }else{
 		throw std::runtime_error("Error: unknown periodicNoise");
 	    }
@@ -894,9 +961,17 @@ namespace layers{
 	    }else{
 		this->setLayerMode(NN_SIGGEN_LAYER_MODE_SINE_SIMPLE);
 	    }
+	    
 	}else{
 	    this->setLayerMode(NN_SIGGEN_LAYER_MODE_NOISE_ONLY);
 	    printf("\n\tSignalGen: generating noise");
+	}
+
+	if (m_periodicNoise == NN_SIGGEN_PERIODIC_NOISE_TRAINABLE_DECAY){
+	    if (this->precedingLayer().size() <= (m_decayCoefDim + this->size()))
+		throw std::runtime_error("periodicNoiseDecayCoefDim > pervious layer size");
+	    if (m_decayCoefDim == m_freqDim)
+		printf("WARNING: periodicNoiseDecayCoefDim is equal to frequencyDim?");
 	}
 	
     }
@@ -927,7 +1002,11 @@ namespace layers{
 	    break;
 	default:
 	    break;
-	}	
+	}
+
+	if (m_periodicNoise == NN_SIGGEN_PERIODIC_NOISE_TRAINABLE_DECAY)
+	    m_periodicNoiseGradient.resize(this->outputs().size(), 0.0);
+	
     }
 
     template <typename TDevice>
@@ -941,6 +1020,8 @@ namespace layers{
 	m_phaseNoise.clear();     m_phaseNoise.shrink_to_fit();
 	m_uvflag.clear();         m_uvflag.shrink_to_fit();
 	m_f0inHz.clear();         m_f0inHz.shrink_to_fit();
+	m_periodicNoiseGradient.clear();
+	m_periodicNoiseGradient.shrink_to_fit();
     }
 
     template <typename TDevice>
@@ -1013,6 +1094,10 @@ namespace layers{
 	    if (m_periodicNoiseDecay > 0)
 		(*layersArray)[layersArray->Size() - 1].AddMember("periodicNoiseDecay",
 								  m_periodicNoiseDecay,
+								  allocator);
+	    if (m_periodicNoise == NN_SIGGEN_PERIODIC_NOISE_TRAINABLE_DECAY)
+		(*layersArray)[layersArray->Size() - 1].AddMember("periodicNoiseDecayCoefDim",
+								  m_decayCoefDim,
 								  allocator);
 	}
     }
@@ -1358,9 +1443,10 @@ namespace layers{
 
 		// if periodic noise is to be used based on the pulse train
 		if (m_periodicNoise){
-		    if (this->m_periodicNoise == NN_SIGGEN_PERIODIC_NOISE_DECAYED){
+		    if (this->m_periodicNoise == NN_SIGGEN_PERIODIC_NOISE_DECAYED ||
+			this->m_periodicNoise == NN_SIGGEN_PERIODIC_NOISE_TRAINABLE_DECAY){
 			// periodic noise with expoential decay
-			internal::periodicNoise_type3 fn6;
+			internal::periodicNoise_type3_type4 fn6;
 
 			fn6.layerSize  = this->size();
 			fn6.parallel   = this->parallelSequences();
@@ -1376,7 +1462,22 @@ namespace layers{
 			fn6.patTypes   = helpers::getRawPointer(this->patTypes());
 			fn6.uvFlag     = helpers::getRawPointer(this->m_uvflag);
 			fn6.f0inHz     = helpers::getRawPointer(this->m_f0inHz);
-		    
+
+			// input data for periodic noise with trainable decaying factors
+			if (this->m_periodicNoise == NN_SIGGEN_PERIODIC_NOISE_TRAINABLE_DECAY){
+			    fn6.sourceData =
+				helpers::getRawPointer(this->precedingLayer().outputs());
+			    fn6.decayGrad  =
+				helpers::getRawPointer(m_periodicNoiseGradient);
+			    fn6.decayDim   = m_decayCoefDim;
+			    fn6.preLayerDim= this->precedingLayer().size();
+			}else{
+			    fn6.sourceData = NULL;
+			    fn6.decayGrad  = NULL;
+			    fn6.decayDim   = 0;
+			    fn6.preLayerDim= this->precedingLayer().size();
+			}
+			
 			thrust::for_each(
 		         thrust::make_zip_iterator(
 			   thrust::make_tuple(
@@ -1447,6 +1548,29 @@ namespace layers{
     void SignalGenLayer<TDevice>::computeBackwardPass(const int nnState)
     {	
 	// do nothing
+	if (m_periodicNoise == NN_SIGGEN_PERIODIC_NOISE_TRAINABLE_DECAY){
+	    thrust::fill(this->precedingLayer().outputErrors().begin(),
+			 this->precedingLayer().outputErrors().end(), 0.0);
+	    
+	    internal::CopyGrad fn;
+	    fn.target  = helpers::getRawPointer(this->precedingLayer().outputErrors());
+	    fn.tarDim  = this->precedingLayer().size();
+	    fn.tarS    = this->m_decayCoefDim;
+	    	    
+	    fn.weight  = helpers::getRawPointer(m_periodicNoiseGradient);
+
+	    fn.patTypes = helpers::getRawPointer(this->patTypes());
+	    fn.copyDim = this->size();
+	    
+	    thrust::for_each(
+	       thrust::make_zip_iterator(
+		   thrust::make_tuple(this->outputErrors().begin(), 
+				      thrust::counting_iterator<int>(0))),
+	       thrust::make_zip_iterator(
+		   thrust::make_tuple(this->outputErrors().begin()      + this->outputs().size(), 
+				      thrust::counting_iterator<int>(0) + this->outputs().size())),
+	       fn);
+	}
     }
 
     template <typename TDevice>
@@ -1541,6 +1665,9 @@ namespace layers{
 	default:
 	    break;
 	}
+
+	if (m_periodicNoise == NN_SIGGEN_PERIODIC_NOISE_TRAINABLE_DECAY)
+	    vecPoolMng.addOrRemoveNewVec(this->size(), flag_add);
     }
     
     template <typename TDevice>
@@ -1578,7 +1705,10 @@ namespace layers{
 	    break;
 	default:
 	    break;
-	}	
+	}
+
+	if (m_periodicNoise == NN_SIGGEN_PERIODIC_NOISE_TRAINABLE_DECAY)
+	    vecPoolMng.getSwapVector(m_periodicNoiseGradient, this->getLayerID(), this->size(), flag_get);
     }
     
     template class SignalGenLayer<Cpu>;
