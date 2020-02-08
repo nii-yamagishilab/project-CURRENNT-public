@@ -653,6 +653,9 @@ Configuration::Configuration(int argc, const char *argv[])
 	("file_ordered_lst_tst",
 	 po::value(&m_fileOrderedLstTst) ->default_value(""),
 	 "Test set files will be ordered according to the text file list")
+	("multi_thread_loading",
+	 po::value(&m_multithread_dataset) ->default_value(false),
+	 "Load the data using multiple threads (default false)")
         ;
 
     po::options_description weightsInitializationOptions("Weight initialization options");
@@ -1697,4 +1700,9 @@ const std::string& Configuration::fileOrderedLstTst() const{
 
 unsigned Configuration::truncateSeqNSegments() const{
     return m_truncNsegments;
+}
+
+
+const bool& Configuration::flagMultiThreadLoad() const{
+    return m_multithread_dataset;
 }
