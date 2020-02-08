@@ -291,11 +291,17 @@ namespace internal {
 	if (etPos == -1) etPos = numEle;
 	if (stPos >= etPos || stPos < 0)
 	    throw std::runtime_error(std::string("Fail to read ")+dataPath);
-	if ((etPos - stPos) > numEle){
-	    printf("\nWARNING: %s has %ld data, but less than %ld.\n",
+	if ((etPos - stPos) > numEle && ((etPos - stPos) - numEle) > (numEle * 0.1)){
+	    printf("\nWARNING: %s has %ld data, which is less than the expected number %ld.",
 		   dataPath.c_str(), numEle, (etPos - stPos));
-	    printf("\tWARNING: Please check input/output idx. Or those data will be set to 0.0.\n");
+	    printf("\tPlease check the data. Or those data will be set to 0.0.\n");
+	    //throw std::runtime_error(std::string("Fail to read ") + dataPath);
 	}
+	//if ((etPos - stPos) > numEle){
+	    //printf("\nWARNING: %s has %ld data, but less than %ld.\n",
+	    //	   dataPath.c_str(), numEle, (etPos - stPos));
+	    //printf("\tWARNING: Please check input/output idx. Or those data will be set to 0.0.\n");
+	    //}
 
 	// read in the data
 	data = Cpu::real_vector(etPos - stPos, 0);
@@ -375,11 +381,18 @@ namespace internal {
 	    // case two
 	    
 	    // if the required number frames > the frame number in external file
-	    if ((etPos - stPos) > numEle){
-		printf("\nWARNING: %s has %ld data elements, which is less than %ld.\n",
+	    if ((etPos - stPos) > numEle && ((etPos - stPos) - numEle) > (numEle * 0.1)){
+		printf("\nWARNING: %s has %ld data, which is less than the expected number %ld.",
 		       dataPath.c_str(), numEle, (etPos - stPos));
-		printf("\tWARNING: Extra data in memory will be set to 0.0.\n");
+		printf("\tPlease check the data. Or those data will be set to 0.0.\n");
+		//throw std::runtime_error(std::string("Fail to read ") + dataPath);
 	    }
+	    
+	    //if ((etPos - stPos) > numEle){
+	    //	printf("\nWARNING: %s has %ld data elements, which is less than %ld.\n",
+	    //	       dataPath.c_str(), numEle, (etPos - stPos));
+	    //	printf("\tWARNING: Extra data in memory will be set to 0.0.\n");
+	    //}
 
 	    // move the pointer to the stPos
 	    ifs.seekg(stPos * sizeof(real_t), std::ios::beg);
@@ -1323,7 +1336,8 @@ namespace data_sets {
 	    printf("\nTurn on utterance truncation into %d segments", truncNseg);
 	}
 
-	
+	long unsigned int sequences_num;
+	long unsigned int sequences_cnt;
 	
 	/* -------------- Read in the data ---------------- */
 	// Read *.nc files
@@ -1331,6 +1345,9 @@ namespace data_sets {
         for (std::vector<std::string>::const_iterator nc_itr = ncfiles.begin();
 	     nc_itr != ncfiles.end(); ++nc_itr) 
         {
+
+	    std::cout << "Loading: " << *nc_itr << "\n" << std::endl; 
+	    
 	    // buffer of data segments
             std::vector<sequence_t> sequences;
 	    
@@ -1456,10 +1473,15 @@ namespace data_sets {
                     }
                 }
 
+		sequences_num = sequences.size();
+		sequences_cnt = 0;
 		// For each segment, read in input/output data and save them into cache
                 for (std::vector<sequence_t>::iterator seq = sequences.begin(); 
-		     seq != sequences.end(); ++seq) {
+		     seq != sequences.end(); ++seq, ++sequences_cnt) {
 
+		    std::cout << "\e[A" << "  reading utterances " << std::flush;
+		    std::cout << sequences_cnt << "/" << sequences_num << std::endl;
+		    
 		    // global maxSeqLength and minSeqLength of segments
                     m_minSeqLength = std::min(m_minSeqLength, seq->length);
                     m_maxSeqLength = std::max(m_maxSeqLength, seq->length);
