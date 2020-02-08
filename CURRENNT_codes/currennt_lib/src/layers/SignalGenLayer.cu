@@ -255,7 +255,8 @@ namespace{
 			spPhase = spPhase + 2.0 * PI_DEFINITION;
 
 		    // sine wavefor value of current time step
-		    if (periodicNFlag == NN_SIGGEN_PERIODIC_NOISE_DECAYED){
+		    if (periodicNFlag == NN_SIGGEN_PERIODIC_NOISE_DECAYED ||
+			periodicNFlag == NN_SIGGEN_PERIODIC_NOISE_TRAINABLE_DECAY){
 			// for periodic, use cos so that initial phase is the maximum value of cos waveform
 			sigValue = cos(spPhase) * f0Mag;
 		    }else{
@@ -500,7 +501,8 @@ namespace{
 		    // current step is unvoiced
 		    t.get<0>() = outputData[t.get<1>()];
 		    
-		}else if (forPeriodicN == NN_SIGGEN_PERIODIC_NOISE_DECAYED){
+		}else if (forPeriodicN == NN_SIGGEN_PERIODIC_NOISE_DECAYED ||
+			  forPeriodicN == NN_SIGGEN_PERIODIC_NOISE_TRAINABLE_DECAY){
 		    
 		    // generating the pulse train for locating periodic noise
 
