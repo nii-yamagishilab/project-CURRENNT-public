@@ -253,12 +253,14 @@ namespace layers {
 	    int buffPos   = fraction.patTypesLowTimesResPos(m_timeResolution);
 	    int buffLen   = fraction.patTypesLowTimesResLen(m_timeResolution);
 	    if (buffPos < 0 || buffLen < 0){
-		printf(" %s resolution not in --resolutions", this->name().c_str());
+		printf("\n %s resolution not in --resolutions \n", this->name().c_str());
+		printf("\n please check --resolutions\n");
 		throw std::runtime_error("Resolution error");
 	    }
 	    if (buffPos > fraction.patTypesLowTimeRes().size() ||
 		(buffLen + buffPos) > fraction.patTypesLowTimeRes().size()){
-		printf(" %s resolution not in --resolutions", this->name().c_str());
+		printf("\n%s resolution not in --resolutions", this->name().c_str());
+		printf("\n please check --resolutions\n");		
 		throw std::runtime_error("Resolution error");
 	    }
 	    //m_patTypes.resize(buffLen, PATTYPE_NONE);

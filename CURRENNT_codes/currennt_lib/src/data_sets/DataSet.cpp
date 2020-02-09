@@ -295,6 +295,7 @@ namespace internal {
 	    printf("\nWARNING: %s has %ld data, which is less than the expected number %ld.",
 		   dataPath.c_str(), numEle, (etPos - stPos));
 	    printf("\tPlease check the data. Or those data will be set to 0.0.\n");
+	    std::cout << std::endl;
 	    //throw std::runtime_error(std::string("Fail to read ") + dataPath);
 	}
 	//if ((etPos - stPos) > numEle){

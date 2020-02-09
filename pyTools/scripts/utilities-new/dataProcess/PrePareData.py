@@ -27,6 +27,7 @@ dataType = cfg.dataType
 flushThreshold = cfg.flushThreshold
 scpdir = sys.argv[2]
 
+from pyTools import display
 
 def PrepareScp(InScpFile, OutScpFile, inDim, outDim, allScp, datadir, txtScp, txtDim):
     """ Count the number of frames of each input and output file.
@@ -50,9 +51,13 @@ def PrepareScp(InScpFile, OutScpFile, inDim, outDim, allScp, datadir, txtScp, tx
     #  check the duration of each input file
     #  keep the shortest duration of input files for one entry
     
-    print("\nNote: Different feature files of one utterance may contain different number of frames.")
-    print("Trim value shows how many frames are discarded in order to match the shortest file.")
-    print("Large Trim value may indicate data length mismatch. Please check it carefully if it happens!\n")
+    display.self_print("\nNote: Different feature files of one utterance may be different in length.",
+                       'warning')
+    display.self_print("Trim value shows how many data are discarded in order to match the shortest file.",
+                       'warning')
+    display.self_print("Large Trim value may indicate data length mismatch.", 'warning')
+    display.self_print("Please check configuration carefully if it happens!\n",
+                       'warning')
     print("Processing the input file")
     for scpFile, dim, scpIndex in zip(InScpFile, inDim, range(len(InScpFile))):
         fPtr = open(scpFile,'r')
@@ -93,13 +98,17 @@ def PrepareScp(InScpFile, OutScpFile, inDim, outDim, allScp, datadir, txtScp, tx
                     numFrame = numFrame + tempFrame
                     seqLenBuffer.append(tempFrame)
                 else:
+                    if np.abs(seqLenBuffer[fileCtr+1] - tempFrame) / float(seqLenBuffer[fileCtr+1]) > 0.1:
+                        if seqLenBuffer[fileCtr+1] > tempFrame:
+                            addiFrame = seqLenBuffer[fileCtr+1]-tempFrame
+                            display.self_print("%s has %d data, less than %d " % (fileline, tempFrame, seqLenBuffer[fileCtr+1]), 'warning')
+                            display.self_print("Other files will be trimmed %d data to fit %s" % (addiFrame,fileline), 'warning')
+                        elif seqLenBuffer[fileCtr+1] < tempFrame:
+                            addiFrame = -1*seqLenBuffer[fileCtr+1]+tempFrame
+                            display.self_print("Trim %d from %s" % (addiFrame,fileline), 'warning')
+                
                     if seqLenBuffer[fileCtr+1]>tempFrame:
-                        addiFrame = seqLenBuffer[fileCtr+1]-tempFrame
                         seqLenBuffer[fileCtr+1]=tempFrame
-                        print("Trim %d to fit %s" % (addiFrame,fileline))
-                    elif seqLenBuffer[fileCtr+1]<tempFrame:
-                        addiFrame = -1*seqLenBuffer[fileCtr+1]+tempFrame
-                        print("Trim %d from %s" % (addiFrame,fileline))
                     
                         
             fileCtr = fileCtr + 1
@@ -142,14 +151,18 @@ def PrepareScp(InScpFile, OutScpFile, inDim, outDim, allScp, datadir, txtScp, tx
                     tempFrame = funcs.Bytes(fileline, dim)/np.dtype(dataType).itemsize
                 except TypeError:
                     tempFrame = funcs.Bytes(fileline.encode(), dim)/np.dtype(dataType).itemsize
-                    
+
+                if np.abs(seqLenBuffer[fileCtr+1] - tempFrame) / float(seqLenBuffer[fileCtr+1]) > 0.1:
+                    if seqLenBuffer[fileCtr+1] > tempFrame:
+                        addiFrame = seqLenBuffer[fileCtr+1]-tempFrame
+                        display.self_print("%s has %d data, less than %d " % (fileline, tempFrame, seqLenBuffer[fileCtr+1]), 'warning')
+                        display.self_print("Other files will be trimmed %d data to fit %s" % (addiFrame,fileline), 'warning')
+                    elif seqLenBuffer[fileCtr+1] < tempFrame:
+                        addiFrame = -1*seqLenBuffer[fileCtr+1]+tempFrame
+                        display.self_print("Trim %d from %s" % (addiFrame,fileline), 'warning')
+                
                 if seqLenBuffer[fileCtr+1]>tempFrame:
-                    addiFrame = seqLenBuffer[fileCtr+1]-tempFrame
                     seqLenBuffer[fileCtr+1]=tempFrame
-                    print("Trim %d to fit %s " % (addiFrame, fileline))
-                elif seqLenBuffer[fileCtr+1]<tempFrame:
-                    addiFrame = -1*seqLenBuffer[fileCtr+1]+tempFrame
-                    print("Trim %d from %s" % (addiFrame,fileline))
                 
                 fileCtr = fileCtr + 1
                 print("Output %d %d\r" % (scpIndex, fileCtr), end=' ')

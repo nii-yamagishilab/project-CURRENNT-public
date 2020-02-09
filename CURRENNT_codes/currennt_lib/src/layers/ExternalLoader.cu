@@ -209,8 +209,9 @@ namespace layers{
 	TrainableLayer<TDevice>::loadSequences(fraction, nnState);
 	// Load the external linguistic features
 	if (fraction.externalInputSize() != this->size()){
-	    printf("external data dim %d %s", fraction.externalInputSize(), this->name().c_str());
-	    throw std::runtime_error("external data dimension unmatched");
+	    printf("\nError: external data has %d dimensions in total", fraction.externalInputSize());
+	    printf("\nBut %s expects features with %d dimensions\n", this->name().c_str(), this->size());
+	    throw std::runtime_error("Data dimension mismatch. Please check --ExtInputDims");
 	}
 	if (this->outputs().size()<1)
 	    throw std::runtime_error("Fail to initialize output buffer");
