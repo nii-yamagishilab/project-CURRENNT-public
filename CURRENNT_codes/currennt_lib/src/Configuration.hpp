@@ -71,6 +71,7 @@ private:
 
     bool m_revertStd;
     bool m_outputHtk;
+    bool m_multithread_dataset;
     
     /* Add 16-02-22 Wang: for WE updating */
     bool        m_weUpdate;       // whether update the input we vector?
@@ -818,6 +819,8 @@ public:
     const int& ARmodelSpecialGenMode() const;
 
     const int& quickTestNetwork() const;
+
+    const bool& flagMultiThreadLoad() const;
 };
 
 

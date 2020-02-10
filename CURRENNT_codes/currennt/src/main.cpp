@@ -251,7 +251,7 @@ int trainerMain(const Configuration &config)
                 break;
 
             default:
-                throw std::runtime_error("Unknown optimizer type");
+                throw std::runtime_error("CURRENNT error: unknown optimizer type");
             }
 
 	    // initialize or load existing parameters
@@ -483,7 +483,7 @@ int trainerMain(const Configuration &config)
 	    }else if (config.printWeightOpt() == 3){
 		// save network after loading weights from another network
 		if (config.trainedParameterPath().size() == 0)
-		    throw std::runtime_error("Please provide --trainedModel");
+		    throw std::runtime_error("Config error: please give --trainedModel");
 		
 		readJsonFile(&netDocParameter,
 			     config.trainedParameterPath());
@@ -527,10 +527,10 @@ int trainerMain(const Configuration &config)
 	    int    output_lag        = config.outputTimeLag();
 
 	    if (config.feedForwardFormat() != Configuration::FORMAT_HTK)
-		throw std::runtime_error("Error: generation only supports HTK format");
+		throw std::runtime_error("Please use --ff_output_format HTK");
 
 	    if (parallelSequences > 1)
-		throw std::runtime_error("Error: --parallel is not allowed");
+		throw std::runtime_error("Please use --parallel 1");
 	    
 	    // Load data mean and std from data set
 	    // Method 1:
@@ -690,7 +690,7 @@ int trainerMain(const Configuration &config)
 	
     }
     catch (const std::exception &e) {
-        printf("FAILED: %s\n", e.what());
+        printf("FAILED in running CURENNT: %s\n", e.what());
         return 2;
     }
     return 0;
@@ -708,7 +708,7 @@ int main(int argc, const char *argv[])
         cudaError_t err;
         if (config.listDevices()) {
             if ((err = cudaGetDeviceCount(&count)) != cudaSuccess) {
-                std::cerr << "FAILED: " << cudaGetErrorString(err) << std::endl;
+                std::cerr << "FAILED in GPU initializing: " << cudaGetErrorString(err) << std::endl;
                 return err;
             }
             std::cout << count << " devices found" << std::endl;
@@ -729,12 +729,12 @@ int main(int argc, const char *argv[])
         }
         cudaDeviceProp prop;
         if ((err = cudaGetDeviceProperties(&prop, device)) != cudaSuccess) {
-            std::cerr << "FAILED: " << cudaGetErrorString(err) << std::endl;
+            std::cerr << "FAILED in GPU initialization: " << cudaGetErrorString(err) << std::endl;
             return err;
         }
         std::cout << "Using device #" << device << " (" << prop.name << ")" << std::endl;
         if ((err = cudaSetDevice(device)) != cudaSuccess) {
-            std::cerr << "FAILED: " << cudaGetErrorString(err) << std::endl;
+            std::cerr << "FAILED in GPU initialization: " << cudaGetErrorString(err) << std::endl;
             return err;
         }
         return trainerMain<Gpu>(config);
@@ -748,9 +748,10 @@ void readJsonFile(rapidjson::Document *doc, const std::string &filename)
 {
     // open the file
     std::ifstream ifs(filename.c_str(), std::ios::binary);
-    if (!ifs.good())
-        throw std::runtime_error("Cannot open file");
- 
+    if (!ifs.good()){
+	std::cout << "\nCannot open file" << filename << std::endl;
+        throw std::runtime_error("Failed to read network file");
+    }
     // calculate the file size in bytes
     ifs.seekg(0, std::ios::end);
     size_t size = ifs.tellg();
@@ -765,16 +766,15 @@ void readJsonFile(rapidjson::Document *doc, const std::string &filename)
     delete buffer;
 
     // extract the JSON tree
-    if (doc->Parse<0>(docStr.c_str()).HasParseError()){
-	printf("\n\t\tPlease check lines around:\n\t\t");
+    if (doc->Parse<0>(docStr.c_str()).HasParseError()){	
+	printf("\n\nFail to parse: %s", filename.c_str());
+	printf("\nFile is incorrect in Json grammar. Please check lines:\n\t\t");
 	size_t start = (doc->GetErrorOffset()>20)?
 	    (doc->GetErrorOffset()-20):doc->GetErrorOffset();
-	
 	for (int t=0;t<50;t++)
 	    printf("%c", docStr.c_str()[start + t]);
-	
-	printf("\n\n");
-        throw std::runtime_error(std::string("Parse error: ") + doc->GetParseError());
+	printf("\n");
+        throw std::runtime_error(doc->GetParseError());
     }
 }
 

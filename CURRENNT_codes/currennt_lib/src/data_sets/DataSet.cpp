@@ -291,11 +291,18 @@ namespace internal {
 	if (etPos == -1) etPos = numEle;
 	if (stPos >= etPos || stPos < 0)
 	    throw std::runtime_error(std::string("Fail to read ")+dataPath);
-	if ((etPos - stPos) > numEle){
-	    printf("\nWARNING: %s has %ld data, but less than %ld.\n",
+	if ((etPos - stPos) > numEle && ((etPos - stPos) - numEle) > (numEle * 0.1)){
+	    printf("\nWARNING: %s has %ld data, which is less than the expected number %ld.",
 		   dataPath.c_str(), numEle, (etPos - stPos));
-	    printf("\tWARNING: Please check input/output idx. Or those data will be set to 0.0.\n");
+	    printf("\tPlease check the data. Or those data will be set to 0.0.\n");
+	    std::cout << std::endl;
+	    //throw std::runtime_error(std::string("Fail to read ") + dataPath);
 	}
+	//if ((etPos - stPos) > numEle){
+	    //printf("\nWARNING: %s has %ld data, but less than %ld.\n",
+	    //	   dataPath.c_str(), numEle, (etPos - stPos));
+	    //printf("\tWARNING: Please check input/output idx. Or those data will be set to 0.0.\n");
+	    //}
 
 	// read in the data
 	data = Cpu::real_vector(etPos - stPos, 0);
@@ -375,11 +382,18 @@ namespace internal {
 	    // case two
 	    
 	    // if the required number frames > the frame number in external file
-	    if ((etPos - stPos) > numEle){
-		printf("\nWARNING: %s has %ld data elements, which is less than %ld.\n",
+	    if ((etPos - stPos) > numEle && ((etPos - stPos) - numEle) > (numEle * 0.1)){
+		printf("\nWARNING: %s has %ld data, which is less than the expected number %ld.",
 		       dataPath.c_str(), numEle, (etPos - stPos));
-		printf("\tWARNING: Extra data in memory will be set to 0.0.\n");
+		printf("\tPlease check the data. Or those data will be set to 0.0.\n");
+		//throw std::runtime_error(std::string("Fail to read ") + dataPath);
 	    }
+	    
+	    //if ((etPos - stPos) > numEle){
+	    //	printf("\nWARNING: %s has %ld data elements, which is less than %ld.\n",
+	    //	       dataPath.c_str(), numEle, (etPos - stPos));
+	    //	printf("\tWARNING: Extra data in memory will be set to 0.0.\n");
+	    //}
 
 	    // move the pointer to the stPos
 	    ifs.seekg(stPos * sizeof(real_t), std::ios::beg);
@@ -1263,6 +1277,7 @@ namespace data_sets {
 	, m_exOutputFlag     (false)
 	, m_auxDirPath       ("")
 	, m_outputMVFlag     (false)
+	, m_flag_multithread (false)
     {
     }
 
@@ -1282,6 +1297,7 @@ namespace data_sets {
         , m_maxSeqLength     (std::numeric_limits<int>::min())
         , m_curFirstSeqIdx   (-1)
 	, m_outputMVFlag     (false)
+	, m_flag_multithread (false)
     {
 
 	if (fraction <= 0 || fraction > 1)
@@ -1320,10 +1336,16 @@ namespace data_sets {
 	
 	if (truncNseg > 0){
 	    truncSeqLength = 0;
-	    printf("\nTurn on utterance truncation into %d segments", truncNseg);
+	    printf("\nTurn on utterance truncation into %d segments\n", truncNseg);
 	}
 
+	// whether use multi threads to load data?
+	m_flag_multithread = config.flagMultiThreadLoad();
+	if (m_flag_multithread == false)
+	    printf("\nTurn off multi-threading in data loading\n");
 	
+	long unsigned int sequences_num;
+	long unsigned int sequences_cnt;
 	
 	/* -------------- Read in the data ---------------- */
 	// Read *.nc files
@@ -1331,6 +1353,9 @@ namespace data_sets {
         for (std::vector<std::string>::const_iterator nc_itr = ncfiles.begin();
 	     nc_itr != ncfiles.end(); ++nc_itr) 
         {
+
+	    std::cout << "Loading: " << *nc_itr << "\n" << std::endl; 
+	    
 	    // buffer of data segments
             std::vector<sequence_t> sequences;
 	    
@@ -1456,10 +1481,15 @@ namespace data_sets {
                     }
                 }
 
+		sequences_num = sequences.size();
+		sequences_cnt = 1;
 		// For each segment, read in input/output data and save them into cache
                 for (std::vector<sequence_t>::iterator seq = sequences.begin(); 
-		     seq != sequences.end(); ++seq) {
+		     seq != sequences.end(); ++seq, ++sequences_cnt) {
 
+		    std::cout << "\e[A" << "  reading utterances " << std::flush;
+		    std::cout << sequences_cnt << "/" << sequences_num << std::endl;
+		    
 		    // global maxSeqLength and minSeqLength of segments
                     m_minSeqLength = std::min(m_minSeqLength, seq->length);
                     m_maxSeqLength = std::max(m_maxSeqLength, seq->length);
@@ -1813,10 +1843,12 @@ namespace data_sets {
 
                 // create next fraction data and start the thread
 		// Note, every data.nc file will be handled by one thread
-                m_threadData.reset(new thread_data_t);
-                m_threadData->finished  = false;
-                m_threadData->terminate = false;
-                m_threadData->thread    = boost::thread(&DataSet::_nextFracThreadFn, this);
+		if (m_flag_multithread){
+		    m_threadData.reset(new thread_data_t);
+		    m_threadData->finished  = false;
+		    m_threadData->terminate = false;
+		    m_threadData->thread    = boost::thread(&DataSet::_nextFracThreadFn, this);
+		}
 		nc_close(ncid);
             }
             catch (const std::exception&) {
@@ -1857,7 +1889,7 @@ namespace data_sets {
     DataSet::~DataSet()
     {
         // terminate the next fraction thread
-        if (m_threadData) {
+        if (m_flag_multithread && m_threadData) {
             {{
                 boost::lock_guard<boost::mutex> lock(m_threadData->mutex);
                 m_threadData->terminate = true;
@@ -1880,42 +1912,64 @@ namespace data_sets {
 
     boost::shared_ptr<DataSetFraction> DataSet::getNextFraction()
     {
-        // initial work
-        if (m_curFirstSeqIdx == -1) {
-            boost::unique_lock<boost::mutex> lock(m_threadData->mutex);
-            m_threadData->taskFn = boost::bind(&DataSet::_makeFirstFractionTask, this);
-            m_threadData->finished = false;
-            m_threadData->cv.notify_one();
-            m_curFirstSeqIdx = 0;
-        }
 
-        // wait for the thread to finish
-        boost::unique_lock<boost::mutex> lock(m_threadData->mutex);
-        while (!m_threadData->finished)
-            m_threadData->cv.wait(lock);
+	if (m_flag_multithread){
+	
+	    // initial work
+	    if (m_curFirstSeqIdx == -1) {
+		boost::unique_lock<boost::mutex> lock(m_threadData->mutex);
+		m_threadData->taskFn = boost::bind(&DataSet::_makeFirstFractionTask, this);
+		m_threadData->finished = false;
+		m_threadData->cv.notify_one();
+		m_curFirstSeqIdx = 0;
+	    }
 
-        // get the fraction
-        boost::shared_ptr<DataSetFraction> frac;
-        if (m_curFirstSeqIdx < (int)m_sequences.size()) {
-            frac = m_threadData->frac;
-            m_curFirstSeqIdx += m_parallelSequences;
+	    // wait for the thread to finish
+	    boost::unique_lock<boost::mutex> lock(m_threadData->mutex);
+	    while (!m_threadData->finished)
+		m_threadData->cv.wait(lock);
 
-            // start new task
-            if (m_curFirstSeqIdx < (int)m_sequences.size())
-                m_threadData->taskFn=boost::bind(&DataSet::_makeFractionTask,
-						 this,m_curFirstSeqIdx);
-            else
-                m_threadData->taskFn=boost::bind(&DataSet::_makeFirstFractionTask,
-						 this);
+	    // get the fraction
+	    boost::shared_ptr<DataSetFraction> frac;
+	    if (m_curFirstSeqIdx < (int)m_sequences.size()) {
+		frac = m_threadData->frac;
+		m_curFirstSeqIdx += m_parallelSequences;
 
-            m_threadData->finished = false;
-            m_threadData->cv.notify_one();
-        }
-        else  {
-            m_curFirstSeqIdx = 0;
-        }
+		// start new task
+		if (m_curFirstSeqIdx < (int)m_sequences.size())
+		    m_threadData->taskFn=boost::bind(&DataSet::_makeFractionTask,
+						     this,m_curFirstSeqIdx);
+		else
+		    m_threadData->taskFn=boost::bind(&DataSet::_makeFirstFractionTask,
+						     this);
+		
+		m_threadData->finished = false;
+		m_threadData->cv.notify_one();
+	    }
+	    else  {
+		m_curFirstSeqIdx = 0;
+	    }
+	    return frac;
+	    
+	}else{
 
-        return frac;
+	    boost::shared_ptr<DataSetFraction> frac;
+	    
+	    // initial work
+	    if (m_curFirstSeqIdx == -1) {
+		frac = this->_makeFirstFractionTask();
+		m_curFirstSeqIdx = m_parallelSequences;
+		
+	    }else if (m_curFirstSeqIdx >= (int)m_sequences.size()){
+		// return null 
+		m_curFirstSeqIdx = 0;
+	    }else{
+
+		frac = this->_makeFractionTask(m_curFirstSeqIdx);
+		m_curFirstSeqIdx += m_parallelSequences;
+	    }
+	    return frac;
+	}
     }
 
     int DataSet::totalSequences() const

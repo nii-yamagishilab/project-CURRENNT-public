@@ -183,10 +183,11 @@ namespace data_sets {
 	std::vector<std::string> m_exOutputDirs;
 	std::vector<std::string> m_exOutputExts;
 	Cpu::int_vector          m_exOutputDims;
-	
-	
+		
 	Cpu::int_vector m_resolutionBuf;
-	
+
+	// flag to indicate multi-threading
+	bool        m_flag_multithread;
     public:
         /**
          * Creates an empty data set
@@ -249,6 +250,9 @@ namespace data_sets {
          * @return Next fraction or an empty pointer
          */
         boost::shared_ptr<DataSetFraction> getNextFraction();
+
+	// similar to getNextFraction but without threading
+	boost::shared_ptr<DataSetFraction> getNextFraction_nothreading();
 
         /**
          * Returns the local file name used to cache the data
