@@ -107,7 +107,8 @@ namespace {
 
 	    // accumulate and update
 	    real_t tmp = 0.0;
-	    real_t filterCoeff;  
+	    real_t filterCoeff = 1.0;  
+	    real_t lastValidValue = 0.0;
 	    
 	    int    filter_idx_shift = 0;
 	    int    data_time_idx;  // the relative time step index
@@ -136,14 +137,14 @@ namespace {
 		    patTypes[data_mem_idx] != PATTYPE_NONE){
 		    // when this time step is [0, max_length) and valid
 		    tmp += inputData[data_mem_idx * layerSize + dimIdx] * filterCoeff;
-		    
+		    lastValidValue = inputData[data_mem_idx * layerSize + dimIdx];
 		}else if (initSmooth){
 		    // If there is no data at the begining: use the first time step
 		    // If there is no data at the end: use the current time step
 		    if (data_time_idx < 0)
 			tmp += (inputData[BlockInIdx * layerSize + dimIdx] * filterCoeff);
 		    else
-			tmp += (inputData[timeIdx * layerSize + dimIdx] * filterCoeff);
+			tmp += (lastValidValue * filterCoeff);
 		}else{
 		    // do nothing
 		}
