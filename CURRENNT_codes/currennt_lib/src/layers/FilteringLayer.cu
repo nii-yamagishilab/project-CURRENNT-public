@@ -67,9 +67,9 @@
 #include <fstream>
 #include <cmath>
 
-
 #define FILTERING_LAYER_MODE_NONE_SELECTIVE 0
 #define FILTERING_LAYER_MODE_SELECTIVE 1
+#define FILTERING_LAYER_MODE_TRAINABLE_WEIGHTS 2
 
 namespace internal{
 namespace {
@@ -436,8 +436,170 @@ namespace {
 	    
 	}
     };
+
+
+    struct time_variant_filtering_forward
+    {
+	int        filterLength;            
+	int        layerSize_pre;
+	int        layerSize_cur;
+	int        parallel;
+	int        dilation_size;
+	int        initSmooth;
+	int        noncausal;
+	int        maxLength;
+	
+	real_t     *inputData;
+	const char *patTypes;   
+
+	// From 1 : T (of the previous layer)
+	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
+	{
+	    int outputIdx  = t.get<1>();
+	    int dimIdx     = outputIdx % layerSize_cur;  
+	    int timeIdx    = outputIdx / layerSize_cur;  
+	    
+	    int BlockIdx   = timeIdx / parallel;     
+	    int BlockInIdx = timeIdx % parallel;     
+
+	    if (patTypes[timeIdx] == PATTYPE_NONE){
+		t.get<0>() = 0;
+		return;
+	    }		
+
+	    // accumulate and update
+	    real_t tmp = 0.0;
+	    real_t filterCoeff = 1.0;  
+	    real_t lastValidValue = 0.0;
+	    
+	    int    filter_idx_shift = 0;
+	    int    data_time_idx;  // the relative time step index
+	    int    data_mem_idx;   // the absolute time step in memory buffer
+
+	    // for noncausal filter, shift the time index
+	    if (noncausal)
+		filter_idx_shift = filterLength / 2;
+	    
+	    for (int idx = 0 ; idx < filterLength; idx++){
+		    
+		// get the filter coefficient for one step
+		// a_0 + a_1 z^-1 + ... + a_N z^-N
+		// previous_layer.outputs() one frame [data_1, data_2, data_M, a_0, a_1, ..., a_N]
+		filterCoeff =
+		    inputData[timeIdx * layerSize_pre + layerSize_cur + idx];
+
+		// time index (of parallel block)
+		data_time_idx = BlockIdx - (idx - filter_idx_shift) * dilation_size;
+		// time index (abosolute time step in memory buffer)
+		data_mem_idx = data_time_idx * parallel + BlockInIdx;
+		
+		if (data_time_idx >= 0 && data_mem_idx < maxLength &&
+		    patTypes[data_mem_idx] != PATTYPE_NONE){
+		    // when this time step is [0, max_length) and valid
+		    tmp += inputData[data_mem_idx * layerSize_pre + dimIdx] * filterCoeff;
+		    lastValidValue = inputData[data_mem_idx * layerSize_pre + dimIdx];
+		    
+		}else if (initSmooth){
+		    // If there is no data at the begining: use the first time step
+		    // If there is no data at the end: use the current time step
+		    if (data_time_idx < 0)
+			tmp += (inputData[BlockInIdx * layerSize_pre + dimIdx] * filterCoeff);
+		    else
+			tmp += (lastValidValue * filterCoeff);
+		}else{
+		    // do nothing
+		}
+	    }
+	    t.get<0>() = tmp;
+	}
+    };
     
-    
+    struct time_variant_filtering_backward
+    {
+	int        filterLength;
+	
+	int        layerSize_pre;
+	int        layerSize_cur;
+	int        dilation_size;
+	
+	int        maxLength;
+	int        parallel;
+	int        noncausal;
+
+	real_t     *inputData;
+	real_t     *inputErrors;
+	const char *patTypes;   
+
+	// From 1 : T (of the previous layer)
+	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
+	{
+	    
+	    int outputIdx  = t.get<1>();
+	    int dimIdx     = outputIdx % layerSize_pre;
+	    int timeIdx    = outputIdx / layerSize_pre;
+	    
+	    int BlockIdx   = timeIdx / parallel;
+	    int BlockInIdx = timeIdx % parallel;
+
+	    if (patTypes[timeIdx] == PATTYPE_NONE){
+		t.get<0>() = 0;
+		return;
+	    }		
+
+	    // accumulate and update
+	    real_t tmp = 0.0;
+	    real_t filterCoeff;
+	    
+	    int    filter_idx_shift = 0;
+	    int    data_time_idx;  // the relative time step index
+	    int    data_mem_idx;   // the absolute time step in memory buffer
+	    
+	    if (noncausal)
+		filter_idx_shift = filterLength / 2;
+
+	    if (dimIdx < layerSize_cur){
+		// gradient w.r.t input signal
+		for (int idx = 0 ; idx < filterLength; idx++){
+		    
+		    filterCoeff = inputData[timeIdx * layerSize_pre + layerSize_cur + idx];
+		    
+
+		    data_time_idx = BlockIdx + (idx - filter_idx_shift) * dilation_size;
+		    data_mem_idx = data_time_idx * parallel + BlockInIdx;
+		    
+		    if (data_mem_idx < maxLength && patTypes[data_mem_idx] != PATTYPE_NONE &&
+			data_time_idx >= 0){
+			tmp += inputErrors[data_mem_idx * layerSize_cur + dimIdx] * filterCoeff;
+		    }else{
+			// Just ignore the gradients for the two-ends;
+		    }
+		}
+		t.get<0>() = tmp;
+		
+	    }else{
+		// gradient w.r.t filter coefficients
+		
+		int filter_order = dimIdx - layerSize_cur;
+		data_time_idx = BlockIdx + (filter_idx_shift - filter_order) * dilation_size;
+		data_mem_idx = data_time_idx * parallel + BlockInIdx;
+
+
+		if (data_time_idx >= 0 && data_mem_idx < maxLength &&
+		    patTypes[data_mem_idx] != PATTYPE_NONE){
+
+		    for (int dim_iter = 0; dim_iter < layerSize_cur; dim_iter++){
+			tmp += inputErrors[timeIdx * layerSize_cur + dim_iter] *
+			    inputData[data_mem_idx * layerSize_pre + dim_iter];
+		    }
+		    t.get<0>() = tmp;
+		}else{
+		    t.get<0>() = 0;
+		}
+
+	    }
+	}
+    };
+        
 }
 }
 
@@ -453,11 +615,12 @@ namespace layers {
     {
 	// load the options from network.jsn
 	this->__loadOpts(layerChild);
+	
 	// display the options
 	this->__showOpts();
 	
 	if (this->getResolution() != this->precedingLayer().getResolution())
-	    throw std::runtime_error("Error in filter layer: resolution != previous layer resolu");
+	    throw std::runtime_error("Error: resolution != previous layer resolution");
 	
     }
 
@@ -484,53 +647,78 @@ namespace layers {
 	
 	m_filter_noncausal = ((layerChild->HasMember("noncausal")) ? 
 			       ((*layerChild)["noncausal"].GetInt()) : 0);
-	
-	if (this->size() == this->precedingLayer().size()){
-	    // only 1 group of filter
-	    m_filter_mode = FILTERING_LAYER_MODE_NONE_SELECTIVE;
-	    m_filter_num = 1; 
-	}else{
-	    // multiplt groups of filters
-	    m_filter_mode = FILTERING_LAYER_MODE_SELECTIVE;
-	    // assume input data vectors contains the weights of each filter
-	    // thus, input_signal_dim + num_filter = input_vector_dim
-	    m_filter_num = this->precedingLayer().size() - this->size();
-	}
-	
+
+	m_filter_mode = ((layerChild->HasMember("filter_mode")) ? 
+			 ((*layerChild)["filter_mode"].GetInt()) :
+			 FILTERING_LAYER_MODE_NONE_SELECTIVE);
+
+	m_dilation_size = ((layerChild->HasMember("dilation_size")) ? 
+			   ((*layerChild)["dilation_size"].GetInt()) : 1);
+
 	// parse the filter coefficients
 	if (m_filter_coeffs_str.size()){
+
+	    // determine the filter mode
+	    if (this->size() == this->precedingLayer().size()){
+		// only 1 group of filter
+		m_filter_mode = FILTERING_LAYER_MODE_NONE_SELECTIVE;
+		m_filter_num = 1; 
+	    }else{
+		// multiplt groups of filters
+		m_filter_mode = FILTERING_LAYER_MODE_SELECTIVE;
+		// assume input data vectors contains the weights of each filter
+		// thus, input_signal_dim + num_filter = input_vector_dim
+		m_filter_num = this->precedingLayer().size() - this->size();
+	    }
+	    
 	    m_filter_coeffs.clear();
 	    misFuncs::ParseFloatOpt(m_filter_coeffs_str, m_filter_coeffs_H);
 	    m_filter_coeffs = m_filter_coeffs_H;
 	    
-	    // check, when shareAcrossDim is False, #coefficients should be N * feature dimension
+	    // check, when shareAcrossDim is False,
+	    // #coefficients should be N * feature dimension
 	    if (m_filter_across_dim == 0){
 		if (m_filter_coeffs_H.size() % this->size() != 0){
-		    printf("\n\t %d filter coefficients for %d dimensions,", this->size(),
+		    printf("\n\t %d filter coefficients for %d dimensions,",
+			   this->size(),
 			   (int)m_filter_coeffs_H.size());
-		    throw std::runtime_error("Error in filtering layer: filterCoeffs invalid");
+		    throw std::runtime_error("Error: filterCoeffs invalid");
 		}
 	    }
-	}else{
-	    throw std::runtime_error("Error in filtering layer: no filterCoeffs");
-	}
+	    
+	    int tmp_filter_length = 0;
+	    // if m_filter_length is not specified, infer it
+	    if (m_filter_across_dim == 0)
+		tmp_filter_length = (m_filter_coeffs_H.size() / this->size() /
+				     m_filter_num);
+	    else
+		tmp_filter_length = m_filter_coeffs_H.size() / m_filter_num;
 
 	
-	int tmp_filter_length = 0;
-	// if m_filter_length is not specified, infer it
-	if (m_filter_across_dim == 0)
-	    tmp_filter_length = m_filter_coeffs_H.size() / this->size() / m_filter_num;
-	else
-	    tmp_filter_length = m_filter_coeffs_H.size() / m_filter_num;
-
-	
-	if (m_filter_length == 0){
-	    m_filter_length = tmp_filter_length;
-	}else if (m_filter_length != tmp_filter_length){
-	    throw std::runtime_error("Error in filtering layer: filter mismatch");
+	    if (m_filter_length == 0){
+		m_filter_length = tmp_filter_length;
+		
+	    }else if (m_filter_length != tmp_filter_length){
+		throw std::runtime_error("Error: filter length mismatch");
+	    }else{
+		// nothing, the filter_length has been correctly configured
+	    }
+	    
 	}else{
-	    // nothing, the filter_length has been correctly configured
+	    
+	    // throw std::runtime_error("Error in filtering layer: no filterCoeffs");
+
+	    if (m_filter_across_dim){
+		m_filter_length = this->precedingLayer().size() - this->size();
+		if (m_filter_length <= 0)
+		    throw std::runtime_error("Error: filter lengh mis-configured");
+		m_filter_mode = FILTERING_LAYER_MODE_TRAINABLE_WEIGHTS;
+		
+	    }else{
+		throw std::runtime_error("Error: shareAcrossDim=0 is not supported");
+	    }
 	}
+
 
     }
     
@@ -541,14 +729,20 @@ namespace layers {
 	// print information
 	if (m_filter_mode == FILTERING_LAYER_MODE_NONE_SELECTIVE){
 	    printf(" fixed filter, ");
-	}else{
+	}else if (m_filter_mode == FILTERING_LAYER_MODE_SELECTIVE){
 	    printf(" soft-weighted %d filters, ", m_filter_num);
+	}else if (m_filter_mode == FILTERING_LAYER_MODE_TRAINABLE_WEIGHTS){
+	    printf(" time-variant filters %d of length ", m_filter_length);
+	}else{
+	    throw std::runtime_error("Error: unknown filtering mode");
 	}
 	
 	if (m_filter_across_dim)
-	    printf("\n\tone filter (length %d) across feature dimension,", m_filter_length);
+	    printf("\n\tone filter (length %d) across feature dimension,",
+		   m_filter_length);
 	else
-	    printf("\n\tone filter (length %d) for each feature dimension,", m_filter_length);
+	    printf("\n\tone filter (length %d) for each feature dimension,",
+		   m_filter_length);
 
 	if (m_filter_noncausal)
 	    printf(" noncausal,");
@@ -560,6 +754,8 @@ namespace layers {
 	else
 	    printf("\n\tboundary not smooth,");
 
+	if (m_dilation_size > 1)
+	    printf("\n\tDilation size %d", m_dilation_size);
     }
     
     template <typename TDevice>
@@ -599,7 +795,7 @@ namespace layers {
 		  thrust::make_tuple(this->outputs().begin()           + n,
 				     thrust::counting_iterator<int>(0) + n)),
 	       fn1);
-
+	    
 	}else if (m_filter_mode == FILTERING_LAYER_MODE_SELECTIVE){
 	    // weighted sum of filters
 	    internal::causalFilteringForward_selective fn1;
@@ -628,9 +824,39 @@ namespace layers {
 		  thrust::make_tuple(this->outputs().begin()           + n,
 				     thrust::counting_iterator<int>(0) + n)),
 	       fn1);
+	    
+	}else if (m_filter_mode == FILTERING_LAYER_MODE_TRAINABLE_WEIGHTS){
 
+	    
+	    // predicted filter coefficients
+	    
+	    internal::time_variant_filtering_forward fn1;
+	    fn1.filterLength         = this->m_filter_length;
+	    fn1.layerSize_pre        = this->precedingLayer().size();
+	    fn1.layerSize_cur        = this->size();
+	    fn1.parallel             = this->parallelSequences();
+	    
+	    fn1.dilation_size        = this->m_dilation_size;	    
+	    fn1.initSmooth           = this->m_filter_initial_keep;
+	    fn1.noncausal            = this->m_filter_noncausal;
+	    fn1.maxLength            = timeLength;
+	    
+	    fn1.inputData = helpers::getRawPointer(this->precedingLayer().outputs());
+	    fn1.patTypes  = helpers::getRawPointer(this->patTypes());
+
+	    int n = timeLength * this->size();
+	    
+	    thrust::for_each(
+               thrust::make_zip_iterator(
+		  thrust::make_tuple(this->outputs().begin(),
+				     thrust::counting_iterator<int>(0))),
+	       thrust::make_zip_iterator(
+		  thrust::make_tuple(this->outputs().begin()           + n,
+				     thrust::counting_iterator<int>(0) + n)),
+	       fn1);
+	    
 	}else{
-	    throw std::runtime_error("Error in filtering layer: Unknown filter mode");
+	    throw std::runtime_error("Error: filtering layer unknown filter mode");
 	}
     }
 
@@ -697,10 +923,37 @@ namespace layers {
 		thrust::make_tuple(this->precedingLayer().outputErrors().begin() + n,
 				   thrust::counting_iterator<int>(0) + n)),
 	      fn1);
+	    
+	}else if (m_filter_mode == FILTERING_LAYER_MODE_TRAINABLE_WEIGHTS){
 
 	    
+	    internal::time_variant_filtering_backward fn1;
+	    fn1.filterLength  = this->m_filter_length;
+	    
+	    fn1.layerSize_cur = this->size();
+	    fn1.layerSize_pre = this->precedingLayer().size();
+	    fn1.dilation_size = this->m_dilation_size;
+	    
+	    fn1.maxLength     = timeLength;
+	    fn1.parallel      = this->parallelSequences();
+	    fn1.noncausal     = this->m_filter_noncausal;
+
+	    fn1.inputData = helpers::getRawPointer(this->precedingLayer().outputs());
+	    fn1.inputErrors = helpers::getRawPointer(this->outputErrors());
+	    fn1.patTypes    = helpers::getRawPointer(this->patTypes());
+	    
+	    int n = timeLength * this->precedingLayer().size();
+	    thrust::for_each(
+              thrust::make_zip_iterator(
+		thrust::make_tuple(this->precedingLayer().outputErrors().begin(),
+				   thrust::counting_iterator<int>(0))),
+	      thrust::make_zip_iterator(
+		thrust::make_tuple(this->precedingLayer().outputErrors().begin() + n,
+				   thrust::counting_iterator<int>(0) + n)),
+	      fn1);
+	    
 	}else{
-	    throw std::runtime_error("Error in filtering layer: Unknown filter mode");
+	    throw std::runtime_error("Error: filtering layer Unknown filter mode");
 	}
 	
     }
@@ -729,6 +982,10 @@ namespace layers {
 	if (m_filter_noncausal)
 	    (*layersArray)[layersArray->Size() - 1].AddMember("noncausal",
 							      m_filter_noncausal,
+							      allocator);
+	if (m_dilation_size > 1)
+	    (*layersArray)[layersArray->Size() - 1].AddMember("dilation_size",
+							      m_dilation_size,
 							      allocator);
     }
 

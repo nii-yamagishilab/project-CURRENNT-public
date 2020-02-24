@@ -56,6 +56,8 @@ namespace layers{
 	
 	int             m_filter_initial_keep; // whether to keep the initial value
 	int             m_filter_noncausal;    // whether the filer is non-causal
+
+	int             m_dilation_size;
 	
 	std::string     m_filter_coeffs_str;   // input string of filter coeffs
 	real_vector     m_filter_coeffs;       // buffer to store coeffs
