@@ -688,7 +688,7 @@ namespace {
 			break;
 		    
 		    if (noise)
-			filterCoeff = noise[t.get<1>()] * filterCoeff;
+			filterCoeff = noise[idx * layerSize_cur + dimIdx] * filterCoeff;
 		    
 		    if (data_time_idx >= 0 && data_mem_idx < maxLength &&
 			patTypes[data_mem_idx] != PATTYPE_NONE){
@@ -776,7 +776,7 @@ namespace {
 			break;
 		    
 		    if (noise)
-			filterCoeff = filterCoeff * noise[timeIdx * layerSize_cur + dimIdx];
+			filterCoeff = filterCoeff * noise[idx * layerSize_cur + dimIdx];
 		   
 		    data_time_idx = BlockIdx + idx * dilation_size;
 		    data_mem_idx = data_time_idx * parallel + BlockInIdx;
@@ -950,7 +950,11 @@ namespace layers {
 		throw std::runtime_error("Error: layer size != preceding layer size * 2");
 
 	    m_filter_across_dim = 0;
-	    	    
+
+	    if (m_filter_length > this->outputs().size()){
+		m_filter_length = this->outputs().size();
+		printf("\n\tFilter length is too long and will be set to %d", m_filter_length);		
+	    }
 	}else{
 	    throw std::runtime_error("Error: unknown filter mode");
 	}
