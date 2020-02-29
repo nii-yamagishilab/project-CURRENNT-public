@@ -58,10 +58,17 @@ namespace layers{
 	int             m_filter_noncausal;    // whether the filer is non-causal
 
 	int             m_dilation_size;
-	
+
+	int             m_reverb_IR_noise;     // whether add noise to the IR 
+	real_t          m_reverb_decayScale;
+	real_t          m_reverb_decayShift;
+
 	std::string     m_filter_coeffs_str;   // input string of filter coeffs
 	real_vector     m_filter_coeffs;       // buffer to store coeffs
 	cpu_real_vector m_filter_coeffs_H;     
+
+	real_vector     m_reverb_IR_noise_vec;
+	real_vector     m_reverb_grad_buf;
 	
 	FilteringLayer(
 	    const helpers::JsonValue &layerChild,
@@ -99,7 +106,12 @@ namespace layers{
 	void clearAllBuffers();
 
 	void resizeAllBuffers(const int timeLength);
-
+	
+	virtual void logAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+				   bool flag_add);
+	
+	virtual void swapAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
+				    bool flag_get);	
     };
     
 }
