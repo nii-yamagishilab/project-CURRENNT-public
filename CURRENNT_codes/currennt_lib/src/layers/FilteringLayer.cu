@@ -1318,6 +1318,10 @@ namespace layers {
 	    (*layersArray)[layersArray->Size() - 1].AddMember("filterLength",
 							      m_filter_length,
 							      allocator);
+
+	    (*layersArray)[layersArray->Size() - 1].AddMember("filter_mode",
+							      m_filter_mode,
+							      allocator);
 	    
 	    (*layersArray)[layersArray->Size() - 1].AddMember("reverb_decay_scale",
 							      m_reverb_decayScale,
