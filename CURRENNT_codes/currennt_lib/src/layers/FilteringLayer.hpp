@@ -47,7 +47,10 @@ namespace layers{
     private:
 	void __loadOpts(const helpers::JsonValue &layerChild);
 	void __showOpts();
-	
+
+	void __allocateLocalMem();
+	void __clearLocalMem();
+
     public:
 	int             m_filter_mode;         // mode of the filter layer
 	int             m_filter_num;          // how many filters we use?
@@ -68,7 +71,11 @@ namespace layers{
 	cpu_real_vector m_filter_coeffs_H;     
 
 	real_vector     m_reverb_IR_noise_vec;
+	real_vector     m_reverb_decay_coef_vec;
 	real_vector     m_reverb_grad_buf;
+	real_vector     m_reverb_norm_buf_vec;
+
+	int             m_reverb_normalize;
 	
 	FilteringLayer(
 	    const helpers::JsonValue &layerChild,

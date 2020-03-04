@@ -623,6 +623,77 @@ namespace {
     };
 
 
+    struct time_domain_reverb_get_decay_coef_forward
+    {
+	int        layerSize_pre;
+	int        layerSize_cur;
+	real_t     decayScale;
+	real_t     decayShift;	
+	real_t     *inputData;
+	const char *patTypes;
+	
+	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
+	{
+	    int outputIdx  = t.get<1>();
+	    int dimIdx     = outputIdx % layerSize_cur;  
+	    int timeIdx    = outputIdx / layerSize_cur;  
+	    
+	    if (patTypes[timeIdx] == PATTYPE_NONE){
+		t.get<0>() = 0;		
+	    }else{
+		t.get<0>() = exp(inputData[timeIdx * layerSize_pre + layerSize_cur + dimIdx] * decayScale
+				 + decayShift);
+	    }
+	}
+    };
+
+    struct time_domain_reverb_norm_statistics_decay_coef_forward
+    {
+
+	bool       flag_norm;
+	int        layerSize_cur;
+	int        filterLength;
+	real_t     *statisBuffer;
+	real_t     *noise;
+	const char *patTypes;   
+
+	// From 1 : T 
+	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
+	{
+	    int outputIdx  = t.get<1>();
+	    int dimIdx     = outputIdx % layerSize_cur;  
+	    int timeIdx    = outputIdx / layerSize_cur;  
+
+	    real_t tmp_coef_sum = 1.0;
+	    real_t tmp_coef_t_sum = 0.0;
+		
+	    if (patTypes[timeIdx] == PATTYPE_NONE || flag_norm == false){
+		
+	    }else{	  
+
+		int idx = 0;
+		real_t filterCoeff = 0.0;
+		
+		// online average
+		for (idx = 0 ; idx < filterLength; idx++){
+		    filterCoeff = exp(-1.0 * idx * t.get<0>());
+		    if (filterCoeff < FILTERING_LAYER_REVERB_IR_THRESHOD)
+			break;
+		    if (noise)
+			filterCoeff = noise[idx * layerSize_cur + dimIdx] * filterCoeff;
+		    tmp_coef_sum = tmp_coef_sum + (filterCoeff - tmp_coef_sum) / (idx+1);
+		    tmp_coef_t_sum = tmp_coef_t_sum + (filterCoeff * idx - tmp_coef_sum) / (idx+1);
+		}
+		// average -> sum
+		tmp_coef_sum = tmp_coef_sum * idx;
+		tmp_coef_t_sum = tmp_coef_t_sum * idx;
+	    }
+	    
+	    statisBuffer[timeIdx * layerSize_cur * 2 + dimIdx] = tmp_coef_sum;
+	    statisBuffer[timeIdx * layerSize_cur * 2 + dimIdx + layerSize_cur] = tmp_coef_t_sum;
+	}
+    };
+        
     struct time_domain_reverb_forward
     {
 	int        filterLength;            
@@ -634,9 +705,8 @@ namespace {
 	int        noncausal;
 	int        maxLength;
 
-	real_t     decayScale;
-	real_t     decayShift;
-	
+	real_t     *decayCoef;
+	real_t     *decayStat;
 	real_t     *decayGrad;
 	real_t     *inputData;
 	real_t     *noise;
@@ -665,14 +735,10 @@ namespace {
 		real_t tmp_grad_value = 0.0;
 		
 		real_t filterCoeff = 1.0;
-		real_t decayValue = 0.0;
 		real_t lastValidValue = 0.0;
 		
 		int    data_time_idx;  // the relative time step index
 		int    data_mem_idx;   // the absolute time step in memory buffer
-
-		decayValue = exp(inputData[timeIdx * layerSize_pre + layerSize_cur + dimIdx] * decayScale
-				 + decayShift);
 
 		// convolution
 		for (int idx = 0 ; idx < filterLength; idx++){
@@ -682,13 +748,16 @@ namespace {
 		    // time index (abosolute time step in memory buffer)
 		    data_mem_idx = data_time_idx * parallel + BlockInIdx;
 
-		    filterCoeff = exp(-1.0 * idx * decayValue);
+		    filterCoeff = exp(-1.0 * idx * decayCoef[outputIdx]);
 
 		    if (filterCoeff < FILTERING_LAYER_REVERB_IR_THRESHOD)
 			break;
 		    
 		    if (noise)
 			filterCoeff = noise[idx * layerSize_cur + dimIdx] * filterCoeff;
+
+		    // norm
+		    filterCoeff = filterCoeff / decayStat[timeIdx * layerSize_cur * 2 + dimIdx];
 		    
 		    if (data_time_idx >= 0 && data_mem_idx < maxLength &&
 			patTypes[data_mem_idx] != PATTYPE_NONE){
@@ -721,21 +790,21 @@ namespace {
     struct time_domain_reverb_backward
     {
 	int        filterLength;
-	
 	int        layerSize_pre;
 	int        layerSize_cur;
 	int        dilation_size;
-	
 	int        maxLength;
 	int        parallel;
-
 	real_t     decayScale;
-	real_t     decayShift;
 
 	real_t     *inputData;
-	real_t     *inputErrors;
+	real_t     *outputData;
+	real_t     *outputErrors;
+	real_t     *decayCoef;
+	real_t     *decayStat;
 	real_t     *decayGrad;
 	real_t     *noise;
+	
 	const char *patTypes;   
 
 	// From 1 : T (of the previous layer)
@@ -764,8 +833,7 @@ namespace {
 	    
 	    if (dimIdx < layerSize_cur){
 
-		decayValue = inputData[timeIdx * layerSize_pre + layerSize_cur + dimIdx] * decayScale +
-		    decayShift;
+		decayValue = decayCoef[timeIdx * layerSize_cur + dimIdx];
 		
 		// gradient w.r.t input signal
 		for (int idx = 0 ; idx < filterLength; idx++){
@@ -777,13 +845,16 @@ namespace {
 		    
 		    if (noise)
 			filterCoeff = filterCoeff * noise[idx * layerSize_cur + dimIdx];
-		   
+		    
+		    // norm
+		    filterCoeff = filterCoeff / decayStat[timeIdx * layerSize_cur * 2 + dimIdx];
+
 		    data_time_idx = BlockIdx + idx * dilation_size;
 		    data_mem_idx = data_time_idx * parallel + BlockInIdx;
 		    
 		    if (data_mem_idx < maxLength && patTypes[data_mem_idx] != PATTYPE_NONE &&
 			data_time_idx >= 0){
-			tmp_grad_value += inputErrors[data_mem_idx * layerSize_cur + dimIdx] * filterCoeff;
+			tmp_grad_value += (outputErrors[data_mem_idx * layerSize_cur + dimIdx] * filterCoeff);
 		    }else{
 			// Just ignore the gradients for the two-ends;
 		    }
@@ -792,15 +863,19 @@ namespace {
 		t.get<0>() = tmp_grad_value;
 		
 	    }else{
+
+		// dimIdx - layerSize_cur is the real dimIdx
+		int mem_idx = timeIdx * layerSize_cur + (dimIdx - layerSize_cur);
+		int mem_idx2 = timeIdx * layerSize_cur * 2 + (dimIdx - layerSize_cur);
 		// gradient w.r.t decay factor
-		t.get<0>() = inputErrors[timeIdx * layerSize_cur + dimIdx - layerSize_cur] *
-		    decayGrad[timeIdx * layerSize_cur + dimIdx - layerSize_cur] * decayScale *
-		    exp(inputData[timeIdx * layerSize_pre + dimIdx] * decayScale + decayShift);
+		t.get<0>() = outputErrors[mem_idx] *
+		    (decayGrad[mem_idx] +
+		     outputData[mem_idx] * decayStat[mem_idx2 + layerSize_cur] / decayStat[mem_idx2]) *
+		    decayCoef[mem_idx] * decayScale;
 	    }
 	}
     };
-
-
+    
     
 }
 }
@@ -820,6 +895,9 @@ namespace layers {
 	
 	// display the options
 	this->__showOpts();
+
+	// allocation memory
+	this->__allocateLocalMem();
 	
 	if (this->getResolution() != this->precedingLayer().getResolution())
 	    throw std::runtime_error("Error: resolution != previous layer resolution");
@@ -869,6 +947,9 @@ namespace layers {
 	m_reverb_decayShift = ((layerChild->HasMember("reverb_decay_shift")) ? 
 			       ((*layerChild)["reverb_decay_shift"].GetDouble()) : 0.0);
 
+	m_reverb_normalize = ((layerChild->HasMember("reverb_DC_gain_0dB")) ? 
+			      ((*layerChild)["reverb_DC_gain_0dB"].GetInt()) : 0);
+	
 	if (m_filter_mode == FILTERING_LAYER_MODE_NONE_SELECTIVE ||
 	    m_filter_mode == FILTERING_LAYER_MODE_SELECTIVE){
 
@@ -941,16 +1022,16 @@ namespace layers {
 	    
 	}else if (m_filter_mode == FILTERING_LAYER_REVERB){
 
-	    if (m_reverb_IR_noise)
-		m_reverb_IR_noise_vec.resize(this->outputs().size(), 0.0);
+	    //if (m_reverb_IR_noise)
+	    //m_reverb_IR_noise_vec.resize(this->outputs().size(), 0.0);
 	    
-	    m_reverb_grad_buf.resize(this->outputs().size(), 0.0);
+	    //m_reverb_grad_buf.resize(this->outputs().size(), 0.0);
 	    
 	    if (this->precedingLayer().size() != (this->size() * 2))
 		throw std::runtime_error("Error: layer size != preceding layer size * 2");
 
 	    m_filter_across_dim = 0;
-
+	    
 	    if (m_filter_length > this->outputs().size()){
 		m_filter_length = this->outputs().size();
 		printf("\n\tFilter length is too long and will be set to %d", m_filter_length);		
@@ -958,8 +1039,6 @@ namespace layers {
 	}else{
 	    throw std::runtime_error("Error: unknown filter mode");
 	}
-	    
-
 
     }
     
@@ -980,7 +1059,9 @@ namespace layers {
 	}else if (m_filter_mode == FILTERING_LAYER_REVERB){
 	    printf(" trainable decay filter %d of length ", m_filter_length);
 	    if (m_reverb_IR_noise)
-		printf("\n\twith noise multiplied decay function");	    
+		printf("\n\twith noise multiplied decay function");
+	    if (m_reverb_normalize)
+		printf("\n\tDC gain normalized to 0dB");
 	}else{
 	    throw std::runtime_error("Error: unknown filtering mode");
 	}
@@ -1005,7 +1086,38 @@ namespace layers {
 	if (m_dilation_size > 1)
 	    printf("\n\tDilation size %d", m_dilation_size);
     }
+
+    template <typename TDevice>
+    void FilteringLayer<TDevice>::__allocateLocalMem()
+    {
+	if (m_filter_mode == FILTERING_LAYER_REVERB){
+	    
+	    if (m_reverb_IR_noise)
+		m_reverb_IR_noise_vec.resize(this->outputs().size(), 0.0);
+	    
+	    m_reverb_norm_buf_vec.resize(this->outputs().size() * 2, 0.0);	
+	    m_reverb_grad_buf.resize(this->outputs().size(), 0.0);
+	    m_reverb_decay_coef_vec.resize(this->outputs().size(), 0.0);
+	}
+    }
     
+    template <typename TDevice>
+    void FilteringLayer<TDevice>::__clearLocalMem()
+    {
+	if (m_filter_mode == FILTERING_LAYER_REVERB){
+	    
+	    if (m_reverb_IR_noise){
+		m_reverb_IR_noise_vec.clear();
+		m_reverb_IR_noise_vec.shrink_to_fit();
+	    }
+	    m_reverb_norm_buf_vec.clear();
+	    m_reverb_norm_buf_vec.shrink_to_fit();
+	    m_reverb_grad_buf.clear();
+	    m_reverb_grad_buf.shrink_to_fit();
+	    m_reverb_decay_coef_vec.clear();
+	    m_reverb_decay_coef_vec.shrink_to_fit();
+	}
+    }    
     template <typename TDevice>
     const std::string& FilteringLayer<TDevice>::type() const
     {
@@ -1113,38 +1225,81 @@ namespace layers {
 				  m_reverb_IR_noise_vec.begin(),
 				  internal::genNoise(-1.0, 1.0, (int)(misFuncs::GetRandomNumber()*10000.0)));
 	    }
-	    
-	    internal::time_domain_reverb_forward fn1;
-	    fn1.filterLength         = this->m_filter_length;
-	    fn1.layerSize_pre        = this->precedingLayer().size();
-	    fn1.layerSize_cur        = this->size();
-	    fn1.parallel             = this->parallelSequences();
-	    
-	    fn1.dilation_size        = this->m_dilation_size;	    
-	    fn1.initSmooth           = this->m_filter_initial_keep;
-	    fn1.maxLength            = timeLength;
-	    fn1.decayScale           = this->m_reverb_decayScale;
-	    fn1.decayShift           = this->m_reverb_decayShift;
-	    
-	    fn1.inputData = helpers::getRawPointer(this->precedingLayer().outputs());
-	    fn1.patTypes  = helpers::getRawPointer(this->patTypes());
-	    fn1.decayGrad = helpers::getRawPointer(this->m_reverb_grad_buf);
-	    
-	    if (m_reverb_IR_noise)
-		fn1.noise = helpers::getRawPointer(this->m_reverb_IR_noise_vec);
-	    else
-		fn1.noise = NULL;
-	    
+
 	    int n = timeLength * this->size();
 	    
-	    thrust::for_each(
-               thrust::make_zip_iterator(
+	    // convert raw coef to decay factor
+	    {
+		internal::time_domain_reverb_get_decay_coef_forward fn1;
+		fn1.layerSize_pre        = this->precedingLayer().size();
+		fn1.layerSize_cur        = this->size();
+		fn1.decayScale           = this->m_reverb_decayScale;
+		fn1.decayShift           = this->m_reverb_decayShift;
+		fn1.inputData            = helpers::getRawPointer(this->precedingLayer().outputs());
+		fn1.patTypes             = helpers::getRawPointer(this->patTypes());		
+		thrust::for_each(
+                 thrust::make_zip_iterator(
+		  thrust::make_tuple(m_reverb_decay_coef_vec.begin(),
+				     thrust::counting_iterator<int>(0))),
+		 thrust::make_zip_iterator(
+		  thrust::make_tuple(m_reverb_decay_coef_vec.begin()   + n,
+				     thrust::counting_iterator<int>(0) + n)),
+		 fn1);
+	    }
+
+	    // get the statistics for normalization
+	    {
+		internal::time_domain_reverb_norm_statistics_decay_coef_forward fn2;
+		fn2.flag_norm      = (m_reverb_normalize > 0);
+		fn2.layerSize_cur  = this->size();
+		fn2.filterLength   = this->m_filter_length;
+		fn2.statisBuffer   = helpers::getRawPointer(m_reverb_norm_buf_vec);
+		fn2.patTypes       = helpers::getRawPointer(this->patTypes());
+		if (m_reverb_IR_noise)
+		    fn2.noise = helpers::getRawPointer(this->m_reverb_IR_noise_vec);
+		else
+		    fn2.noise = NULL;
+		
+		thrust::for_each(
+                 thrust::make_zip_iterator(
+		  thrust::make_tuple(m_reverb_decay_coef_vec.begin(),
+				     thrust::counting_iterator<int>(0))),
+		 thrust::make_zip_iterator(
+		  thrust::make_tuple(m_reverb_decay_coef_vec.begin()   + n,
+				     thrust::counting_iterator<int>(0) + n)),
+		 fn2);
+	    }
+
+	    {
+		internal::time_domain_reverb_forward fn3;
+		fn3.filterLength         = this->m_filter_length;
+		fn3.layerSize_pre        = this->precedingLayer().size();
+		fn3.layerSize_cur        = this->size();
+		fn3.parallel             = this->parallelSequences();
+		fn3.dilation_size        = this->m_dilation_size;	    
+		fn3.initSmooth           = this->m_filter_initial_keep;
+		fn3.maxLength            = timeLength;
+		
+		fn3.inputData = helpers::getRawPointer(this->precedingLayer().outputs());
+		fn3.patTypes  = helpers::getRawPointer(this->patTypes());
+		fn3.decayGrad = helpers::getRawPointer(this->m_reverb_grad_buf);
+		fn3.decayCoef = helpers::getRawPointer(this->m_reverb_decay_coef_vec);
+		fn3.decayStat = helpers::getRawPointer(this->m_reverb_norm_buf_vec);
+	    
+		if (m_reverb_IR_noise)
+		    fn3.noise = helpers::getRawPointer(this->m_reverb_IR_noise_vec);
+		else
+		    fn3.noise = NULL;
+	    
+		thrust::for_each(
+                 thrust::make_zip_iterator(
 		  thrust::make_tuple(this->outputs().begin(),
 				     thrust::counting_iterator<int>(0))),
-	       thrust::make_zip_iterator(
+		 thrust::make_zip_iterator(
 		  thrust::make_tuple(this->outputs().begin()           + n,
 				     thrust::counting_iterator<int>(0) + n)),
-	       fn1);
+		 fn3);
+	    }
 	    
 	}else{
 	    throw std::runtime_error("Error: filtering layer unknown filter mode");
@@ -1245,35 +1400,39 @@ namespace layers {
 	    
 	}else if (m_filter_mode == FILTERING_LAYER_REVERB){
 
-	    internal::time_domain_reverb_backward fn1;
-	    fn1.filterLength  = this->m_filter_length;
-	    
-	    fn1.layerSize_cur = this->size();
-	    fn1.layerSize_pre = this->precedingLayer().size();
-	    fn1.dilation_size = this->m_dilation_size;
-	    
-	    fn1.maxLength     = timeLength;
-	    fn1.parallel      = this->parallelSequences();
+	    {
+		internal::time_domain_reverb_backward fn1;
+		fn1.filterLength  = this->m_filter_length;
+		fn1.layerSize_cur = this->size();
+		fn1.layerSize_pre = this->precedingLayer().size();
+		fn1.dilation_size = this->m_dilation_size;
+		fn1.maxLength     = timeLength;
+		fn1.parallel      = this->parallelSequences();
+		fn1.decayScale    = this->m_reverb_decayScale;
+		
+		fn1.inputData     = helpers::getRawPointer(this->precedingLayer().outputs());
+		fn1.outputData    = helpers::getRawPointer(this->outputs());
+		fn1.outputErrors  = helpers::getRawPointer(this->outputErrors());
+		fn1.decayGrad     = helpers::getRawPointer(this->m_reverb_grad_buf);
+		fn1.decayCoef     = helpers::getRawPointer(this->m_reverb_decay_coef_vec);
+		fn1.decayStat     = helpers::getRawPointer(this->m_reverb_norm_buf_vec);
+		fn1.patTypes      = helpers::getRawPointer(this->patTypes());
 
-	    fn1.inputData     = helpers::getRawPointer(this->precedingLayer().outputs());
-	    fn1.inputErrors   = helpers::getRawPointer(this->outputErrors());
-	    fn1.decayGrad     = helpers::getRawPointer(this->m_reverb_grad_buf);
-	    fn1.patTypes      = helpers::getRawPointer(this->patTypes());
+		if (m_reverb_IR_noise)
+		    fn1.noise     = helpers::getRawPointer(this->m_reverb_IR_noise_vec);
+		else
+		    fn1.noise = NULL;
 	    
-	    if (m_reverb_IR_noise)
-		fn1.noise     = helpers::getRawPointer(this->m_reverb_IR_noise_vec);
-	    else
-		fn1.noise = NULL;
-	    
-	    int n = timeLength * this->precedingLayer().size();
-	    thrust::for_each(
-              thrust::make_zip_iterator(
-		thrust::make_tuple(this->precedingLayer().outputErrors().begin(),
-				   thrust::counting_iterator<int>(0))),
-	      thrust::make_zip_iterator(
-		thrust::make_tuple(this->precedingLayer().outputErrors().begin() + n,
-				   thrust::counting_iterator<int>(0) + n)),
-	      fn1);
+		int n = timeLength * this->precedingLayer().size();
+		thrust::for_each(
+                 thrust::make_zip_iterator(
+		  thrust::make_tuple(this->precedingLayer().outputErrors().begin(),
+				     thrust::counting_iterator<int>(0))),
+		 thrust::make_zip_iterator(
+		  thrust::make_tuple(this->precedingLayer().outputErrors().begin() + n,
+				     thrust::counting_iterator<int>(0) + n)),
+		 fn1);
+	    }
 	    
 	}else{
 	    throw std::runtime_error("Error: filtering layer Unknown filter mode");
@@ -1310,10 +1469,17 @@ namespace layers {
 	    (*layersArray)[layersArray->Size() - 1].AddMember("dilation_size",
 							      m_dilation_size,
 							      allocator);
-	if (m_reverb_IR_noise > 1)
+	if (m_reverb_IR_noise)
 	    (*layersArray)[layersArray->Size() - 1].AddMember("reverb_noise",
 							      m_reverb_IR_noise,
 							      allocator);
+	
+	if (m_filter_mode == FILTERING_LAYER_MODE_TRAINABLE_WEIGHTS){
+	    (*layersArray)[layersArray->Size() - 1].AddMember("filter_mode",
+							      m_filter_mode,
+							      allocator);	    
+	}
+	
 	if (m_filter_mode == FILTERING_LAYER_REVERB){
 	    (*layersArray)[layersArray->Size() - 1].AddMember("filterLength",
 							      m_filter_length,
@@ -1329,6 +1495,10 @@ namespace layers {
 	    
 	    (*layersArray)[layersArray->Size() - 1].AddMember("reverb_decay_shift",
 							      m_reverb_decayShift,
+							      allocator);
+	    
+	    (*layersArray)[layersArray->Size() - 1].AddMember("reverb_DC_gain_0dB",
+							      m_reverb_normalize,
 							      allocator);
 	}
     }
@@ -1357,12 +1527,14 @@ namespace layers {
     void FilteringLayer<TDevice>::clearAllBuffers()
     {
 	this->clearOutputBuffer();
+	this->__clearLocalMem();
     }
 
     template <typename TDevice>
     void FilteringLayer<TDevice>::resizeAllBuffers(const int timeLength)
     {
 	this->resizeOutputBuffer(timeLength * this->parallelSequences() * this->size());
+	this->__allocateLocalMem();
     }
 
 
@@ -1372,9 +1544,12 @@ namespace layers {
     {
 	// for output buffer
 	Layer<TDevice>::logAllBuffers(vecPoolMng, flag_add);
-	if (m_reverb_IR_noise)
+	if (m_filter_mode == FILTERING_LAYER_REVERB){
+	    if (m_reverb_IR_noise)
+		vecPoolMng.addOrRemoveNewVec(this->size(), flag_add);
+	    vecPoolMng.addOrRemoveNewVec(this->size() * 2, flag_add);
 	    vecPoolMng.addOrRemoveNewVec(this->size(), flag_add);
-	vecPoolMng.addOrRemoveNewVec(this->size(), flag_add);
+	}
     }
 
     template <typename TDevice>
@@ -1382,9 +1557,16 @@ namespace layers {
 						 bool flag_get)
     {
 	Layer<TDevice>::swapAllBuffers(vecPoolMng, flag_get);
-	if (m_reverb_IR_noise)
-	    vecPoolMng.getSwapVector(m_reverb_IR_noise_vec, this->getLayerID(), this->size(), flag_get);
-	vecPoolMng.getSwapVector(m_reverb_grad_buf, this->getLayerID(), this->size(), flag_get);	
+	if (m_filter_mode == FILTERING_LAYER_REVERB){
+	    if (m_reverb_IR_noise)
+		vecPoolMng.getSwapVector(m_reverb_IR_noise_vec, this->getLayerID(),
+					 this->size(), flag_get);
+
+	    vecPoolMng.getSwapVector(m_reverb_norm_buf_vec, this->getLayerID(),
+				     this->size() * 2, flag_get);
+	    
+	    vecPoolMng.getSwapVector(m_reverb_grad_buf, this->getLayerID(), this->size(), flag_get);
+	}
     }
     
     template class FilteringLayer<Cpu>;
