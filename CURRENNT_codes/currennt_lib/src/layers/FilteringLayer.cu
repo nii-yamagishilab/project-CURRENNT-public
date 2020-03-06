@@ -1469,10 +1469,6 @@ namespace layers {
 	    (*layersArray)[layersArray->Size() - 1].AddMember("dilation_size",
 							      m_dilation_size,
 							      allocator);
-	if (m_reverb_IR_noise)
-	    (*layersArray)[layersArray->Size() - 1].AddMember("reverb_noise",
-							      m_reverb_IR_noise,
-							      allocator);
 	
 	if (m_filter_mode == FILTERING_LAYER_MODE_TRAINABLE_WEIGHTS){
 	    (*layersArray)[layersArray->Size() - 1].AddMember("filter_mode",
@@ -1481,6 +1477,10 @@ namespace layers {
 	}
 	
 	if (m_filter_mode == FILTERING_LAYER_REVERB){
+	    (*layersArray)[layersArray->Size() - 1].AddMember("reverb_noise",
+							      m_reverb_IR_noise,
+							      allocator);
+
 	    (*layersArray)[layersArray->Size() - 1].AddMember("filterLength",
 							      m_filter_length,
 							      allocator);
@@ -1549,6 +1549,7 @@ namespace layers {
 		vecPoolMng.addOrRemoveNewVec(this->size(), flag_add);
 	    vecPoolMng.addOrRemoveNewVec(this->size() * 2, flag_add);
 	    vecPoolMng.addOrRemoveNewVec(this->size(), flag_add);
+	    vecPoolMng.addOrRemoveNewVec(this->size(), flag_add);
 	}
     }
 
@@ -1564,7 +1565,7 @@ namespace layers {
 
 	    vecPoolMng.getSwapVector(m_reverb_norm_buf_vec, this->getLayerID(),
 				     this->size() * 2, flag_get);
-	    
+	    vecPoolMng.getSwapVector(m_reverb_decay_coef_vec, this->getLayerID(), this->size(), flag_get);
 	    vecPoolMng.getSwapVector(m_reverb_grad_buf, this->getLayerID(), this->size(), flag_get);
 	}
     }

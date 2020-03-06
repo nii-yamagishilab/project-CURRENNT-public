@@ -263,7 +263,7 @@ int trainerMain(const Configuration &config)
                 printf("done.\n\n");
 
 		if (!config.trainedParameterPath().empty()){
-		    printf("\n --trainedModel %s is ignored when --continue is used",
+		    printf("\n --trainedModel %s is ignored when training with --continue\n",
 			   config.trainedParameterPath().c_str());
 		}
 		
