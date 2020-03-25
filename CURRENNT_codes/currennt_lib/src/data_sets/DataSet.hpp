@@ -94,6 +94,7 @@ namespace data_sets {
         void _shuffleSequences();
         void _shuffleFractions();
         void _addNoise(Cpu::real_vector *v);
+	void _cacheAssert(bool flag);
 	
         Cpu::real_vector    _loadInputsFromCache(const sequence_t &seq);
         Cpu::real_vector    _loadOutputsFromCache(const sequence_t &seq);

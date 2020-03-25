@@ -56,6 +56,13 @@
 namespace {
 namespace internal {
 
+    void _cacheAssert(bool flag)
+    {
+	assert (flag);
+	if (!flag)
+	    throw std::runtime_error("Error: fail to read from cache in CURRENNT");
+    }
+    
     int readNcDimension(int ncid, const char *dimName)
     {
         int ret;
@@ -354,6 +361,7 @@ namespace internal {
 
 	// check the validity of the stPos and etPos
 	if (stPos >= etPos || stPos < 0){
+	    printf("Error in data reading in CURRENNT");
 	    printf("Error info: stPos: %ld, etPos: %ld, %s", stPos, etPos, dataPath.c_str());
 	    throw std::runtime_error("Fail to read in readReadlDataAndFill");
 	}
@@ -544,7 +552,7 @@ namespace data_sets {
 	Cpu::real_vector v(seq.length * m_inputPatternSize);
 	m_cacheFile.seekg(seq.inputsBegin);
 	m_cacheFile.read((char*)v.data(), sizeof(real_t) * v.size());
-	assert (m_cacheFile.tellg() - seq.inputsBegin == v.size() * sizeof(real_t));
+	_cacheAssert(m_cacheFile.tellg() - seq.inputsBegin == v.size() * sizeof(real_t));
 	return v;
     }
 
@@ -554,7 +562,7 @@ namespace data_sets {
 
         m_cacheFile.seekg(seq.targetsBegin);
         m_cacheFile.read((char*)v.data(), sizeof(real_t) * v.size());
-        assert (m_cacheFile.tellg() - seq.targetsBegin == v.size() * sizeof(real_t));
+        _cacheAssert(m_cacheFile.tellg() - seq.targetsBegin == v.size() * sizeof(real_t));
 
         return v;
     }
@@ -564,7 +572,7 @@ namespace data_sets {
 	Cpu::real_vector v(seq.exInputLength * seq.exInputDim);
 	m_cacheFile.seekg(seq.exInputBegin);
 	m_cacheFile.read((char*)v.data(), sizeof(real_t) * v.size());
-	assert (m_cacheFile.tellg() - seq.exInputBegin == v.size() * sizeof(real_t));
+	_cacheAssert(m_cacheFile.tellg() - seq.exInputBegin == v.size() * sizeof(real_t));
 	return v;
     }
 
@@ -573,7 +581,7 @@ namespace data_sets {
 	Cpu::real_vector v(seq.exOutputLength * seq.exOutputDim);
 	m_cacheFile.seekg(seq.exOutputBegin);
 	m_cacheFile.read((char*)v.data(), sizeof(real_t) * v.size());
-	assert (m_cacheFile.tellg() - seq.exOutputBegin == v.size() * sizeof(real_t));
+	_cacheAssert(m_cacheFile.tellg() - seq.exOutputBegin == v.size() * sizeof(real_t));
 	return v;
     }
 
@@ -583,7 +591,7 @@ namespace data_sets {
 
         m_cacheFile.seekg(seq.targetsBegin);
         m_cacheFile.read((char*)v.data(), sizeof(int) * v.size());
-        assert (m_cacheFile.tellg() - seq.targetsBegin == v.size() * sizeof(int));
+        _cacheAssert(m_cacheFile.tellg() - seq.targetsBegin == v.size() * sizeof(int));
 
         return v;
     }
@@ -605,7 +613,7 @@ namespace data_sets {
         Cpu::real_vector v(seq.length * m_auxDataDim);
         m_cacheFile.seekg(seq.auxDataBegin);
         m_cacheFile.read((char*)v.data(), sizeof(real_t) * v.size());
-        assert (m_cacheFile.tellg() - seq.auxDataBegin == v.size() * sizeof(real_t));
+        _cacheAssert(m_cacheFile.tellg() - seq.auxDataBegin == v.size() * sizeof(real_t));
         return v;
     }
     
@@ -614,7 +622,7 @@ namespace data_sets {
         Cpu::pattype_vector v(seq.length * m_auxDataDim);
         m_cacheFile.seekg(seq.auxDataBegin);
         m_cacheFile.read((char*)v.data(), sizeof(char) * v.size());
-        assert (m_cacheFile.tellg() - seq.auxDataBegin == v.size() * sizeof(char));
+	_cacheAssert(m_cacheFile.tellg() - seq.auxDataBegin == v.size() * sizeof(char));
         return v;
     }
     
@@ -623,7 +631,7 @@ namespace data_sets {
         Cpu::int_vector v(seq.length * m_auxDataDim);
         m_cacheFile.seekg(seq.auxDataBegin);
         m_cacheFile.read((char*)v.data(), sizeof(int) * v.size());
-        assert (m_cacheFile.tellg() - seq.auxDataBegin == v.size() * sizeof(int));
+        _cacheAssert(m_cacheFile.tellg() - seq.auxDataBegin == v.size() * sizeof(int));
         return v;
     }
     
@@ -997,7 +1005,7 @@ namespace data_sets {
 			frac->m_patTypesLowTimeRes[dataPos] = PATTYPE_FIRST;
 		    }else if (dataPos < frac->m_patTypesLowTimeRes.size()){
 			frac->m_patTypesLowTimeRes[dataPos] = patType;
-		    }else{	    
+		    }else{
 			printf("%dvs%ld ",dataPos, frac->m_patTypesLowTimeRes.size());
 			throw std::runtime_error("Error in preparing patTypes for resolutions");
 		    }
@@ -1259,6 +1267,17 @@ namespace data_sets {
 	}
 	m_sequences = tmp_sequences;
 	return;
+    }
+
+
+    void DataSet::_cacheAssert(bool flag){
+	//assert(flag);
+	if (!flag){
+	    printf("Fail to read/write cache file %s\n", m_cacheFileName.c_str());
+	    printf("Directory for the cache file may be too small\n");
+	    printf("Please use a larger directory and add --cache_path to CURRENNT\n");
+	    throw std::runtime_error("Error in CURRENNT DataSet IO");
+	}
     }
     
     DataSet::DataSet()
@@ -1560,8 +1579,8 @@ namespace data_sets {
 		    // Write inputs into cache
                     m_cacheFile.write((const char*)inputs.data(),
 				      sizeof(real_t) * inputs.size());
-                    assert (m_cacheFile.tellp() - seq->inputsBegin == 
-			    seq->length * m_inputPatternSize * sizeof(real_t));
+                    this->_cacheAssert(m_cacheFile.tellp() - seq->inputsBegin == 
+				       seq->length * m_inputPatternSize * sizeof(real_t));
 
 		    
                     // Step2. read targets and store them in the cache file
@@ -1573,7 +1592,8 @@ namespace data_sets {
 							ncid, "targetClasses", targetsBegin,
 							seq->length);
                         m_cacheFile.write((const char*)targets.data(), sizeof(int)*targets.size());
-                        assert (m_cacheFile.tellp()-seq->targetsBegin==seq->length * sizeof(int));
+                        this->_cacheAssert((m_cacheFile.tellp() - seq->targetsBegin) ==
+					   (seq->length * sizeof(int)));
 
 			if (m_exOutputType == DATASET_EXINPUT_TYPE_1 ||
 			    m_exOutputType == DATASET_EXINPUT_TYPE_2)
@@ -1621,8 +1641,8 @@ namespace data_sets {
 			// write outputs into cache
                         m_cacheFile.write((const char*)targets.data(),
 					  sizeof(real_t) * targets.size());
-                        assert (m_cacheFile.tellp() - seq->targetsBegin == 
-				seq->length * m_outputPatternSize * sizeof(real_t));
+                        this->_cacheAssert((m_cacheFile.tellp() - seq->targetsBegin) == 
+					   (seq->length * m_outputPatternSize * sizeof(real_t)));
                     }
 
 		    
@@ -1645,7 +1665,7 @@ namespace data_sets {
 			    }
 			    m_cacheFile.write((const char *)(temp.data() + dataShift),
 					      sizeof(char) * dataSize);
-			    assert(m_cacheFile.tellp()-seq->auxDataBegin==dataSize*sizeof(char));
+			    this->_cacheAssert((m_cacheFile.tellp()-seq->auxDataBegin)==(dataSize*sizeof(char)));
 			    
 			}else if (m_auxDataTyp == AUXDATATYPE_INT){
 			    Cpu::int_vector temp;
@@ -1656,7 +1676,7 @@ namespace data_sets {
 			    }
 			    m_cacheFile.write((const char *)(temp.data() + dataShift),
 					      sizeof(int) * dataSize);
-			    assert(m_cacheFile.tellp()-seq->auxDataBegin==dataSize*sizeof(int));
+			    this->_cacheAssert(m_cacheFile.tellp()-seq->auxDataBegin==dataSize*sizeof(int));
 			}else if (m_auxDataTyp == AUXDATATYPE_FLOAT){
 			    Cpu::real_vector temp;
 			    int tempLength = internal::readRealData(fileName, temp, 0, -1);
@@ -1666,7 +1686,7 @@ namespace data_sets {
 			    }
 			    m_cacheFile.write((const char *)(temp.data()+dataShift),
 					      sizeof(real_t)* dataSize);
-			    assert(m_cacheFile.tellp()-seq->auxDataBegin==dataSize*sizeof(real_t));
+			    this->_cacheAssert(m_cacheFile.tellp()-seq->auxDataBegin==dataSize*sizeof(real_t));
 			}else{
 			    throw std::runtime_error("Invalid auxDataTyp");
 			}
@@ -1695,12 +1715,12 @@ namespace data_sets {
 			    }
 			    int tempLength = internal::readRealData(fileName, temp, stPos, etPos);
 			    seq->exInputLength   = tempLength / seq->exInputDim;
-			    assert(seq->exInputLength * seq->exInputDim == tempLength);
+			    this->_cacheAssert(seq->exInputLength * seq->exInputDim == tempLength);
 			
 			    m_cacheFile.write((const char *)(temp.data()),
 					      sizeof(real_t) * tempLength);
-			    assert((m_cacheFile.tellp()-seq->exInputBegin)==
-				   (seq->exInputDim * seq->exInputLength * sizeof(real_t)));
+			    this->_cacheAssert((m_cacheFile.tellp()-seq->exInputBegin)==
+					       (seq->exInputDim * seq->exInputLength * sizeof(real_t)));
 			    
 			}else if (config.exInputDims().size() > 0){
 			    // 
@@ -1749,12 +1769,12 @@ namespace data_sets {
 
 			    // Write the external data into cache
 			    // Make sure #externalData = Length * dim
-			    assert(seq->exInputLength * seq->exInputDim == cnt);
+			    this->_cacheAssert(seq->exInputLength * seq->exInputDim == cnt);
 			    seq->exInputBegin    = m_cacheFile.tellp();
 			    m_cacheFile.write((const char *)(exDataBuf.data()),
 					      sizeof(real_t) * cnt);
-			    assert((m_cacheFile.tellp()-seq->exInputBegin)==
-				   (seq->exInputDim * seq->exInputLength * sizeof(real_t)));
+			    this->_cacheAssert((m_cacheFile.tellp()-seq->exInputBegin)==
+					       (seq->exInputDim * seq->exInputLength * sizeof(real_t)));
 			}else{
 			    throw std::runtime_error("Impossible bug");
 			}
@@ -1794,11 +1814,11 @@ namespace data_sets {
 				dimCnt += m_exOutputDims[i];
 				
 			    }
-			    assert(seq->exOutputLength * seq->exOutputDim == cnt);
+			    this->_cacheAssert(seq->exOutputLength * seq->exOutputDim == cnt);
 			    seq->exOutputBegin    = m_cacheFile.tellp();
 			    m_cacheFile.write((const char *)(exDataBuf.data()),
 					      sizeof(real_t) * cnt);
-			    assert((m_cacheFile.tellp()-seq->exOutputBegin)==
+			    this->_cacheAssert((m_cacheFile.tellp()-seq->exOutputBegin)==
 				   (seq->exOutputDim * seq->exOutputLength * sizeof(real_t)));
 			
 		    }else{
