@@ -31,7 +31,10 @@ def getMeanStd(fileScp, fileDim, stdFloor=0.00001, f0Feature=0):
     meanBuf = np.zeros([fileDim], dtype=np.float64)
     stdBuf  = np.zeros([fileDim], dtype=np.float64)
     timeStep = 0
-    fileNum = sum(1 for line in open(fileScp))
+    fileNum = 0
+    with open(fileScp, 'r') as filePtr:
+        for line in filePtr:
+            fileNum += 1
     
     with open(fileScp, 'r') as filePtr:
         for idx, fileName in enumerate(filePtr):

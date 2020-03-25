@@ -82,6 +82,7 @@
 #include "layers/LayerNorm.hpp"
 #include "layers/BatchNormNew.hpp"
 #include "layers/SpecialFeedBackLayer.hpp"
+#include "layers/DummyLayer.hpp"
 #include <stdexcept>
 
 
@@ -229,6 +230,9 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
     else if (layerType == "simple_feedback")
     	return new SpecialFeedBackLayer<TDevice>(layerChild, weightsSection,
 						 *precedingLayer, maxSeqLength, layerID);    
+    else if (layerType == "dummy")
+    	return new DummyLayer<TDevice>(layerChild, weightsSection,
+				       *precedingLayer, maxSeqLength, layerID);    
 
     else if (layerType == "sse"                       || layerType == "weightedsse"  || 
 	     layerType == "rmse"                      || layerType == "ce"  || 

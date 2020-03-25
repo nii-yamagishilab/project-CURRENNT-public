@@ -60,30 +60,39 @@
 #include <boost/random/uniform_real_distribution.hpp>
 #include <boost/random/mersenne_twister.hpp>
 
+
+// Macro for the network types
 #define VAENETWORKTYPE_0 0 // not VAE
 #define VAENETWORKTYPE_1 1 // Encoder with feedback, decoder with feedback
 #define VAENETWORKTYPE_2 2 // Encoder with feedback, decoder without feedback
 #define VAENETWORKTYPE_3 3 // Encoder without feedback, decoder with feedback
 #define VAENETWORKTYPE_4 4 // Encoder without feedback, decoder without feedback
 
+// 
 #define NETWORKRUNNING_MODE_NORMAL 0      // normal
 #define NETWORKRUNNING_MODE_STOPLR0 1     // stop if any layer has LR = 0
 #define NETWORKRUNNING_MODE_STOPTEACHER 2 // stop bp in teacher network
 #define NETWORKRUNNING_MODE_DISTEACHER 3  // propagate the gradients through the teacher
 
+// 
 #define NETWORK_WAVENET_SAVE_NO 0         // not save memory in WaveNet
 #define NETWORK_WAVENET_SAVE_AR 1         // save memory for AR WaveNet
 #define NETWORK_WAVENET_SAVE_MA 2         // save memory for Non-AR WaveModel
 
+//
+#define NETWORK_TEMPMAXLENGTH_FOR_MA 10   // a temporary memory length for MA mode
 
 namespace internal {
-namespace {    
+namespace {
+
+    // whether this layer is a valid MDN layer in the middle of the network
     bool invalidMiddleMDN(const std::string layerType){
 	// check whether the next layer is skip layer
 	return (layerType !="skipini" && layerType!="skipadd" && layerType!="skipcat" &&
 		layerType !="skipweightadd" && layerType !="operator");
     }
 
+    // whether this layer is a skip-type layer (multi fan-in/out)
     bool skipLayerTypes(const std::string layerType){
 	return (layerType == "skipadd"           ||
 		layerType == "skipini"           ||
@@ -101,6 +110,7 @@ namespace {
 		layerType == "random_shuffle");
     }
 
+    // whether this layer is a skip-type layer without parameters
     bool skipNonParaLayerTypes(const std::string layerType){
 	return (layerType == "skipadd"           ||
 		layerType == "skipini"           ||
@@ -114,13 +124,15 @@ namespace {
 		layerType == "random_shuffle");
     }
 
+    // whether this layer is a skip-type layer with parameters (for highway networks)
     bool skipParaLayerTypes(const std::string layerType){
 	return (layerType == "skippara_logistic" ||
 		layerType == "skippara_relu"     || 
 		layerType == "skippara_tanh"     ||
 		layerType == "skippara_identity");
     }
-    
+
+    // whether this layer allows the change of time resolution from input -> output
     bool layersAllowTimeResolutionChange(const std::string layerType){
 	return (layerType == std::string("operator")       ||
 		layerType == std::string("externalloader") ||
@@ -128,15 +140,11 @@ namespace {
 		layerType == std::string("vqlayer")        ||
 		layerType == std::string("signalgen"));
     }
-
-    int get_tmp_maxSeqLength(const int orignal_maxSeqLength, const int layerResolution,
-			     const int waveNetMemSaveFlag,   const int layerID){
-	if (waveNetMemSaveFlag == NETWORK_WAVENET_SAVE_MA && layerResolution == 1)
-	    return 10;
-	else
-	    return orignal_maxSeqLength;
+    
+    bool layersDummyLayer(const std::string layerType){
+	return (layerType == std::string("dummy"));
     }
-
+    
     // whether a layer's memory can be optimized for an AR model
     bool flagLayerCanBeOptimizedAR(const int layerID,
 				   const int totalNumLayers,
@@ -154,7 +162,8 @@ namespace {
 		return false;
 	}else{
 	    // WaveNet with VAE
-	    // Assume the last feedback is used for WaveNet, while others are for VAE encoder
+	    // Assume the last feedback is used for WaveNet,
+	    // while others are for VAE encoder
 	    
 	    if (layerID < (totalNumLayers - 2) && layerID > feedBackLayers.back())
 		return true;
@@ -167,19 +176,22 @@ namespace {
     bool flagLayerCanBeOptimizedMA(const int layerID,
 				   const int sourceExcitationLayerID,
 				   const int totalNumLayers,
-				   const int layerResolution)
+				   const int layerResolution,
+				   const int outputLayerID)
     {
 	// A layer's memory should be NOT released in Non-AR WaveModel when
 	//  1. this layer resolution is not at the waveform level
 	//  
 	//  3. this layer will be the actual output layer
 	
-	if (layerResolution > 1 || layerID >= totalNumLayers - 2)
+	if (layerResolution > 1 || layerID >= totalNumLayers - 2 ||
+	    layerID == outputLayerID)
 	    return false;
 	else
 	    return true;
     }
-    
+
+
 }
 }
 
@@ -206,7 +218,7 @@ void NeuralNetwork<TDevice>::__InitializeParameters()
     m_featMatchLayer        = -1;     // Idx of the featMatching layer (for GAN)
     m_vaeLayer              = -1;     // Idx of the VAE interface layer
     
-    m_vaeNetworkType = VAENETWORKTYPE_0;
+    m_vaeNetworkType = VAENETWORKTYPE_0; // default type for VAE network (if it is used)
 	
     m_trainingEpoch         = -1;     // initialize the training epoch counter
     m_trainingFrac          = -1;     // initialize the training data counter
@@ -216,15 +228,19 @@ void NeuralNetwork<TDevice>::__InitializeParameters()
     m_dftLayerIdx           = -1;     // index of DFT error layer
     m_interWeaveIdx         = -1;
     
-    m_waveNetMemSaveFlag    = NETWORK_WAVENET_SAVE_NO;
-	
+    m_waveNetMemSaveFlag    = NETWORK_WAVENET_SAVE_NO; // not save memory by default
+
+    m_outputLayerID         = -1;
+    
     // get a total number of layers
     m_totalNumLayers = 0;
 
 }
 
+// Initial reading of the network.json
 template <typename TDevice>
-void NeuralNetwork<TDevice>::__InitializeNetworkLayerIdx(const helpers::JsonDocument &jsonDoc)
+void NeuralNetwork<TDevice>::__InitializeNetworkLayerIdx(
+ const helpers::JsonDocument &jsonDoc)
 {    
     try{
 	
@@ -250,7 +266,7 @@ void NeuralNetwork<TDevice>::__InitializeNetworkLayerIdx(const helpers::JsonDocu
 	    m_totalNumLayers++;
 	
 	/* -------- processing loop -------- */	
-	// preloop to determine type o fnetwork
+	// pre-loop to determine type of network
 	int counter = 0;
         for (rapidjson::Value::ValueIterator layerChild = layersSection.Begin(); 
 	     layerChild != layersSection.End();
@@ -302,7 +318,9 @@ void NeuralNetwork<TDevice>::__InitializeNetworkLayerIdx(const helpers::JsonDocu
 	    }else if (layerType == "distilling"){
 		// distilling layers (not maintained)
 		m_distillingLayers.push_back(counter);
-		if (!config.trainingMode() && config.waveNetMemSaveFlag() && m_wavNetCoreFirstIdx)
+		if (!config.trainingMode()
+		    && config.waveNetMemSaveFlag()
+		    && m_wavNetCoreFirstIdx)
 		    m_waveNetMemSaveFlag = NETWORK_WAVENET_SAVE_MA;
 		
 	    }else if (layerType == "dft"){
@@ -334,6 +352,9 @@ void NeuralNetwork<TDevice>::__InitializeNetworkLayerIdx(const helpers::JsonDocu
 	    }   
 	}
 
+	if (config.outputFromWhichLayer() > 0)
+	    m_outputLayerID = config.outputFromWhichLayer();
+	
 	if (m_waveNetMemSaveFlag == NETWORK_WAVENET_SAVE_MA)
 	    printf("\nGenerating in GPU memory-save mode\n");
 	
@@ -344,19 +365,27 @@ void NeuralNetwork<TDevice>::__InitializeNetworkLayerIdx(const helpers::JsonDocu
 }
 
 
+// Load the network.json
 template <typename TDevice>
-void NeuralNetwork<TDevice>::__CreateNetworkLayers(const helpers::JsonDocument &jsonDoc,
-						   int parallelSequences, 
-						   int maxSeqLength,
-						   int inputSizeOverride)
+void NeuralNetwork<TDevice>::__CreateNetworkLayers(
+  const helpers::JsonDocument &jsonDoc,
+  int parallelSequences, 
+  int maxSeqLength,
+  int inputSizeOverride)
 {
     try {
 	
 	/* ----- initialization ----- */
 	const Configuration &config = Configuration::instance();
-		
+
+	// layer counter
 	int counter          = 0;
+	
+	// maximum utterance length (for memory allocation)
 	int tmp_maxSeqLength = maxSeqLength;
+	
+	// resolution
+	int tmp_resolution   = 1;
 	
 	// check the layers and weight sections
         if (!jsonDoc->HasMember("layers"))
@@ -375,14 +404,18 @@ void NeuralNetwork<TDevice>::__CreateNetworkLayers(const helpers::JsonDocument &
         for (rapidjson::Value::ValueIterator layerChild = layersSection.Begin(); 
 	     layerChild != layersSection.End();
 	     ++layerChild, counter++){
-	    
+
+	    // print basic infor
             printf("\nLayer (%d)", counter);
-	    
             std::string layerName = (*layerChild)["name"].GetString();
 	    printf(" [ %s ] ", layerName.c_str());
             std::string layerType = (*layerChild)["type"].GetString();
 	    printf(" %s ", layerType.c_str());
-	    
+
+	    // get a temporary resolution
+	    tmp_resolution =  (layerChild->HasMember("resolution") ? 
+			       (*layerChild)["resolution"].GetInt() : 1);
+
             // update the input layer size
 	    // I don't know why the original CURRENNT does this
 	    // this part is transparent to the user
@@ -393,14 +426,29 @@ void NeuralNetwork<TDevice>::__CreateNetworkLayers(const helpers::JsonDocument &
 		// overwrite the layer size
 		(*layerChild)["size"].SetInt(inputSizeOverride);
             }
+	    
+	    // decide the maximum length for memory allocation
+	    if (m_waveNetMemSaveFlag == NETWORK_WAVENET_SAVE_MA 
+		&& (!m_signalGenLayerId.empty())
+		&& internal::flagLayerCanBeOptimizedMA(counter, m_signalGenLayerId[0],
+						       m_totalNumLayers, tmp_resolution,
+						       m_outputLayerID)){
+		//  if this layer is for memory-save mode
+		//  only allocate a small length of memory during the network setup
+		tmp_maxSeqLength = NETWORK_TEMPMAXLENGTH_FOR_MA;
+	    }else{
+		tmp_maxSeqLength = maxSeqLength;
+	    }
 
+	    
 	    // create a layer
             try {
 		
             	layers::Layer<TDevice> *layer;
 		
 		if(!internal::skipLayerTypes(layerType)){
-		    // Normal layers
+		    // Normal layers with single in/output
+		    
 		    if (m_layers.empty())
 			layer = LayerFactory<TDevice>::createLayer(
 				layerType, &*layerChild, weightsSection,
@@ -412,7 +460,7 @@ void NeuralNetwork<TDevice>::__CreateNetworkLayers(const helpers::JsonDocument &
 				parallelSequences, tmp_maxSeqLength, counter,
 				m_layers.back().get());		
 		}else{
-		    // skip layers
+		    // skip layers with multi fan-in/output
 		    
 		    if (m_layers.empty())
 			throw std::runtime_error("Skip layers cannot be the first layer");
@@ -433,20 +481,21 @@ void NeuralNetwork<TDevice>::__CreateNetworkLayers(const helpers::JsonDocument &
 			// if this is the first skip layer
 			if (internal::skipParaLayerTypes(layerType)){
 			    // skippara requires previous skip layers
-			    printf("Error: no preceding skipini/skipadd layer is found");
-			    printf("to give x for this layer, which does H(x)*T(x)+x*(1-T(X))\n");
-			    printf("Please add a skipini layer after the layer that generates x.");
-			    throw std::runtime_error("Error: please modify network.jsn");
+			    printf("Error: no preceding skipini/skipadd layer");
+			    printf("to give x for this layer H(x)*T(x)+x*(1-T(X))\n");
+			    printf("Please wrap x with a skipini layer");
+			    throw std::runtime_error("Error: ill-defined network.jsn");
 			}
 		    }else{
 			if (layerType == "skipini"){
 			    // do nothing
 			}else if (internal::skipParaLayerTypes(layerType)){
-			    // skippara (highway block) only takes one skiplayer as input source
+			    // skippara (highway block) only takes one skiplayer as input
 			    SkipLayers.push_back(m_skipAddLayers.back());
 			}else{
 			    // skipadd and skipcat can take multiple skiplayers
-			    BOOST_FOREACH (layers::Layer<TDevice>* skiplayer, m_skipAddLayers){
+			    BOOST_FOREACH (layers::Layer<TDevice>* skiplayer,
+					   m_skipAddLayers){
 				SkipLayers.push_back(skiplayer);
 			    }
 			}
@@ -480,8 +529,8 @@ void NeuralNetwork<TDevice>::__CreateNetworkLayers(const helpers::JsonDocument &
 			
 		
 		// post processing for waveNet / NSF or other waveform models
-		// This part should be modified so that other networks using WaveNetCore/DFT layer
-		// will not go into the memory-save mode
+		// This part should be modified so that other networks using 
+		// WaveNetCore/DFT layer will not go into the memory-save mode
 		if (m_wavNetCoreFirstIdx > 0 || m_dftLayerIdx > 0){
 		    
 		    // for wavenet, link the wavenet block and allocate memory
@@ -490,8 +539,10 @@ void NeuralNetwork<TDevice>::__CreateNetworkLayers(const helpers::JsonDocument &
 			for (size_t i = 0; i < counter; ++i) {
 			    if (m_layers[i]->getLayerFlag() ==
 				std::string("wavenetConditionInputLayer")){
-				if (m_layers[i]->type() == std::string("wavenetc"))
-				    throw std::runtime_error("External input cannot wavenetc");
+				if (m_layers[i]->type() == std::string("wavenetc")){
+				    printf("External input cannot be wavenetc layer");
+				    throw std::runtime_error("Error in network.jsn");
+				}
 				layer->linkTargetLayer(*(m_layers[i].get()));
 				break;
 			    }
@@ -506,11 +557,13 @@ void NeuralNetwork<TDevice>::__CreateNetworkLayers(const helpers::JsonDocument &
 		    // for wavenet / NSF, reduce the memory in generation
 		    if (m_waveNetMemSaveFlag == NETWORK_WAVENET_SAVE_AR){
 			// Save the memory for AR WaveNet
-			// only save the memory for layers between the feedback and output layer
+			// only save the memory for layers between
+			// the feedback and output layer
 			if (internal::flagLayerCanBeOptimizedAR(counter, m_totalNumLayers,
 								m_feedBackLayers,
 								this->m_vaeLayers)){
-			    // don't save memory if we want to see its output at every time step
+			    // don't save memory if we want to see its output
+			    // at every time step
 			    if (counter != Configuration::instance().outputFromWhichLayer())
 				layer->reduceOutputBuffer();
 			}
@@ -518,7 +571,7 @@ void NeuralNetwork<TDevice>::__CreateNetworkLayers(const helpers::JsonDocument &
 			// Save the memory for Non-AR WaveModel
 			if (internal::flagLayerCanBeOptimizedMA(
 				counter, m_signalGenLayerId[0], m_totalNumLayers,
-				layer->getResolution()))
+				layer->getResolution(), m_outputLayerID))
 			{
 			    layer->clearAllBuffers();
 			}
@@ -533,7 +586,7 @@ void NeuralNetwork<TDevice>::__CreateNetworkLayers(const helpers::JsonDocument &
 	       		
             }
             catch (const std::exception &e) {
-                throw std::runtime_error(std::string("Could not create layer: ") + e.what());
+                throw std::runtime_error(std::string("Cannot create layer: ") + e.what());
             }
 	    
         } // Processing loop done
@@ -552,12 +605,14 @@ template <typename TDevice>
 void NeuralNetwork<TDevice>::__CheckNetworkLayers()
 {
     try{
+	printf("\n\nNetwork sanity check\n");
+	
 	/* ----- post-processing check ----- */
 	if (m_totalNumLayers != m_layers.size())
 	    throw std::runtime_error("Error in network creation: failed \n");
 	
         if (m_totalNumLayers < 3)
-            throw std::runtime_error("Error in network.jsn: there must be a hidden layer\n");
+            throw std::runtime_error("Error in network.jsn: no hidden layer\n");
 	
         // check Input
         if (!dynamic_cast<layers::InputLayer<TDevice>*>(m_layers.front().get()))
@@ -574,24 +629,33 @@ void NeuralNetwork<TDevice>::__CheckNetworkLayers()
 	// check the post output layer
 	{
 	    layers::PostOutputLayer<TDevice>* lastPOLayer;
-	    lastPOLayer = dynamic_cast<layers::PostOutputLayer<TDevice>*>(m_layers.back().get());
+	    lastPOLayer =
+		dynamic_cast<layers::PostOutputLayer<TDevice>*>(m_layers.back().get());
 	    
 	    layers::PostOutputLayer<TDevice>* midPOLayer;
 	    for (size_t i = 0; i < m_totalNumLayers-1; ++i) {
-		midPOLayer = dynamic_cast<layers::PostOutputLayer<TDevice>*>(m_layers[i].get());
+		midPOLayer =
+		    dynamic_cast<layers::PostOutputLayer<TDevice>*>(m_layers[i].get());
 
 		
 		if (midPOLayer && midPOLayer->type() == "middleoutput"){
 		    // tell the last postoutput layer about the existence of middleoutput
 		    lastPOLayer->linkMiddleOutptu(midPOLayer);
 		    midPOLayer->setPostLayerType(NN_POSTOUTPUTLAYER_MIDDLEOUTPUT);
-		    if (internal::invalidMiddleMDN(m_layers[i+1]->type()))
-			throw std::runtime_error("No skipini/add/cat layer after middleoutput");
+		    if (internal::invalidMiddleMDN(m_layers[i+1]->type())){
+			printf("There should be a skipini/add/cat layer after ");
+			printf("%s", m_layers[i]->name().c_str());
+			throw std::runtime_error("Error in network.jsn");
+		    }
 		    
-		}else if (midPOLayer && midPOLayer->type() == "featmatch" && flagNetworkForGAN()){
+		}else if (midPOLayer && midPOLayer->type() == "featmatch" &&
+			  flagNetworkForGAN()){
 		    midPOLayer->setPostLayerType(NN_POSTOUTPUTLAYER_FEATMATCH);
-		    if (internal::invalidMiddleMDN(m_layers[i+1]->type()))
-			throw std::runtime_error("No skipini/add/cat layer after featmatch");
+		    if (internal::invalidMiddleMDN(m_layers[i+1]->type())){
+			printf("There should be a skipini/add/cat layer after ");
+			printf("%s", m_layers[i]->name().c_str());
+			throw std::runtime_error("Error in network.jsn");
+		    }
 		    
 		}else if (midPOLayer && midPOLayer->type() == "mdn" && flagNetworkForGAN()){
 		    midPOLayer->setPostLayerType(NN_POSTOUTPUTLAYER_NOTLASTMDN);
@@ -606,8 +670,11 @@ void NeuralNetwork<TDevice>::__CheckNetworkLayers()
 		    // Some layers don't define the code to propagate gradients
 		    // to a non-trainable layer. Adding a skipini will receive
 		    // the gradients for vae layer
-		    if (internal::invalidMiddleMDN(m_layers[i+1]->type()))
-			throw std::runtime_error("Please use skipini/add/cat layer after VAE");
+		    if (internal::invalidMiddleMDN(m_layers[i+1]->type())){
+			printf("There should be a skipini/add/cat layer after ");
+			printf("%s", m_layers[i]->name().c_str());
+			throw std::runtime_error("Error in network.jsn");
+		    }
 		    
 		}else if (midPOLayer){
 		    throw std::runtime_error("Multiple post output layers defined");
@@ -621,10 +688,11 @@ void NeuralNetwork<TDevice>::__CheckNetworkLayers()
         // check if two layers have the same name
         for (size_t i = 0; i < m_totalNumLayers; ++i) {
             for (size_t j = 0; j < m_totalNumLayers; ++j) {
-                if (i != j && m_layers[i]->name() == m_layers[j]->name())
-                    throw std::runtime_error(
-			std::string("Error in network.jsn: different layers have the name '") + 
-			m_layers[i]->name() + "'");
+                if (i != j && m_layers[i]->name() == m_layers[j]->name()){
+		    printf("\nError: different layers have the same name ");
+		    printf("%s", m_layers[i]->name().c_str());
+		    throw std::runtime_error("Error in network.jsn");
+		}
             }
         }
 
@@ -682,17 +750,36 @@ void NeuralNetwork<TDevice>::__CheckNetworkLayers()
 		// Only allow Operator, externalLoader,
 		//   feedback (without reading previous output)
 		if (!internal::layersAllowTimeResolutionChange(m_layers[i]->type())){
-		    printf("Time resolution of %s conflicts with previous layer\n",
+		    printf("\n\tTime resolution of %s conflicts with previous layer\n",
 			   m_layers[i]->name().c_str());
-		    throw std::runtime_error("Please check time resolution configuration\n");
+		    throw std::runtime_error("Please check resolution in network.jsn \n");
+		}
+	    }
+	    if (m_layers[i]->getSingleTimeStepFlag() &&
+		(!m_layers[i-1]->getSingleTimeStepFlag())){
+		if (!internal::layersAllowTimeResolutionChange(m_layers[i]->type())){
+		    printf("\n\tFor single timestep, %s must be an operator layer. ",
+			   m_layers[i]->name().c_str());
+		    printf("It must use lastshot: 9\n");
+		    throw std::runtime_error("Please check network.jsn \n");
+		}
+	    }
+	    if (m_layers[i-1]->getSingleTimeStepFlag() &&
+		(!m_layers[i]->getSingleTimeStepFlag())){
+		if (!internal::layersDummyLayer(m_layers[i]->type())){
+		    printf("\n\tFor single timestep, %s must be a dummy layer.\n",
+			   m_layers[i]->name().c_str());
+		    throw std::runtime_error("Please check network.jsn \n");
 		}
 	    }
 	}
 
 	// check if feature extraction network exists
 	if (!m_featTransNetRange.empty()){
-	    if (m_featTransNetRange.size() != 2)
-		throw std::runtime_error("Error in network.jsn: one feattrans needs one featsse");
+	    if (m_featTransNetRange.size() != 2){
+		printf("One feattrans needs one featsse");
+		throw std::runtime_error("Error in network.jsn");
+	    }
 	    printf("\nFeat extraction subnet from layer (%d) to (%d)\n",
 		   m_featTransNetRange[0], m_featTransNetRange[1]);
 	}	
@@ -803,7 +890,15 @@ void NeuralNetwork<TDevice>::__LinkNetworkLayers()
 	    for (size_t i = 0; i < m_totalNumLayers-1; i++)
 		m_layers[m_totalNumLayers-1]->linkTargetLayer(*(m_layers[i].get()));
 	}
-	
+
+	for (size_t i = 0; i < m_totalNumLayers-1; i++){
+	    if (m_layers[i]->type() == "filtering"){
+		for (size_t j = 0; j < m_totalNumLayers-1; j++){
+		    m_layers[i]->linkTargetLayer(*(m_layers[j].get()));
+		}
+	    }
+	}
+
 	// Link the feedback hidden layers
 	if (m_feedBackHiddenLayers.size()){
 	    // link the target layers
@@ -1243,8 +1338,12 @@ bool NeuralNetwork<TDevice>::flagLayerCanbeOptimizedMA(const int layerID)
     if (layerID < 0 || layerID >= m_totalNumLayers || layerID >= m_layers.size())
 	throw std::runtime_error("Error: flagLayerCanbeOptimizedMA input layerID invalid");
     
-    return internal::flagLayerCanBeOptimizedMA(layerID, m_signalGenLayerId[0], m_totalNumLayers,
-					       m_layers[layerID]->getResolution());
+    if (m_signalGenLayerId.empty())
+	throw std::runtime_error("Error: memorysave mode for MA is only for NSF models");
+    
+    return internal::flagLayerCanBeOptimizedMA(
+		layerID, m_signalGenLayerId[0], m_totalNumLayers,
+		m_layers[layerID]->getResolution(), m_outputLayerID);
 }
 
 

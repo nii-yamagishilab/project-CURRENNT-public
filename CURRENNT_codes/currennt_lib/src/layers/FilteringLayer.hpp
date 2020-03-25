@@ -66,9 +66,13 @@ namespace layers{
 	real_t          m_reverb_decayScale;
 	real_t          m_reverb_decayShift;
 
+
 	std::string     m_filter_coeffs_str;   // input string of filter coeffs
 	real_vector     m_filter_coeffs;       // buffer to store coeffs
-	cpu_real_vector m_filter_coeffs_H;     
+	cpu_real_vector m_filter_coeffs_H;
+
+	std::string     m_filter_coef_layer;
+	Layer<TDevice>* m_filter_coef_layer_ptr;
 
 	real_vector     m_reverb_IR_noise_vec;
 	real_vector     m_reverb_decay_coef_vec;
@@ -118,7 +122,11 @@ namespace layers{
 				   bool flag_add);
 	
 	virtual void swapAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
-				    bool flag_get);	
+				    bool flag_get);
+
+	// load the target data from the target layer
+	virtual void linkTargetLayer(Layer<TDevice> &targetLayer);
+
     };
     
 }

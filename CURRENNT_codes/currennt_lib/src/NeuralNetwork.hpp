@@ -116,6 +116,8 @@ private:
 
     int m_interWeaveIdx;
 
+    int m_outputLayerID;
+    
     // network dependency/topology mangager
     helpers::networkDepMng m_networkMng;
 

@@ -680,15 +680,22 @@ namespace {
 	    }
 	}	
     };
-
+    
+    struct scaleGrad{
+        real_t  factor;
+        __host__ __device__ real_t operator() (real_t a) const{
+            return a * factor;
+        }
+    };
+    
+    
+    
     // Duplicate the result to every frame of the utterance
     struct duplicateSentVec
     {
 	int     featureDim;
 	int     paralSeqNm;
-	
-	real_t *sourceData;
-	
+	real_t     *sourceData;
 	const char *patTypes;
 	__host__ __device__ void operator() (const thrust::tuple<real_t&, int> &t) const
 	{
@@ -699,21 +706,20 @@ namespace {
 	    if (patTypes[timeIdx] == PATTYPE_NONE){
 		t.get<0>() = 0.0;
 		return;
-	    }
-	    
-	    int paralBlk  = timeIdx / paralSeqNm;
-	    int sentIdx   = timeIdx % paralSeqNm;
-
-	    if (paralBlk == 0){
-		// the first block should have stored the data
-		return;
 	    }else{
-		// source data will be the data array it self
-		// copy from the first block
-		t.get<0>() = sourceData[sentIdx * featureDim + dimIdx];
+		int paralBlk  = timeIdx / paralSeqNm;
+		int sentIdx   = timeIdx % paralSeqNm;
+
+		if (paralBlk == 0){
+		    // the first block should have stored the data
+		    return;
+		}else{
+		    // source data will be the data array it self
+		    // copy from the first block
+		    t.get<0>() = sourceData[sentIdx * featureDim + dimIdx];
+		}
 	    }
-	}
-	
+	}	
     };
 
     
@@ -1029,10 +1035,10 @@ namespace layers{
 	    printf("copy utterance end to each frame\n");
 	    break;
 	case NN_OPE_LAST_SHOT_MODE5:
-	    printf("concatenate 1/2 of utterance end and start (from bi-rnn) to inital frame\n");
+	    printf("concatenate 1/2 of utterance end & start (from bi-rnn) to 1st frame\n");
 	    break;
 	case NN_OPE_LAST_SHOT_MODE6:
-	    printf("concatenate 1/2 of utterance end and start (from bi-rnn) to each frame\n");
+	    printf("concatenate 1/2 of utterance end & start (from bi-rnn) to all frames\n");
 	    break;
 	case NN_OPE_LAST_SHOT_MODE9:
 	    printf("copy average over utterance to each frame\n");
@@ -1050,7 +1056,7 @@ namespace layers{
 	    printf("concatenate first/last frame of segments to each frame of segment\n");
 	    break;
 	case NN_OPE_LAST_SHOT_MODE10:
-	    printf("copy first frame of segment to each frame in segment (causal dependency)\n");
+	    printf("copy first frame of segment to all frames in segment\n");
 	    break;
 	default:
 	    printf("Unknown lastshot mode\n");
@@ -1099,8 +1105,10 @@ namespace layers{
 	
 	// check the layer size
 	if (m_noiseSize > 0){
-	    if (this->size() != (this->precedingLayer().size() + m_noiseSize))
-		throw std::runtime_error("Error, noiseDim + preLayerSize = operator layerSize");
+	    if (this->size() != (this->precedingLayer().size() + m_noiseSize)){
+		printf("Error: noiseDim + preLayerSize != size of this layer");
+		throw std::runtime_error("Error in network.jsn ");
+	    }
 	    
 	    // Buffer for noise
 	    m_noiseInput.resize(m_noiseSize * (this->outputs().size() / this->size()), 0.0);
@@ -1108,7 +1116,7 @@ namespace layers{
 
 	/* ------ Configuration for weighting the input features ------ */
 	// Configuration for the weight of input vector
-	// Note: setZero can be negative, which is useby the dirty code in fillOutputVec for a
+	// Note: setZero can be negative, which is used in fillOutputVec for a
 	//       special stop-gradient mode
 	// Now: the stop-gradient flag is moved to m_stopGradStr
 
@@ -1177,10 +1185,10 @@ namespace layers{
 	    misFuncs::ParseFloatOpt(m_setZeroStr, m_setZeroVec_H);
 	    m_setZeroVec_D = m_setZeroVec_H;
 
-	    if (this->precedingLayer().size() != m_setZeroVec_D.size())
-		throw std::runtime_error(
-			std::string("Error in operator ") + this->name() +
-			std::string(", setZero vector length unequal to previous layer size"));
+	    if (this->precedingLayer().size() != m_setZeroVec_D.size()){
+		printf("\n\tsetZero vector length != previous layer size");
+		throw std::runtime_error("Error in network.jsn");
+	    }
 	
 	    // for compatiblity, convert setZero to scales and stopGrad
 	    for (int i = 0; i < m_setZeroVec_H.size(); i++)
@@ -1231,27 +1239,29 @@ namespace layers{
 	    printf("\toutputDownSampling flag has been changed to outputDuplicating\n");
 	    throw std::runtime_error("Error: old configuration name in OperationLayer");
 	}
-	m_outDupRate   = (layerChild->HasMember("outputDuplicating") ? 
-			   static_cast<int>((*layerChild)["outputDuplicating"].GetInt()) : 0);
+	m_outDupRate = (layerChild->HasMember("outputDuplicating") ? 
+			static_cast<int>((*layerChild)["outputDuplicating"].GetInt()) : 0);
 
 	
 	/* ------ Configuration of last shot mode ------ */
 	//
-	m_lastShot      = (layerChild->HasMember("lastShot")?
-			   static_cast<int>((*layerChild)["lastShot"].GetInt()) :
-			   NN_OPE_LAST_SHOT_TURNOFF);
+	m_lastShot = (layerChild->HasMember("lastShot")?
+		      static_cast<int>((*layerChild)["lastShot"].GetInt()) :
+		      NN_OPE_LAST_SHOT_TURNOFF);
 	
 	// Configuration of the extraction of the last time steps (only used
 	// for m_lastShot = 3, 4, 7, 8, 10)
-	m_segLevel      = (layerChild->HasMember("segLevel")?
-			   static_cast<int>((*layerChild)["segLevel"].GetInt()) : -1);
+	m_segLevel = (layerChild->HasMember("segLevel")?
+		      static_cast<int>((*layerChild)["segLevel"].GetInt()) : -1);
 	
 	if (m_lastShot != NN_OPE_LAST_SHOT_TURNOFF){
 	    // Prepare the segment boundary
 	    
 	    // only use the utterance end boundary	    
-	    if (m_lastShot == NN_OPE_LAST_SHOT_MODE1 || m_lastShot == NN_OPE_LAST_SHOT_MODE2 ||
-		m_lastShot == NN_OPE_LAST_SHOT_MODE5 || m_lastShot == NN_OPE_LAST_SHOT_MODE6 ||
+	    if (m_lastShot == NN_OPE_LAST_SHOT_MODE1 ||
+		m_lastShot == NN_OPE_LAST_SHOT_MODE2 ||
+		m_lastShot == NN_OPE_LAST_SHOT_MODE5 ||
+		m_lastShot == NN_OPE_LAST_SHOT_MODE6 ||
 		m_lastShot == NN_OPE_LAST_SHOT_MODE9){
 		
 		// buffer to store the length of input sequences
@@ -1260,7 +1270,8 @@ namespace layers{
 
 
 		// buffer to store the coefficiets (1.0) for gathering gradients
-		cpu_real_vector tmp(this->parallelSequences() * this->maxSeqLength() +
+		cpu_real_vector tmp(this->parallelSequences() *
+				    this->precedingLayer().maxSeqLength() +
 				    this->parallelSequences() - 1, 0.0);
 
 		if (tmp.size()){
@@ -1294,12 +1305,14 @@ namespace layers{
 		      m_lastShot == NN_OPE_LAST_SHOT_MODE8 ||
 		      m_lastShot == NN_OPE_LAST_SHOT_MODE10){
 		
-		if (m_segLevel < 0)
-		    throw std::runtime_error("segLevel is not configured for Operationlayer");
+		if (m_segLevel < 0){
+		    printf("\n\tsegLevel is not provided in this layer");
+		    throw std::runtime_error("Error in network.jsn");
+		}
 
 		// boundary buffer is allocated
 		// boundary will be loaded in loadSequences
-		m_segBoundaryH.resize(this->maxSeqLength() * this->parallelSequences() * 2, 0);
+		m_segBoundaryH.resize(this->maxSeqLength()*this->parallelSequences() * 2, 0);
 		m_segBoundaryD = m_segBoundaryH;
 		
 	    }else{
@@ -1308,8 +1321,8 @@ namespace layers{
 	}
 
 	/* ------- Configuration of the time resolution change */
-	m_changeTimeRes   = (layerChild->HasMember("changeResolution") ? 
-			     static_cast<int>((*layerChild)["changeResolution"].GetInt()) : 0);
+	m_changeTimeRes = (layerChild->HasMember("changeResolution") ? 
+			   static_cast<int>((*layerChild)["changeResolution"].GetInt()) : 0);
 	if (m_changeTimeRes && this->size() != this->precedingLayer().size())
 	    throw std::runtime_error("Layer size unequal for time resolution change");
 	if (this->getResolution() > this->precedingLayer().getResolution()){
@@ -1323,8 +1336,8 @@ namespace layers{
 	}
 
 	/* ------- Configuration of dropout */
-	m_dropoutRate     = (layerChild->HasMember("dropOut") ? 
-			     static_cast<real_t>((*layerChild)["dropOut"].GetDouble()) : -1.0);
+	m_dropoutRate  = (layerChild->HasMember("dropOut") ? 
+			  static_cast<real_t>((*layerChild)["dropOut"].GetDouble()) : -1.0);
 	if (m_dropoutRate > 0){
 	    if (this->size() != this->precedingLayer().size())
 		throw std::runtime_error("Layer size unequal for dropout");
@@ -1340,23 +1353,22 @@ namespace layers{
 		     static_cast<real_t>((*layerChild)["frequencyDim"].GetDouble()) : -1);
 	
 	if (m_freqDim >= 0){
-	    
 	    m_freqOpt = (layerChild->HasMember("frequencyOpt")?
-			 static_cast<real_t>((*layerChild)["frequencyOpt"].GetDouble()) : -1);
+		      static_cast<real_t>((*layerChild)["frequencyOpt"].GetDouble()) : -1);
 	    m_freqSR  = (layerChild->HasMember("frequencySR")?
 			 static_cast<real_t>((*layerChild)["frequencySR"].GetDouble()) : -1);
 	    
 	    m_freqQF0min = (layerChild->HasMember("frequencyQF0min")?
-			    static_cast<real_t>((*layerChild)["frequencyQF0min"].GetDouble()):-1);
+		       static_cast<real_t>((*layerChild)["frequencyQF0min"].GetDouble()):-1);
 	    m_freqQF0max = (layerChild->HasMember("frequencyQF0max")?
-			    static_cast<real_t>((*layerChild)["frequencyQF0max"].GetDouble()):-1);
+		      static_cast<real_t>((*layerChild)["frequencyQF0max"].GetDouble()):-1);
 	    m_freqQF0Lev = (layerChild->HasMember("frequencyQF0Lev")?
-			    static_cast<real_t>((*layerChild)["frequencyQF0Lev"].GetDouble()):-1);
+		      static_cast<real_t>((*layerChild)["frequencyQF0Lev"].GetDouble()):-1);
 
 	    m_freqDataM = (layerChild->HasMember("frequencyF0Mean")?
-			    static_cast<real_t>((*layerChild)["frequencyF0Mean"].GetDouble()):0);
+		      static_cast<real_t>((*layerChild)["frequencyF0Mean"].GetDouble()):0);
 	    m_freqDataS = (layerChild->HasMember("frequencyF0Std")?
-			    static_cast<real_t>((*layerChild)["frequencyF0Std"].GetDouble()):1);
+		      static_cast<real_t>((*layerChild)["frequencyF0Std"].GetDouble()):1);
 	    
 	    if (m_freqDim >= this->precedingLayer().size())
 		throw std::runtime_error("frequencyDim is larger than previous layer size");
@@ -1364,8 +1376,7 @@ namespace layers{
 		throw std::runtime_error("frequencySR is not specified");
 	    
 	    m_noiseMag = (layerChild->HasMember("frequencyNoiseMag") ? 
-			  static_cast<real_t>((*layerChild)["frequencyNoiseMag"].GetDouble()):1.0);
-	    
+		   static_cast<real_t>((*layerChild)["frequencyNoiseMag"].GetDouble()):1.0);
 	    m_noiseInput = this->outputs();
 	}
 
@@ -1380,10 +1391,12 @@ namespace layers{
 	m_reverse_grad = (layerChild->HasMember("reverse_grad")?
 		     static_cast<real_t>((*layerChild)["reverse_grad"].GetDouble()) : -1);
 	if (m_reverse_grad >= 0){
-	    if (this->size() != this->precedingLayer().size())
-		throw std::runtime_error("reverse_grad layer size not equal to previous layer");
-	    else
+	    if (this->size() != this->precedingLayer().size()){
+		printf("\n\treverse_grad layer size != previous layer size");
+		throw std::runtime_error("Error in network.jsn");
+	    }else{
 		printf("\treverse grad");
+	    }
 	}
 
 	/* ------ expand dimension ----------- */
@@ -1391,12 +1404,16 @@ namespace layers{
 		     static_cast<int>((*layerChild)["dim_expand"].GetDouble()) : 0);
 	if (m_dimExpand){
 	    if (this->size() <= this->precedingLayer().size()){
-		throw std::runtime_error("dim_expand layer should be wider than previous layer");
+		printf("\n\tdim_expand layer size should be < previous layer size");
+		throw std::runtime_error("Error in network.jsn");
 	    }else{
-		m_dimExpand = (int)std::ceil(((float)this->size())/this->precedingLayer().size());
+		m_dimExpand =
+		    (int)std::ceil(((float)this->size())/this->precedingLayer().size());
 		printf("\tdimension expand: %d", m_dimExpand);
-		if (m_dimExpand < 1)
-		    throw std::runtime_error("dim_expand layer size should > previous layer");
+		if (m_dimExpand < 1){
+		    printf("\n\tdim_expand layer size should be < previous layer size");
+		    throw std::runtime_error("Error in network.jsn");
+		}
 	    }
 	}
 
@@ -1421,7 +1438,8 @@ namespace layers{
 	m_dimChange = (layerChild->HasMember("dimension_change")?
 		       static_cast<int>((*layerChild)["dimension_change"].GetDouble()) : 0);
 	if (m_dimChange){
-	    printf("\tChange dimension from %d to %d", this->precedingLayer().size(), this->size());
+	    printf("\tChange dimension from %d to %d",
+		   this->precedingLayer().size(), this->size());
 	}
 
 
@@ -1430,8 +1448,10 @@ namespace layers{
 
 	// check the layer size
 	if (m_noiseSize > 0){
-	    if (this->size() != (this->precedingLayer().size() + m_noiseSize))
-		throw std::runtime_error("Error, noiseDim + preLayerSize = operator layerSize");
+	    if (this->size() != (this->precedingLayer().size() + m_noiseSize)){
+		printf("\n\tnoiseDim + preLayerSize != this layer size");
+		throw std::runtime_error("Error in network.jsn");
+	    }
 	}else if (m_freqDim >= 0 || m_dimExpand || m_dimChange){
 	    // free to choose the layer size
 	}else{
@@ -1442,7 +1462,8 @@ namespace layers{
 	
 	printf("\n\tOperator layer: \n");
 	if (m_noiseSize > 0)
-	    printf("\tinject noise: dim %d, u[-%f, %f]\n", m_noiseSize, m_noiseMag, m_noiseMag);
+	    printf("\tinject noise: dim %d, u[-%f, %f]\n", m_noiseSize, m_noiseMag,
+		   m_noiseMag);
 
 	if (m_setZeroStr.size())
 	    printf("\tinput/output configuration: %s\n", m_setZeroStr.c_str());
@@ -1481,7 +1502,7 @@ namespace layers{
 	    if (m_noiseSize > 0     || m_outDupRate > 1    ||
 		m_setZeroStr.size() || m_lastShot != NN_OPE_LAST_SHOT_TURNOFF      ||
 		m_dropoutRate > 0   || m_freqDim >= 0)
-		throw std::runtime_error("time resolution can't be used with other operations");
+		throw std::runtime_error("Resolution change + other operations is not OK");
 	    printf("\tTurn on time resolution change across layers: from %d to %d",
 		   this->precedingLayer().getResolution(), this->getResolution());
 	}
@@ -1491,7 +1512,7 @@ namespace layers{
 	    if (m_noiseSize > 0     || m_outDupRate > 1    ||
 		m_setZeroStr.size() || m_changeTimeRes > 0 ||
 		m_dropoutRate > 0   || m_freqDim >= 0)
-		throw std::runtime_error("lastShot mode can't be used with other operations");
+		throw std::runtime_error("lastShot can't be used with other operations");
 	    if (this->size() != this->precedingLayer().size())
 		throw std::runtime_error("Layer size is unequal to previous one");
 	}
@@ -1501,7 +1522,9 @@ namespace layers{
 	
 	
 	if (this->precedingLayer().getSaveMemoryFlag() &&
-	    (m_lastShot != NN_OPE_LAST_SHOT_TURNOFF || m_changeTimeRes > 0 || m_outDupRate > 1))
+	    (m_lastShot != NN_OPE_LAST_SHOT_TURNOFF ||
+	     m_changeTimeRes > 0 ||
+	     m_outDupRate > 1))
 	    throw std::runtime_error("Operator doesn't support memory reduce");  
 	printf("\n");
     }
@@ -1517,19 +1540,24 @@ namespace layers{
     {
         TrainableLayer<TDevice>::exportLayer(layersArray, allocator);
 	if (m_setZeroStr.size())
-	    (*layersArray)[layersArray->Size() - 1].AddMember("setZero",  m_setZeroStr.c_str(),
+	    (*layersArray)[layersArray->Size() - 1].AddMember("setZero",
+							      m_setZeroStr.c_str(),
 							      allocator);
 	if (m_setBiasStr.size())
-	    (*layersArray)[layersArray->Size() - 1].AddMember("shift",    m_setBiasStr.c_str(),
+	    (*layersArray)[layersArray->Size() - 1].AddMember("shift",
+							      m_setBiasStr.c_str(),
 							      allocator);
 	if (m_setScaleStr.size())
-	    (*layersArray)[layersArray->Size() - 1].AddMember("scale",    m_setScaleStr.c_str(),
+	    (*layersArray)[layersArray->Size() - 1].AddMember("scale",
+							      m_setScaleStr.c_str(),
 							      allocator);
 	if (m_stopGradStr.size())
-	    (*layersArray)[layersArray->Size() - 1].AddMember("stopGrad",  m_stopGradStr.c_str(),
+	    (*layersArray)[layersArray->Size() - 1].AddMember("stopGrad",
+							      m_stopGradStr.c_str(),
 							      allocator);
 	if (m_setBinarizeStr.size())
-	    (*layersArray)[layersArray->Size() - 1].AddMember("binarize",  m_setBinarizeStr.c_str(),
+	    (*layersArray)[layersArray->Size() - 1].AddMember("binarize",
+							      m_setBinarizeStr.c_str(),
 							      allocator);
 	if (m_noiseSize > 0){
 	    (*layersArray)[layersArray->Size() - 1].AddMember("noiseRatio", m_noiseMag,
@@ -1543,9 +1571,11 @@ namespace layers{
 	if (m_F02UV){
 	    (*layersArray)[layersArray->Size() - 1].AddMember("F02UV", m_F02UV,
 							      allocator);
-	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyF0Mean", m_F0DataMean,
+	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyF0Mean",
+							      m_F0DataMean,
 							      allocator);
-	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyF0Std", m_F0DataStd,
+	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyF0Std",
+							      m_F0DataStd,
 							      allocator);
 	}
 	    
@@ -1568,17 +1598,23 @@ namespace layers{
 							      allocator);
 	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencySR",  m_freqSR,
 							      allocator);
-	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyQF0min", m_freqQF0min,
+	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyQF0min",
+							      m_freqQF0min,
 							      allocator);
-	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyQF0max", m_freqQF0max,
+	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyQF0max",
+							      m_freqQF0max,
 							      allocator);
-	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyQF0Lev", m_freqQF0Lev,
+	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyQF0Lev",
+							      m_freqQF0Lev,
 							      allocator);
-	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyF0Mean", m_freqDataM,
+	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyF0Mean",
+							      m_freqDataM,
 							      allocator);
-	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyF0Std",  m_freqDataS,
+	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyF0Std",
+							      m_freqDataS,
 							      allocator);
-	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyNoiseMag", m_noiseMag,
+	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyNoiseMag",
+							      m_noiseMag,
 							      allocator);
 	}
 	
@@ -1588,7 +1624,8 @@ namespace layers{
 	}
 	
 	if (m_outDupRate > 1)
-	    (*layersArray)[layersArray->Size() - 1].AddMember("outputDuplicating", m_outDupRate,
+	    (*layersArray)[layersArray->Size() - 1].AddMember("outputDuplicating",
+							      m_outDupRate,
 							      allocator);
 	if (m_lastShot != NN_OPE_LAST_SHOT_TURNOFF){
 	    (*layersArray)[layersArray->Size() - 1].AddMember("lastShot", m_lastShot,
@@ -1598,11 +1635,14 @@ namespace layers{
 	}
 
 	if (m_dimExpand)
-	    (*layersArray)[layersArray->Size() - 1].AddMember("dim_expand", m_dimExpand, allocator);
+	    (*layersArray)[layersArray->Size() - 1].AddMember("dim_expand",
+							      m_dimExpand,
+							      allocator);
 	
 	if (m_shiftTime)
-	    (*layersArray)[layersArray->Size() - 1].AddMember("time_shift", m_shiftTime, allocator);
-	
+	    (*layersArray)[layersArray->Size() - 1].AddMember("time_shift",
+							      m_shiftTime,
+							      allocator);
 	if (m_changeTimeRes > 0)
 	    (*layersArray)[layersArray->Size() - 1].AddMember("changeResolution",
 							      m_changeTimeRes,
@@ -1630,8 +1670,10 @@ namespace layers{
 							      this->getResolution(), 1);
 	    m_seqLengthBuffD = m_seqLengthBuffH;
 	    
-	}else if (m_lastShot == NN_OPE_LAST_SHOT_MODE3 || m_lastShot == NN_OPE_LAST_SHOT_MODE4 ||
-		  m_lastShot == NN_OPE_LAST_SHOT_MODE7 || m_lastShot == NN_OPE_LAST_SHOT_MODE8 ||
+	}else if (m_lastShot == NN_OPE_LAST_SHOT_MODE3 ||
+		  m_lastShot == NN_OPE_LAST_SHOT_MODE4 ||
+		  m_lastShot == NN_OPE_LAST_SHOT_MODE7 ||
+		  m_lastShot == NN_OPE_LAST_SHOT_MODE8 ||
 		  m_lastShot == NN_OPE_LAST_SHOT_MODE10){
 	    
 	    // load the segments length
@@ -1757,8 +1799,6 @@ namespace layers{
     void OperationLayer<TDevice>::computeForwardPass(const int nnState)
     {
 	int timeLength = this->curMaxSeqLength() * this->parallelSequences();
-
-
 	
 	if (m_lastShot == NN_OPE_LAST_SHOT_MODE1 || m_lastShot == NN_OPE_LAST_SHOT_MODE2 ||
 	    m_lastShot == NN_OPE_LAST_SHOT_MODE5 || m_lastShot == NN_OPE_LAST_SHOT_MODE6){
@@ -1786,7 +1826,7 @@ namespace layers{
 	       fn1);
 	    
 	}else if (m_lastShot == NN_OPE_LAST_SHOT_MODE9){
-	    // Use the average mode
+	    // Use the average mode 
 	    // The average \sum_t=1^T x_t / T is conducted as matrix multiplication
 	    //   average = [1/T, 1/T .... 1/T] * [x_1, x_2, ..., x_T]^{\top} 
 	    
@@ -1816,13 +1856,13 @@ namespace layers{
 		    fn1.parallelNum = this->parallelSequences();
 
 		    thrust::for_each(
-                        thrust::make_zip_iterator(
-			    thrust::make_tuple(m_oneVec.begin(),
-					       thrust::counting_iterator<int>(0))),
-			thrust::make_zip_iterator(
-			    thrust::make_tuple(m_oneVec.begin()                  + tmpUttL,
-					       thrust::counting_iterator<int>(0) + tmpUttL)),
-			fn1);
+                     thrust::make_zip_iterator(
+		      thrust::make_tuple(m_oneVec.begin(),
+					 thrust::counting_iterator<int>(0))),
+		     thrust::make_zip_iterator(
+		      thrust::make_tuple(m_oneVec.begin()                  + tmpUttL,
+					 thrust::counting_iterator<int>(0) + tmpUttL)),
+		     fn1);
 		}}
 
 		// step2. 
@@ -1858,8 +1898,10 @@ namespace layers{
 	    }}
 	    
 
-	}else if (m_lastShot == NN_OPE_LAST_SHOT_MODE3 || m_lastShot == NN_OPE_LAST_SHOT_MODE4 ||
-		  m_lastShot == NN_OPE_LAST_SHOT_MODE7 || m_lastShot == NN_OPE_LAST_SHOT_MODE8 ||
+	}else if (m_lastShot == NN_OPE_LAST_SHOT_MODE3 ||
+		  m_lastShot == NN_OPE_LAST_SHOT_MODE4 ||
+		  m_lastShot == NN_OPE_LAST_SHOT_MODE7 ||
+		  m_lastShot == NN_OPE_LAST_SHOT_MODE8 ||
 		  m_lastShot == NN_OPE_LAST_SHOT_MODE10){
 	    
 	    /* Last shot mode:
@@ -1898,10 +1940,10 @@ namespace layers{
 		// Generate the noise
 		thrust::counting_iterator<unsigned int> index_sequence_begin(0);
 		thrust::transform(
-			index_sequence_begin,
-			index_sequence_begin + timeLength * this->size(),
-			m_noiseInput.begin(),
-			internal::genNoise(0.0, 1.0, (int)(misFuncs::GetRandomNumber()*10000.0)));
+		  index_sequence_begin,
+		  index_sequence_begin + timeLength * this->size(),
+		  m_noiseInput.begin(),
+		  internal::genNoise(0.0, 1.0, (int)(misFuncs::GetRandomNumber()*10000.0)));
 
 		// Dropout
 		internal::invertedDropout fn1;
@@ -1910,7 +1952,7 @@ namespace layers{
 		
 		fn1.noise        = helpers::getRawPointer(m_noiseInput);
 		fn1.patTypes     = helpers::getRawPointer(this->patTypes());
-		//fn1.sourceData   = helpers::getRawPointer(this->precedingLayer().outputs());
+		//fn1.sourceData = helpers::getRawPointer(this->precedingLayer().outputs());
 	    
 		thrust::for_each(
                  thrust::make_zip_iterator(
@@ -1963,11 +2005,11 @@ namespace layers{
 	    // generate noise for unvoiced segments
 	    thrust::counting_iterator<unsigned int> index_sequence_begin(0);
 	    thrust::transform(
-			      index_sequence_begin,
-			      index_sequence_begin + timeLength * this->size(),
-			      m_noiseInput.begin(),
-			      internal::genNoise(-1.0 * m_noiseMag, 1.0 * m_noiseMag,
-						 (int)(misFuncs::GetRandomNumber()*10000.0)));
+		index_sequence_begin,
+		index_sequence_begin + timeLength * this->size(),
+		m_noiseInput.begin(),
+		internal::genNoise(-1.0 * m_noiseMag, 1.0 * m_noiseMag,
+				   (int)(misFuncs::GetRandomNumber()*10000.0)));
 	    thrust::copy(m_noiseInput.begin(),
 			 m_noiseInput.begin() + timeLength * this->size(),
 			 this->outputs().begin());
@@ -2020,12 +2062,12 @@ namespace layers{
 		fn1.F0std   = m_F0DataStd;
 		fn1.ReverseSign = (m_F02UV < 0);
 		thrust::for_each(
-		  thrust::make_zip_iterator(
-			thrust::make_tuple(this->precedingLayer().outputs().begin(),
-					   this->outputs().begin())),
-		  thrust::make_zip_iterator(
-			thrust::make_tuple(this->precedingLayer().outputs().begin() + timeLength,
-					   this->outputs().begin()                  + timeLength)),
+		 thrust::make_zip_iterator(
+		  thrust::make_tuple(this->precedingLayer().outputs().begin(),
+				     this->outputs().begin())),
+		 thrust::make_zip_iterator(
+		  thrust::make_tuple(this->precedingLayer().outputs().begin() + timeLength,
+				     this->outputs().begin()                  + timeLength)),
 		  fn1);
 	    }
 	    
@@ -2041,11 +2083,13 @@ namespace layers{
 		
 		thrust::for_each(
 		  thrust::make_zip_iterator(
-		    thrust::make_tuple(this->outputs().begin(),
-				       thrust::counting_iterator<int>(0))),
+		    thrust::make_tuple(
+			this->outputs().begin(),
+			thrust::counting_iterator<int>(0))),
 		  thrust::make_zip_iterator(
-		    thrust::make_tuple(this->outputs().begin()     + this->size() * timeLength,
-				 thrust::counting_iterator<int>(0) + this->size() * timeLength)),
+		    thrust::make_tuple(
+			this->outputs().begin()     + this->size() * timeLength,
+			thrust::counting_iterator<int>(0) + this->size() * timeLength)),
 		  fn1);
 	    }
 	    
@@ -2067,11 +2111,13 @@ namespace layers{
 		
 		thrust::for_each(
 		  thrust::make_zip_iterator(
-		    thrust::make_tuple(this->outputs().begin(),
-				       thrust::counting_iterator<int>(0))),
+		    thrust::make_tuple(
+			this->outputs().begin(),
+			thrust::counting_iterator<int>(0))),
 		  thrust::make_zip_iterator(
-		    thrust::make_tuple(this->outputs().begin()     + this->size() * timeLength,
-				 thrust::counting_iterator<int>(0) + this->size() * timeLength)),
+		    thrust::make_tuple(
+			this->outputs().begin()     + this->size() * timeLength,
+			thrust::counting_iterator<int>(0) + this->size() * timeLength)),
 		  fn1);
 	    }
 	    
@@ -2090,11 +2136,13 @@ namespace layers{
 		
 		thrust::for_each(
 		  thrust::make_zip_iterator(
-		    thrust::make_tuple(this->outputs().begin(),
-				       thrust::counting_iterator<int>(0))),
+		    thrust::make_tuple(
+			this->outputs().begin(),
+			thrust::counting_iterator<int>(0))),
 		  thrust::make_zip_iterator(
-		    thrust::make_tuple(this->outputs().begin()     + this->size() * timeLength,
-				 thrust::counting_iterator<int>(0) + this->size() * timeLength)),
+		    thrust::make_tuple(
+			this->outputs().begin()     + this->size() * timeLength,
+			thrust::counting_iterator<int>(0) + this->size() * timeLength)),
 		  fn1);
 	    }
 	}else if (m_dimChange){
@@ -2113,11 +2161,13 @@ namespace layers{
 		
 		thrust::for_each(
 		  thrust::make_zip_iterator(
-		    thrust::make_tuple(this->outputs().begin(),
-				       thrust::counting_iterator<int>(0))),
+		    thrust::make_tuple(
+			this->outputs().begin(),
+			thrust::counting_iterator<int>(0))),
 		  thrust::make_zip_iterator(
-		    thrust::make_tuple(this->outputs().begin()     + this->size() * timeLength,
-				 thrust::counting_iterator<int>(0) + this->size() * timeLength)),
+		    thrust::make_tuple(
+			this->outputs().begin()     + this->size() * timeLength,
+			thrust::counting_iterator<int>(0) + this->size() * timeLength)),
 		  fn1);		
 	    }
 	    
@@ -2197,8 +2247,8 @@ namespace layers{
 	int effTimeEnd   = (timeStep+1) * this->parallelSequences();
 	
 	// Pointer to the output of previous layer (input buffer)
-	int shiftIn  = this->precedingLayer().outputBufPtrBias(timeStep*this->parallelSequences(),
-							       nnState);
+	int shiftIn  = this->precedingLayer().outputBufPtrBias(
+				timeStep * this->parallelSequences(), nnState);
 	// Pointer to the output of this layer
 	int shiftOut = this->outputBufPtrBias(timeStep * this->parallelSequences(), nnState);
 
@@ -2246,8 +2296,10 @@ namespace layers{
 		 fn1);
 		 }*/
 	    
-	}else if (m_lastShot == NN_OPE_LAST_SHOT_MODE3 || m_lastShot == NN_OPE_LAST_SHOT_MODE4 ||
-		  m_lastShot == NN_OPE_LAST_SHOT_MODE7 || m_lastShot == NN_OPE_LAST_SHOT_MODE8){
+	}else if (m_lastShot == NN_OPE_LAST_SHOT_MODE3 ||
+		  m_lastShot == NN_OPE_LAST_SHOT_MODE4 ||
+		  m_lastShot == NN_OPE_LAST_SHOT_MODE7 ||
+		  m_lastShot == NN_OPE_LAST_SHOT_MODE8){
 	    /*
 	      This part should be handled. LastShot mode is now only used before the VAE
 	      layer. In the generation time, VAE with m_vaeUseageOpt==2 will not transform
@@ -2259,9 +2311,10 @@ namespace layers{
 	    // Last shot mode can not be used here
 	    // 
 	    if (timeStep == 0){
-		thrust::fill(this->precedingLayer().outputs().begin(),
-			     this->precedingLayer().outputs().begin()+timeLength * this->size(),
-			     1.0);
+		thrust::fill(
+			this->precedingLayer().outputs().begin(),
+			this->precedingLayer().outputs().begin()+timeLength * this->size(),
+			1.0);
 		internal::lastShotForwardSegBoundary fn1;
 		fn1.featureDim  = this->size();
 		fn1.paralSeqNm  = this->parallelSequences();
@@ -2321,7 +2374,8 @@ namespace layers{
 			index_sequence_begin,
 			index_sequence_begin + timeLength * this->size(),
 			m_noiseInput.begin(),
-			internal::genNoise(0.0, 1.0, (int)(misFuncs::GetRandomNumber()*10000.0)));
+			internal::genNoise(0.0, 1.0,
+					   (int)(misFuncs::GetRandomNumber()*10000.0)));
 		}
 
 		// Dropout
@@ -2580,15 +2634,46 @@ namespace layers{
 	    
 	    // For each utterance in the parallel mode
 	    for (int i = 0; i<this->parallelSequences(); i++){
-		if (this->m_seqLengthBuffH[i] < 1){
-		    // skip over dummy sentences
+
+		// skip over dummy sentences
+		if (this->m_seqLengthBuffH[i] < 1)
 		    continue;
-		}
 		
-		// step1. prepare the [1/T, ..., 1/T]
+		// true utterance length 
 		int tmpUttL = this->parallelSequences() * this->m_seqLengthBuffH[i];
 
-		{{
+		if (this->getSingleTimeStepFlag()){
+		    
+		    // if this layer has only one frame, directly scale the gradients
+		    internal::scaleGrad fn;
+		    fn.factor  = 1.0/(real_t)this->m_seqLengthBuffH[i];
+		    thrust::transform(this->outputErrors().begin(),
+				      this->outputErrors().end(),
+				      this->precedingLayer().outputErrors().begin(),
+				      fn);
+		    
+		    // duplicate the output to all the frames
+		    internal::duplicateSentVec fn2;
+		    fn2.featureDim = this->size();
+		    fn2.paralSeqNm = this->parallelSequences();
+		    fn2.sourceData =
+			helpers::getRawPointer(this->precedingLayer().outputErrors());
+		    fn2.patTypes = helpers::getRawPointer(this->precedingLayer().patTypes());
+		    
+		    int n = this->precedingLayer().outputErrors().size();
+		    thrust::for_each(
+		     thrust::make_zip_iterator(
+		      thrust::make_tuple(this->precedingLayer().outputErrors().begin(),
+					 thrust::counting_iterator<int>(0))),
+		     thrust::make_zip_iterator(
+		      thrust::make_tuple(this->precedingLayer().outputErrors().begin() + n,
+					 thrust::counting_iterator<int>(0)             + n)),
+		     fn2);
+		    
+		}else{
+
+		    // step1. prepare the [1/T, ..., 1/T]
+		    
 		    thrust::fill(m_oneVec.begin(), m_oneVec.end(), 0.0);
 		    
 		    internal::changeOneVec fn1;
@@ -2596,51 +2681,50 @@ namespace layers{
 		    fn1.parallelNum = this->parallelSequences();
 
 		    thrust::for_each(
-                        thrust::make_zip_iterator(
-			    thrust::make_tuple(m_oneVec.begin(),
-					       thrust::counting_iterator<int>(0))),
-			thrust::make_zip_iterator(
-			    thrust::make_tuple(m_oneVec.begin()                  + tmpUttL,
-					       thrust::counting_iterator<int>(0) + tmpUttL)),
-			fn1);
-		}}
+                      thrust::make_zip_iterator(
+			 thrust::make_tuple(m_oneVec.begin(),
+					    thrust::counting_iterator<int>(0))),
+		      thrust::make_zip_iterator(
+			 thrust::make_tuple(m_oneVec.begin()                  + tmpUttL,
+					    thrust::counting_iterator<int>(0) + tmpUttL)),
+		      fn1);
 
-
-		// step2. 
-		// get the average over gradients, and save to the first frame
-		helpers::Matrix<TDevice> onevec (&this->m_oneVec,
-						 tmpUttL, 1,
-						 (this->parallelSequences() - 1 - i));
+		    // step2. 
+		    // get the average over gradients, and save to the first frame    
 		
-		helpers::Matrix<TDevice> source (&this->outputErrors(),
-						 this->size(), tmpUttL);
+		    helpers::Matrix<TDevice> onevec (&this->m_oneVec,
+						     tmpUttL, 1,
+						     (this->parallelSequences() - 1 - i));
 		
-		helpers::Matrix<TDevice> output (&this->precedingLayer().outputErrors(), 
-						  this->size(), 1,
-						  i * this->size());
-		// sum the gradients for a_k
-		output.assignProduct(source, false, onevec, false);
-	    }
+		    helpers::Matrix<TDevice> source (&this->outputErrors(),
+						     this->size(), tmpUttL);
+		
+		    helpers::Matrix<TDevice> output (&this->precedingLayer().outputErrors(), 
+						     this->size(), 1,
+						     i * this->size());
+		    // sum the gradients for a_k
+		    output.assignProduct(source, false, onevec, false);
 
-	    // step3. 
-	    // duplicate the output to all the frames
-	    {{
-		internal::duplicateSentVec fn2;
-		fn2.featureDim = this->size();
-		fn2.paralSeqNm = this->parallelSequences();
-		fn2.sourceData = helpers::getRawPointer(this->precedingLayer().outputErrors());
-		fn2.patTypes   = helpers::getRawPointer(this->patTypes());
+		    // step3. 
+		    // duplicate the output to all the frames
+		    internal::duplicateSentVec fn2;
+		    fn2.featureDim = this->size();
+		    fn2.paralSeqNm = this->parallelSequences();
+		    fn2.sourceData =
+			helpers::getRawPointer(this->precedingLayer().outputErrors());
+		    fn2.patTypes = helpers::getRawPointer(this->patTypes());
 	    
-		int n = timeLength * this->size();
-		thrust::for_each(
-                 thrust::make_zip_iterator(
-		  thrust::make_tuple(this->precedingLayer().outputErrors().begin(),
-				     thrust::counting_iterator<int>(0))),
-		 thrust::make_zip_iterator(
-		  thrust::make_tuple(this->precedingLayer().outputErrors().begin() + n,
-				     thrust::counting_iterator<int>(0)             + n)),
-		 fn2);
-	    }}
+		    int n = timeLength * this->size();
+		    thrust::for_each(
+		     thrust::make_zip_iterator(
+		      thrust::make_tuple(this->precedingLayer().outputErrors().begin(),
+					 thrust::counting_iterator<int>(0))),
+		     thrust::make_zip_iterator(
+		      thrust::make_tuple(this->precedingLayer().outputErrors().begin() + n,
+					 thrust::counting_iterator<int>(0)             + n)),
+		     fn2);
+		}
+	    }
 
 
 	}else if (m_lastShot == NN_OPE_LAST_SHOT_MODE3 || m_lastShot == NN_OPE_LAST_SHOT_MODE4 ||

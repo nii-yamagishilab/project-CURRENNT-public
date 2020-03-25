@@ -173,6 +173,15 @@ namespace helpers{
     template <typename TDevice>
     void vecPoolManager<TDevice>::createVecPool()
     {
+
+	if (false){
+	    for (size_t idx = 0; idx < m_vecCntBuff.size(); idx++){
+		printf("\n%d vectors of dimension %d",
+		       m_vecCntBuff[idx].max_requiredNum,
+		       m_vecCntBuff[idx].vecSize);
+	    }
+	}
+	
 	// create pool of vectors
 	for (size_t idx = 0; idx < m_vecCntBuff.size(); idx++){
 

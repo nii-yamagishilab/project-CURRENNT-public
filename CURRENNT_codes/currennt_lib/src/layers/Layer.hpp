@@ -70,7 +70,6 @@ namespace layers {
 
 	// time resolution (relative to time resolution of 1)
 	const int         m_timeResolution;
-
 	
 	/**
 	 *   Atributes of one layer that can be changed 
@@ -100,13 +99,15 @@ namespace layers {
 	// flag to indicate the training / generation
 	bool              m_flagTrainingMode;
 
-	// flag to indicate whether memory save mode is used
+     	// flag to indicate whether memory save mode is used
 	bool              m_flagSaveOutputMemory;
 
 	// flag to indicate for word-embedding layer (obsolete)
 	bool              m_InputWeUpdate; 
 	
-		
+	// flag to indicate single-frame buffering
+	bool              m_singleTimeStep;
+	
 	/**
 	 * Data buffer
 	 */
@@ -371,6 +372,11 @@ namespace layers {
 	 */
 	virtual real_t intermediateError();
 
+	/*
+	 * Returns the flag that this layer has only one time step
+	 */
+	bool getSingleTimeStepFlag() const;
+	
 	/** 
 	 * Memory management
 	 */
@@ -403,6 +409,7 @@ namespace layers {
 	 * For word-embedding layers (obsolete)
 	 */
 	virtual void reInitWeight() = 0;
+	
 	bool&        inputWeUpdate();
 	
     };

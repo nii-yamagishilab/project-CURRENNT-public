@@ -34,7 +34,19 @@
 
 namespace layers {
 
-    
+    int get_maxSeqLength(const helpers::JsonValue &layerChild,
+			 const int expected_maxLen)
+    {
+	int tmp_reso = (layerChild->HasMember("resolution") ? 
+			(*layerChild)["resolution"].GetInt() : 1);
+	int tmp_maxLen = misFuncs::getResoLength(expected_maxLen, tmp_reso, 1);
+
+	if (layerChild->HasMember("singleTimeStep") &&
+	    (*layerChild)["singleTimeStep"].GetInt()){
+	    tmp_maxLen = 1;
+	}
+	return tmp_maxLen;
+    }
     
     template <typename TDevice>
     typename Layer<TDevice>::real_vector& Layer<TDevice>::_outputs()
@@ -73,10 +85,7 @@ namespace layers {
 			      (*layerChild)["resolution"].GetInt() : 1)
 	, m_layerID          (layerID)
         , m_parallelSequences(parallelSequences)
-        , m_maxSeqLength     (misFuncs::getResoLength(
-			      maxSeqLength,
-			      (layerChild->HasMember("resolution") ? 
-			       (*layerChild)["resolution"].GetInt() : 1), 1))
+        , m_maxSeqLength     (get_maxSeqLength(layerChild, maxSeqLength))
         , m_curMaxSeqLength  (0)
         , m_curMinSeqLength  (0)
         , m_curNumSeqs       (0)
@@ -86,6 +95,8 @@ namespace layers {
 	, m_precedingLayer   (precedingLayer)
 	, m_followingLayer   (NULL)
 	, m_layerMode        (-99)
+	, m_singleTimeStep   (layerChild->HasMember("singleTimeStep") ? 
+			      (*layerChild)["singleTimeStep"].GetInt() : false)
     {
         // check if the name and size values exist
         if (!layerChild->HasMember("name"))
@@ -101,6 +112,12 @@ namespace layers {
 	    printf("\n\tLayer resolution %d\n", m_timeResolution);
 	}else if (m_timeResolution < 1){
 	    throw std::runtime_error("resolution cannot be less than 1");
+	}
+
+	if (m_singleTimeStep){
+	    printf("\n\tLayer with single time step\n");
+	    if (m_timeResolution > 1)
+		printf("\n\tTime resolution will be ignored\n");
 	}
 	
         // allocate memory for output
@@ -237,39 +254,54 @@ namespace layers {
     void Layer<TDevice>::loadSequences(const data_sets::DataSetFraction &fraction,
 				       const int nnState)
     {
-	m_curMaxSeqLength = misFuncs::getResoLength(fraction.maxSeqLength(),
-						    m_timeResolution, 1);
-	
-	m_curMinSeqLength = misFuncs::getResoLength(fraction.minSeqLength(),
-						    m_timeResolution, 1);
-	
-	m_curNumSeqs      = fraction.numSequences();
-	    
-	if (m_timeResolution == 1){
-	    m_patTypes    = fraction.patTypes();
-	}else{
-
-	    thrust::fill(m_patTypes.begin(), m_patTypes.end(), PATTYPE_NONE);
-	    int buffPos   = fraction.patTypesLowTimesResPos(m_timeResolution);
-	    int buffLen   = fraction.patTypesLowTimesResLen(m_timeResolution);
-	    if (buffPos < 0 || buffLen < 0){
-		printf("\n %s resolution not in --resolutions \n", this->name().c_str());
-		printf("\n please check --resolutions\n");
-		throw std::runtime_error("Resolution error");
-	    }
-	    if (buffPos > fraction.patTypesLowTimeRes().size() ||
-		(buffLen + buffPos) > fraction.patTypesLowTimeRes().size()){
-		printf("\n%s resolution not in --resolutions", this->name().c_str());
-		printf("\n please check --resolutions\n");		
-		throw std::runtime_error("Resolution error");
-	    }
-	    //m_patTypes.resize(buffLen, PATTYPE_NONE);
-	    //thrust::fill(m_patTypes.begin(), m_patTypes.end(), PATTYPE_NONE);
-	    thrust::copy(fraction.patTypesLowTimeRes().begin() + buffPos,
-			 fraction.patTypesLowTimeRes().begin() + buffPos + buffLen,
+	if (m_singleTimeStep){
+	    // signle time 
+	    m_curMaxSeqLength = m_parallelSequences;
+	    m_curMinSeqLength = m_parallelSequences;
+	    m_curNumSeqs = fraction.numSequences();
+	    thrust::copy(fraction.patTypes().begin(),
+			 fraction.patTypes().begin() + m_parallelSequences,
 			 m_patTypes.begin());
+	    
+	}else{
+	    // normal cases
+	    m_curMaxSeqLength = misFuncs::getResoLength(fraction.maxSeqLength(),
+							m_timeResolution, 1);
+	    
+	    m_curMinSeqLength = misFuncs::getResoLength(fraction.minSeqLength(),
+							m_timeResolution, 1);
+	
+	    m_curNumSeqs      = fraction.numSequences();
+	    
+	    if (m_timeResolution == 1){
+		m_patTypes    = fraction.patTypes();
+	    
+	    }else{
+
+		thrust::fill(m_patTypes.begin(), m_patTypes.end(), PATTYPE_NONE);
+		int buffPos   = fraction.patTypesLowTimesResPos(m_timeResolution);
+		int buffLen   = fraction.patTypesLowTimesResLen(m_timeResolution);
+		if (buffPos < 0 || buffLen < 0){
+		    printf("\n %s resolution not in --resolutions \n", this->name().c_str());
+		    printf("\n please check --resolutions\n");
+		    throw std::runtime_error("Resolution error");
+		}
+		if (buffPos > fraction.patTypesLowTimeRes().size() ||
+		    (buffLen + buffPos) > fraction.patTypesLowTimeRes().size()){
+		    printf("\n%s resolution not in --resolutions", this->name().c_str());
+		    printf("\n please check --resolutions\n");		
+		    throw std::runtime_error("Resolution error");
+		}
+		//m_patTypes.resize(buffLen, PATTYPE_NONE);
+		//thrust::fill(m_patTypes.begin(), m_patTypes.end(), PATTYPE_NONE);
+		thrust::copy(fraction.patTypesLowTimeRes().begin() + buffPos,
+			     fraction.patTypesLowTimeRes().begin() + buffPos + buffLen,
+			     m_patTypes.begin());
 	    	
+	    }
 	}
+	
+
     }
     
     template <typename TDevice>
@@ -289,6 +321,8 @@ namespace layers {
 	    layerObject.AddMember("resolution", m_timeResolution, allocator);
 	if (m_layerFlag.size() > 0)
 	    layerObject.AddMember("layerFlag", m_layerFlag.c_str(), allocator);
+	if (m_singleTimeStep)
+	    layerObject.AddMember("singleTimeStep", 1, allocator);
 	
         // add the layer object to the layers array
         layersArray->PushBack(layerObject, allocator);
@@ -503,7 +537,15 @@ namespace layers {
 	return depend_layerIDs;
     }
 
-
+    template <typename TDevice>
+    bool Layer<TDevice>::getSingleTimeStepFlag() const
+    {
+	if (m_singleTimeStep)
+	    return true;
+	else
+	    return false;
+    }
+    
     template <typename TDevice>
     void Layer<TDevice>::clearAllBuffers()
     {
