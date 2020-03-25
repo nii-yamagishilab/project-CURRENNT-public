@@ -5,11 +5,6 @@
  * 2016
  *
  * This file is part of CURRENNT. 
- * Copyright (c) 2013 Johannes Bergmann, Felix Weninger, Bjoern Schuller
- * Institute for Human-Machine Communication
- * Technische Universitaet Muenchen (TUM)
- * D-80290 Munich, Germany
- *
  *
  * CURRENNT is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -312,8 +307,10 @@ namespace layers{
 	m_contextMVStr = ((layerChild->HasMember("contextMV")) ?
 			  ((*layerChild)["contextMV"].GetString()) : "");
 	
-	if ((2*this->size()) != precedingLayer.size())
-	    throw std::runtime_error("wavnetcore's layer size should be 1/2*previous layer size");
+	if ((2*this->size()) != precedingLayer.size()){
+	    printf("\n\t Size of this layer should = 1/2 * previous layer size");
+	    throw std::runtime_error("Error in network.jsn");
+	}
 	
 	// print the information
 	printf("\n\tWavNet core operation: context [%d] dim\n", m_contextDim);
@@ -321,7 +318,7 @@ namespace layers{
 	// Other memory will be allocated after linking target layers
 	// this->__allocateLocalMem();
 	
-	cpu_real_vector tmp(this->maxSeqLength()*this->parallelSequences()*this->size()*2, 0.0);
+	cpu_real_vector tmp(m_contextDim * 2, 0.0);
 	if (m_contextMVStr.size() && m_contextDim > 0){
 	    if (tmp_readRealData(m_contextMVStr, tmp) != m_contextDim * 2)
 		throw std::runtime_error("context mean variance dim unequal");
@@ -339,9 +336,11 @@ namespace layers{
     void WavNetCore<TDevice>::__allocateLocalMem()
     {
 	long int curSeqLength = this->outputs().size() / this->size();
+	
 	// allocate memory for linguistic_features + input_features
-	cpu_real_vector tmp(curSeqLength * this->parallelSequences() * this->size()*2, 0.0);
+	cpu_real_vector tmp(curSeqLength * this->size() * 2, 0.0);
 	m_coreBuf        = tmp;
+	
 	if (this->flagTrainingMode())
 	    m_contextTanhBuf = tmp;
 	else
@@ -349,15 +348,17 @@ namespace layers{
 
         if (this->getLayerMode() == NN_WAVENETCORE_MODE_COND_INI ||
 	    this->getLayerMode() == NN_WAVENETCORE_MODE_UNCOND){
+	    
 	    // Allocate the external data buffer, and index buffer
-	    tmp.resize(this->maxSeqLength() * this->parallelSequences() * m_contextDim, 0.0);
+	    tmp.resize(curSeqLength * m_contextDim, 0.0);
 	    m_contextBuf    = tmp;
 	    if (m_exInputLayer == NULL)
 		throw std::runtime_error("Fail to link external layer for wavenetc");
-	    tmp.resize(misFuncs::getResoLength(this->maxSeqLength(),
-					       m_exInputLayer->getResolution(), 1) *
+	    tmp.resize(misFuncs::getResoLength(
+			curSeqLength / this->parallelSequences(),
+			m_exInputLayer->getResolution(), 1) *
 		       this->parallelSequences() * m_contextDim +
-		       this->maxSeqLength() * this->parallelSequences(), 0.0);
+		       curSeqLength, 0.0);
 	    m_contextRawBuf = tmp;
 
 	    if (this->flagTrainingMode())
@@ -391,7 +392,7 @@ namespace layers{
     
     template <typename TDevice>
     void WavNetCore<TDevice>::exportLayer(const helpers::JsonValue     &layersArray, 
-					      const helpers::JsonAllocator &allocator) const
+					  const helpers::JsonAllocator &allocator) const
     {
         TrainableLayer<TDevice>::exportLayer(layersArray, allocator);
 	(*layersArray)[layersArray->Size() - 1].AddMember("contextDim", m_contextDim, allocator);
@@ -409,7 +410,7 @@ namespace layers{
 	// load the data into the buffer
 	if (m_iniWavCoreC && m_contextDim > 0){
 	    //
-	    int dataPos = this->maxSeqLength() * this->parallelSequences();
+	    int dataPos = this->outputs().size() / this->size();
 	    // Load the trainable external data from that layer
 	    if (m_exInputLayer != NULL)
 		thrust::copy(m_exInputLayer->outputs().begin(), m_exInputLayer->outputs().end(),
@@ -452,10 +453,15 @@ namespace layers{
 	
 	if (m_iniWavCoreC && m_contextDim > 0){
 	    
-	    if (m_contextRawBuf.size()<1)
-		throw std::runtime_error("Fail to initialize m_contextRawBuf");
+	    if (m_contextRawBuf.size()<1){
+		printf("\nFail to initialize m_contextRawBuf in WavNetCore\n");
+		throw std::runtime_error("Error in CURRENNT");
+	    }
 	    // load the input index
-	    thrust::copy(fraction.inputs().begin(),fraction.inputs().end(),m_contextRawBuf.begin());
+	    thrust::copy(fraction.inputs().begin(),
+			 fraction.inputs().end(),
+			 m_contextRawBuf.begin());
+	    
 	    m_contextCurMaxLength = fraction.maxExInputLength();
 	    
 	    if (m_exInputLayer == NULL){
@@ -463,14 +469,16 @@ namespace layers{
 		// Load the external linguistic features from fractionData
 		// check the fixed external data
 		if (fraction.externalInputSize() != m_contextDim){
-		    printf("Linguistic feature dim  %d mismatch", fraction.externalInputSize());
-		    throw std::runtime_error("Unmatched linguistic feature dimension");
+		    printf("Linguistic feature dim  %d mismatch",
+			   fraction.externalInputSize());
+		    throw std::runtime_error("Error in WaveNetCore of CURRENNT");
 		}
 		// Note: __loadContextBuff also write to m_contextRawBuf
 		// but they are used in different cases
-		thrust::copy(fraction.exInputData().begin(), fraction.exInputData().end(),
+		thrust::copy(fraction.exInputData().begin(),
+			     fraction.exInputData().end(),
 			     (m_contextRawBuf.begin() +
-			      this->maxSeqLength() * this->parallelSequences()));
+			      this->outputs().size() / this->size()));
 	    
 	    }else{
 		if (m_exInputLayer->size()!= m_contextDim){
@@ -862,14 +870,62 @@ namespace layers{
     void WavNetCore<TDevice>::logAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
 					    bool flag_add)
     {
-	throw std::runtime_error("logAllBuffers not implemented for wavNetCore");
+	// for output buffer
+	Layer<TDevice>::logAllBuffers(vecPoolMng, flag_add);
+	
+	// m_coreBuf
+	vecPoolMng.addOrRemoveNewVec(this->size() * 2, flag_add);
+
+	// m_contextTanhBuf
+	if (this->flagTrainingMode())
+	    vecPoolMng.addOrRemoveNewVec(this->size() * 2, flag_add);
+
+	if (this->getLayerMode() == NN_WAVENETCORE_MODE_COND_INI ||
+	    this->getLayerMode() == NN_WAVENETCORE_MODE_UNCOND){
+	    // m_contextBuf
+	    vecPoolMng.addOrRemoveNewVec(this->m_contextDim, flag_add);
+	    
+	    // m_contextRawBuf
+	    vecPoolMng.addOrRemoveNewVec(this->m_contextDim + 1, flag_add);
+
+	    // m_contextGradBuf
+	    if (this->flagTrainingMode())
+		vecPoolMng.addOrRemoveNewVec(this->m_contextDim, flag_add);
+	}
     }
 
     template <typename TDevice>
     void WavNetCore<TDevice>::swapAllBuffers(helpers::vecPoolManager<TDevice> &vecPoolMng,
 					     bool flag_get)
     {
-	throw std::runtime_error("swapAllBuffers not implemented for wavNetCore");
+	// for output buffer
+	Layer<TDevice>::swapAllBuffers(vecPoolMng, flag_get);
+	
+	// m_coreBuf
+	vecPoolMng.getSwapVector(m_coreBuf, this->getLayerID(),
+				 this->size() * 2, flag_get);
+	
+	// m_contextTanhBuf
+	if (this->flagTrainingMode())
+	    vecPoolMng.getSwapVector(m_contextTanhBuf, this->getLayerID(),
+				     this->size() * 2, flag_get);
+
+	if (this->getLayerMode() == NN_WAVENETCORE_MODE_COND_INI ||
+	    this->getLayerMode() == NN_WAVENETCORE_MODE_UNCOND){
+	    // m_contextBuf
+	    vecPoolMng.getSwapVector(m_contextBuf, this->getLayerID(),
+				     this->m_contextDim, flag_get);
+	    
+	    // m_contextRawBuf
+	    vecPoolMng.getSwapVector(m_contextRawBuf, this->getLayerID(),
+	    			     this->m_contextDim + 1, flag_get);
+
+	    // m_contextGradBuf
+	    if (this->flagTrainingMode())
+		vecPoolMng.getSwapVector(m_contextGraBuf, this->getLayerID(),
+					 this->m_contextDim, flag_get);
+		
+	}	
     }
     
     template class WavNetCore<Cpu>;
