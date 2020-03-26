@@ -52,14 +52,20 @@
 
 #include "../Configuration.hpp"
 
-#define  NN_WAVENETCORE_MODE_UNCOND   0   // unconditional WaveNet core
-#define  NN_WAVENETCORE_MODE_COND_INI 1   // the first conditional WaveNet core
-#define  NN_WAVENETCORE_MODE_COND_FOL 2   // the following conditional WaveNet cores
+// unconditional WaveNet core
+#define  NN_WAVENETCORE_MODE_UNCOND   0
+
+// the first conditional WaveNet core in the network
+#define  NN_WAVENETCORE_MODE_COND_INI 1
+
+// conditional WaveNet cores after the first core 
+#define  NN_WAVENETCORE_MODE_COND_FOL 2   
 
 
 namespace internal{
 namespace {
-    
+
+    // tanh(x[0:dim/2]) * sig(x[dim/2:dim])
     struct tanhSigMerge
     {
 	
@@ -83,6 +89,7 @@ namespace {
 	}
     };
 
+    // gradient w.r.t tanh(x[0:dim/2]) * sig(x[dim/2:dim])
     struct tanhSigMergeGradient
     {
 
@@ -130,6 +137,9 @@ namespace {
 	}
     };
 
+    // Load linguistic/acoustic features from source buffer to buffer of wavNetCore
+    // If the source is at the frame-level, do up-sampling
+    // If mean/std is provided, do normalization
     struct loadLinguisticFeature
     {
 	int  featureDim;
@@ -164,6 +174,7 @@ namespace {
 		
 		if (frameIndex[timeIdx] >= maxFeatureLength){
 		    t.get<0>() = 0.0;
+		    
 		}else if(contextMV){
 		    
 		    t.get<0>() = ((sourceData[featIdx * featureDim + dimIdx] - contextMV[dimIdx])/
@@ -178,6 +189,7 @@ namespace {
 	}
     };
 
+    // input + tanh(linguistic/acoustic Features)
     struct AddLinguisticFeature
     {
 	int     featureDim;
@@ -207,7 +219,8 @@ namespace {
 	    }
 	}
     };
-    
+
+    // grad of linguistic/acoustic features 
     struct AddLinguisticFeatureGrad
     {
         
@@ -218,6 +231,9 @@ namespace {
         }
     };
 
+    // propagate gradients to the layer that produces the linguistic/acoustic features
+    // If that layer generates linguistic/acoustic features at the frame-level,
+    // the gradients within the frame should be accumulated
     struct SumGradientsForExternalInput
     {
 	// from the perspective of externalLayer
@@ -259,6 +275,8 @@ namespace {
 
 namespace layers{
 
+    // To read a float data vector from dataPath
+    // (not used anymore)
     int tmp_readRealData(const std::string dataPath, Cpu::real_vector &data)
     {
 	// 
@@ -300,14 +318,21 @@ namespace layers{
 	, m_exInputLayer         (NULL)
 	, m_exInputContextResone (false)
     {
+
+	// dimension of the conditional features
 	m_contextDim   = ((layerChild->HasMember("contextDim")) ? 
 			  ((*layerChild)["contextDim"].GetInt()) : (0));
+
+	// (not used anymore)
 	m_wavCoreOpt   = ((layerChild->HasMember("wavCoreOpt")) ? 
 			  ((*layerChild)["wavCoreOpt"].GetInt()) : (0));
+
+	// path to the file that stores the mean and std of conditional features
 	m_contextMVStr = ((layerChild->HasMember("contextMV")) ?
 			  ((*layerChild)["contextMV"].GetString()) : "");
-	
-	if ((2*this->size()) != precedingLayer.size()){
+
+	// check
+	if ((2 * this->size()) != precedingLayer.size()){
 	    printf("\n\t Size of this layer should = 1/2 * previous layer size");
 	    throw std::runtime_error("Error in network.jsn");
 	}
@@ -317,13 +342,18 @@ namespace layers{
 
 	// Other memory will be allocated after linking target layers
 	// this->__allocateLocalMem();
-	
+
+	// load mean/std from m_contextMVStr if necessary
 	cpu_real_vector tmp(m_contextDim * 2, 0.0);
 	if (m_contextMVStr.size() && m_contextDim > 0){
 	    if (tmp_readRealData(m_contextMVStr, tmp) != m_contextDim * 2)
 		throw std::runtime_error("context mean variance dim unequal");
 	    m_contextMV = tmp;
+	}else{
+	    m_contextMV.clear();
 	}
+
+	// length of the conditional feature sequence
 	m_contextCurMaxLength = -1;
     }
 
@@ -337,10 +367,11 @@ namespace layers{
     {
 	long int curSeqLength = this->outputs().size() / this->size();
 	
-	// allocate memory for linguistic_features + input_features
+	// allocate memory for lingusitic/acoustic_features + input_features
 	cpu_real_vector tmp(curSeqLength * this->size() * 2, 0.0);
 	m_coreBuf        = tmp;
-	
+
+	// for tanh(linguistic/acoustic features)
 	if (this->flagTrainingMode())
 	    m_contextTanhBuf = tmp;
 	else
@@ -348,12 +379,16 @@ namespace layers{
 
         if (this->getLayerMode() == NN_WAVENETCORE_MODE_COND_INI ||
 	    this->getLayerMode() == NN_WAVENETCORE_MODE_UNCOND){
+	    // if linguistic/acoustic features will be loaded
 	    
-	    // Allocate the external data buffer, and index buffer
+	    // Buffer to save the features at sampling-point-level 
 	    tmp.resize(curSeqLength * m_contextDim, 0.0);
 	    m_contextBuf    = tmp;
+	    
 	    if (m_exInputLayer == NULL)
 		throw std::runtime_error("Fail to link external layer for wavenetc");
+
+	    // Buffer to save the features from input data IO
 	    tmp.resize(misFuncs::getResoLength(
 			curSeqLength / this->parallelSequences(),
 			m_exInputLayer->getResolution(), 1) *
@@ -361,15 +396,19 @@ namespace layers{
 		       curSeqLength, 0.0);
 	    m_contextRawBuf = tmp;
 
+	    // Buffer for grad of conditional features
 	    if (this->flagTrainingMode())
 		m_contextGraBuf = m_contextBuf;
 	    else
 		m_contextGraBuf.clear();
 
+	    // Temporal resolution of linguistic/acoustic features
+	    // For features at the frame-level, m_exInputContextResone = true
 	    if (m_exInputLayer->getResolution() == 1)
 		m_exInputContextResone = true;
 	    
 	}else if (this->getLayerMode() == NN_WAVENETCORE_MODE_COND_FOL){
+	    // unconditional wavNet core
 	    m_contextBuf.clear();
 	    m_contextGraBuf.clear();
 	    m_contextRawBuf.clear();
@@ -407,16 +446,26 @@ namespace layers{
     template <typename TDevice>
     void WavNetCore<TDevice>::__loadContextBuff()
     {
-	// load the data into the buffer
+	// Load linguistic/acoustic features from data IO	
+
 	if (m_iniWavCoreC && m_contextDim > 0){
-	    //
+	    // if this is the first waveNetCore in the network
+
+	    // length of the data sequence
 	    int dataPos = this->outputs().size() / this->size();
-	    // Load the trainable external data from that layer
-	    if (m_exInputLayer != NULL)
+	    
+	    if (m_exInputLayer != NULL){
+		// if the linguistic/acoustic features are provided by a
+		// conditional network, get the features from that network
+		// m_exInputLayer points to the output layer of that conditional network
 		thrust::copy(m_exInputLayer->outputs().begin(), m_exInputLayer->outputs().end(),
 			     m_contextRawBuf.begin() + dataPos);
+	    }else{
+		// if the linguistic/acoustic features are directly loaded
+		// from data IO, load the features in loadSequences()
+	    }
 
-	    // Load the data to contextBuf
+	    // Load the data to contextBuf, do up-sampling if necessary
 	    {{	
 		internal::loadLinguisticFeature fn1;
 		fn1.featureDim = m_contextDim;
@@ -439,7 +488,12 @@ namespace layers{
 						   thrust::counting_iterator<int>(0) + n)),
 			fn1);
 	    }}
+	    
 	}else{
+
+	    // For wavNetCores after the first wavNetCore in the network
+	    // just directly use the loaded features from the first wavNetCore
+	    // No need to load the features again
 	    return;
 	}
     }
@@ -448,22 +502,27 @@ namespace layers{
     void WavNetCore<TDevice>::loadSequences(const data_sets::DataSetFraction &fraction,
 					    const int nnState)
     {
-	TrainableLayer<TDevice>::loadSequences(fraction, nnState);
+	// Load data sequence information
 
 	
+	TrainableLayer<TDevice>::loadSequences(fraction, nnState);
+
 	if (m_iniWavCoreC && m_contextDim > 0){
+	    // For the first wavNetCore 
 	    
 	    if (m_contextRawBuf.size()<1){
 		printf("\nFail to initialize m_contextRawBuf in WavNetCore\n");
 		throw std::runtime_error("Error in CURRENNT");
 	    }
-	    // load the input index
-	    thrust::copy(fraction.inputs().begin(),
-			 fraction.inputs().end(),
+	    
+	    // load the input time step index
+	    thrust::copy(fraction.inputs().begin(), fraction.inputs().end(),
 			 m_contextRawBuf.begin());
-	    
+
+	    // get the length of the input data utterance
 	    m_contextCurMaxLength = fraction.maxExInputLength();
-	    
+
+	    // 
 	    if (m_exInputLayer == NULL){
 		
 		// Load the external linguistic features from fractionData
@@ -481,13 +540,18 @@ namespace layers{
 			      this->outputs().size() / this->size()));
 	    
 	    }else{
+
+		// If conditional features are provided by a trainable network,
+		// features will be loaded in __loadContextBuf()
 		if (m_exInputLayer->size()!= m_contextDim){
 		    printf("Trainable external input dim  %d mismatch", m_exInputLayer->size());
 		    throw std::runtime_error("Unmatched trainable external feature dimension");
 		}
 	    }
 	}else{
-	    // no need to read the linguistic features again
+	    // for wavNetCores after the first wavNetCore, 
+	    // there is no need to read the linguistic features again
+	    // just use the feature buffer of the first wavNetCore
 	}
     }
     
@@ -560,20 +624,32 @@ namespace layers{
     {
 	if (this->getSaveMemoryFlag())
 	    throw std::runtime_error("Memory save mode should be turned off");
-	
 	int timeLength = this->curMaxSeqLength() * this->parallelSequences();
+
+	// forward propagation
+	// input: input_feature, lingusitic/acoustic feature(optional)
+	// output Z:
+	//      step1. X = W1 . linguistic/acoustic_feature
+	//      step2. Y = input_feature + tanh( X )
+	//      step3. Z = tanh(Y[0:dim/2]) * sig(Y[dim/2:])
+	//       
 	
 	// Step0. initialze the gradients for external input
 	if (m_iniWavCoreC && this->m_exInputLayer != NULL)
 	    thrust::fill(m_contextGraBuf.begin(), m_contextGraBuf.end(), 0.0);
+
+	// load linguistic/acoustic feature if necessary
 	__loadContextBuff();
 	
 	
 	// Step1. transform the linguistic context
 	if (m_contextDim == 0){
 	    thrust::fill(m_coreBuf.begin(), m_coreBuf.end(), 0.0);
+	    
 	}else{
+	    // transformation matrix
 	    helpers::Matrix<TDevice> weightsMatrix(&this->weights(), m_contextDim, 2*this->size());
+	    // 
 	    helpers::Matrix<TDevice> plOutputsMatrix(&(m_iniWavCoreC?(this->m_contextBuf):
 						       (m_iniWavCPtr->m_contextBuf)), 
 						     m_contextDim, timeLength);
@@ -630,11 +706,17 @@ namespace layers{
     template <typename TDevice>
     void WavNetCore<TDevice>::computeForwardPass(const int timeStep, const int nnState)
     {
+	// Forward propagation for the n-th time step
+	// This is used for online / memory-save generation
+	
+	// Only allocate the memory space for a few time steps
+	// Please check pp46-55 http://tonywangx.github.io/pdfs/CURRENNT_WAVENET.pdf
+	
 	int effTimeStep = timeStep * this->parallelSequences();
 	int shiftPre    = this->precedingLayer().outputBufPtrBias(effTimeStep, nnState);
 	int shiftCur    = this->outputBufPtrBias(effTimeStep, nnState);
 
-	// Load the data to contextBuf
+	// Load the data to contextBuf only at the first time step
 	if (timeStep == 0) __loadContextBuff();
 	
 	if (m_contextDim == 0){
@@ -712,11 +794,16 @@ namespace layers{
     template <typename TDevice>
     void WavNetCore<TDevice>::computeBackwardPass(const int nnState)
     {
+	// Backward propagation
+	
 	if (this->getSaveMemoryFlag())
 	    throw std::runtime_error("Memory save mode should be turned off");
 	
 	int timeLength = this->curMaxSeqLength() * this->parallelSequences();
-	
+
+
+	// for Z = tanh(Y[0:dim]) * sig(Y[dim/2:])
+	// get grad for Y
 	{
 	    internal::tanhSigMergeGradient fn1;
 	    fn1.outputSize = this->size() * 2;
@@ -734,10 +821,12 @@ namespace layers{
 				     thrust::counting_iterator<int>(0) + n)),
 	       fn1);
 	}
-	
+
 	if (m_contextDim == 0)
 	    return;
-	
+
+	// for Y = input_features + tanh (X)
+	// get grad for X
 	{
 	    internal::AddLinguisticFeatureGrad fn;
 
@@ -753,7 +842,8 @@ namespace layers{
 
 	}
 
-	// Gradients to the transformation matrix
+	// for X = W1 . linguistic/acoustic_feature
+	// get grad for W1
 	helpers::Matrix<TDevice> weightUpdatesMatrix(&this->_weightUpdates(),
 						     m_contextDim, this->size() * 2);
 	helpers::Matrix<TDevice> plOutputsMatrix(&(m_iniWavCoreC?(this->m_contextBuf):
@@ -764,6 +854,9 @@ namespace layers{
 	weightUpdatesMatrix.assignProduct(plOutputsMatrix, false, outputsMatrix, true);
 
 	
+	// for X = W1 . linguistic/acoustic_feature
+	// get grad for linguistic/acoustic_feature
+	// and add the gradients to the buffer
 	if (m_iniWavCoreC == false){
 	    // Gradients to the trainable external input layers
 	    if (m_iniWavCPtr->m_exInputLayer != NULL){
