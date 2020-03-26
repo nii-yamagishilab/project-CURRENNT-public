@@ -331,6 +331,10 @@ namespace layers{
 	m_contextMVStr = ((layerChild->HasMember("contextMV")) ?
 			  ((*layerChild)["contextMV"].GetString()) : "");
 
+	// equal to this->output().size() / this->size()
+	// =  maximum length of utterance * number of parallel sequences
+	m_maxSeqLengthPara = this->maxSeqLength() * this->parallelSequences();
+	
 	// check
 	if ((2 * this->size()) != precedingLayer.size()){
 	    printf("\n\t Size of this layer should = 1/2 * previous layer size");
@@ -365,10 +369,14 @@ namespace layers{
     template <typename TDevice>
     void WavNetCore<TDevice>::__allocateLocalMem()
     {
-	long int curSeqLength = this->outputs().size() / this->size();
+	// length of the output buffer (maybe != maxSeqlength in the mem-save mode)
+	long int curSeqLengthPara = this->outputs().size() / this->size();
+
+	// length of the maxSeqLength, which is determined by the data, not mem-save mode
+	long int maxSeqLengthPara = this->m_maxSeqLengthPara;
 	
 	// allocate memory for lingusitic/acoustic_features + input_features
-	cpu_real_vector tmp(curSeqLength * this->size() * 2, 0.0);
+	cpu_real_vector tmp(curSeqLengthPara * this->size() * 2, 0.0);
 	m_coreBuf        = tmp;
 
 	// for tanh(linguistic/acoustic features)
@@ -382,7 +390,7 @@ namespace layers{
 	    // if linguistic/acoustic features will be loaded
 	    
 	    // Buffer to save the features at sampling-point-level 
-	    tmp.resize(curSeqLength * m_contextDim, 0.0);
+	    tmp.resize(maxSeqLengthPara * m_contextDim, 0.0);
 	    m_contextBuf    = tmp;
 	    
 	    if (m_exInputLayer == NULL)
@@ -390,10 +398,10 @@ namespace layers{
 
 	    // Buffer to save the features from input data IO
 	    tmp.resize(misFuncs::getResoLength(
-			curSeqLength / this->parallelSequences(),
+			maxSeqLengthPara / this->parallelSequences(),
 			m_exInputLayer->getResolution(), 1) *
 		       this->parallelSequences() * m_contextDim +
-		       curSeqLength, 0.0);
+		       maxSeqLengthPara, 0.0);
 	    m_contextRawBuf = tmp;
 
 	    // Buffer for grad of conditional features
@@ -450,16 +458,14 @@ namespace layers{
 
 	if (m_iniWavCoreC && m_contextDim > 0){
 	    // if this is the first waveNetCore in the network
-
-	    // length of the data sequence
-	    int dataPos = this->outputs().size() / this->size();
 	    
 	    if (m_exInputLayer != NULL){
 		// if the linguistic/acoustic features are provided by a
 		// conditional network, get the features from that network
 		// m_exInputLayer points to the output layer of that conditional network
-		thrust::copy(m_exInputLayer->outputs().begin(), m_exInputLayer->outputs().end(),
-			     m_contextRawBuf.begin() + dataPos);
+		thrust::copy(m_exInputLayer->outputs().begin(),
+			     m_exInputLayer->outputs().end(),
+			     m_contextRawBuf.begin() + m_maxSeqLengthPara);
 	    }else{
 		// if the linguistic/acoustic features are directly loaded
 		// from data IO, load the features in loadSequences()
@@ -471,7 +477,8 @@ namespace layers{
 		fn1.featureDim = m_contextDim;
 		fn1.paralNum   = this->parallelSequences();
 		fn1.maxFeatureLength = m_contextCurMaxLength;
-		fn1.sourceData = helpers::getRawPointer(m_contextRawBuf) + dataPos;
+		fn1.sourceData = (helpers::getRawPointer(m_contextRawBuf) +
+				  m_maxSeqLengthPara);
 		fn1.frameIndex = helpers::getRawPointer(m_contextRawBuf);
 		fn1.patTypes   = helpers::getRawPointer(this->patTypes());
 		fn1.exInputResolutionOne = m_exInputContextResone;
@@ -537,7 +544,7 @@ namespace layers{
 		thrust::copy(fraction.exInputData().begin(),
 			     fraction.exInputData().end(),
 			     (m_contextRawBuf.begin() +
-			      this->outputs().size() / this->size()));
+			      m_maxSeqLengthPara));
 	    
 	    }else{
 
@@ -1017,8 +1024,17 @@ namespace layers{
 	    if (this->flagTrainingMode())
 		vecPoolMng.getSwapVector(m_contextGraBuf, this->getLayerID(),
 					 this->m_contextDim, flag_get);
-		
-	}	
+	    
+	    // In mem-save mode for MA model,
+	    // maxLength() will become NETWORK_TEMPMAXLENGTH_FOR_MA
+	    // The initial value of m_maxSeqLengthPara is NETWORK_TEMPMAXLENGTH_FOR_MA
+	    //
+	    // After memory allocation, the value of m_maxSeqLengthPara should be fixed
+	    // It should change according to the size of this->outputs()
+	    if (flag_get)
+		m_maxSeqLengthPara = this->outputs().size() / this->size();
+	}
+	
     }
     
     template class WavNetCore<Cpu>;

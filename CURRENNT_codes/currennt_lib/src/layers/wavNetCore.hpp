@@ -47,7 +47,8 @@ namespace layers{
     private:
 	int            m_wavCoreOpt;     // option
 	int            m_contextDim;     // dimension of the textual feature
-
+	long int       m_maxSeqLengthPara;
+	
 	real_vector    m_coreBuf;        // internal data buffer
 	real_vector    m_contextBuf;     // buffer for the textual data
 	real_vector    m_contextGraBuf;

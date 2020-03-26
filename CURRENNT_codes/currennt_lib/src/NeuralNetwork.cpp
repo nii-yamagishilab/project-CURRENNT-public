@@ -426,6 +426,7 @@ void NeuralNetwork<TDevice>::__CreateNetworkLayers(
 		// overwrite the layer size
 		(*layerChild)["size"].SetInt(inputSizeOverride);
             }
+
 	    
 	    // decide the maximum length for memory allocation
 	    if (m_waveNetMemSaveFlag == NETWORK_WAVENET_SAVE_MA 
@@ -440,6 +441,7 @@ void NeuralNetwork<TDevice>::__CreateNetworkLayers(
 		tmp_maxSeqLength = maxSeqLength;
 	    }
 
+	    
 	    
 	    // create a layer
             try {
