@@ -2,7 +2,7 @@
  * This file is an addtional component of CURRENNT. 
  * Xin WANG
  * National Institute of Informatics, Japan
- * 2016 - 2019
+ * 2016 - 2020
  *
  * This file is part of CURRENNT. 
  *
@@ -38,11 +38,19 @@
 #define FFTMAT_PHASETYPE_COS 0          // cos-based phase distance
 #define FFTMAT_PHASETYPE_INTANT 1       // instantaneous phase distance
 
-#define FFTMAT_WINDOW_HANN 0            //
+// Type of windows for STFT
+#define FFTMAT_WINDOW_HANN 0            
 #define FFTMAT_WINDOW_SQUARE 1
 
+// (obsolete) fpr real-valued spectrum
 #define FFTMAT_REALSPEC_TYPE_NORMAL 0
 #define FFTMAT_REALSPEC_TYPE_SHIFT  1
+
+// Floor for log spectrum amplitude
+// Since only log-spec amp distance is widely used,
+// only this floor value is defined in FFTMat as a member
+// (other floors are defined as macros in FFTMat.cu)
+#define FFTMAT_LOG_AMP_FLOOR 0.00001
 
 namespace helpers {
 
@@ -61,24 +69,40 @@ namespace helpers {
 	int m_frameShift;
 	int m_windowType;
 	int m_fftLength;
+
+	// dimenions of the FFT feature vector
+	int m_fftBins;
+	// frame number. All frames will do FFT at the same time
+	int m_batchSize;        
+
+	// maxSeqLength (maximum length in dataset)
+	int m_signalBufLength;
 	
-	int m_fftBins;          // dimenions of the FFT feature vector
-	int m_batchSize;        // frame number
+	// curMaxSeqLength (maximum length in this parallel block)
+	int m_signalLength;
 
-	int m_signalBufLength;  // maxSeqLength
-	int m_signalLength;     // curMaxSeqLength
+	// type of distance measure
+	int m_disType;
+	
+	// number of valid frames (i.e., without dummy frames)
+	int m_validFrameNum;
+	
+	// number of points = valid frame * frame_dim
+	int m_validDataPointNum;
 
-	int m_disType;      //
-	int m_validFrameNum;    //
-	int m_validDataPointNum;//
+	// floor for log spectrum amplitude
+	real_t m_floor_log_amp;
 	
     public:
-	FFTMat(real_vector *rawData, real_vector *framedData, complex_vector *fftData,
+	FFTMat(real_vector *rawData,
+	       real_vector *framedData,
+	       complex_vector *fftData,
 	       int frameLength, int frameShift, int windowType,
 	       int fftLength,   int fftBins,  int batchSize,
 	       int signalBufLength,
 	       int signsignalLength,
-	       int disType);
+	       int disType,
+	       real_t floor_log_amp = FFTMAT_LOG_AMP_FLOOR);
 
 	FFTMat(real_vector *framedDAta, complex_vector *fftData,
 	       int fftLength, int fftBins, int batchSize);

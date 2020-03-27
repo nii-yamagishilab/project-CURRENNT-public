@@ -2,9 +2,9 @@
  * This file is an addtional component of CURRENNT. 
  * Xin WANG
  * National Institute of Informatics, Japan
- * 2018 - 2019
+ * 2018 - 2020
  *
- * This file is part of CURRENNT. *
+ * This file is part of CURRENNT. 
  *
  * CURRENNT is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -39,8 +39,10 @@
 
 typedef cufftHandle *cufftHandle_t;
 
+// for PI
 #define FFT_PI_DEFINITION 3.141215
-//#define FFT_KLD_FLOOR_NUM 0.0000000001
+
+
 #define FFT_KLD_FLOOR_NUM 0.00001
 #define FFT_IS_FLOOR_NUM 0.00001
 #define FFT_AMP_MIN_NUM   0.0000001
@@ -470,6 +472,8 @@ namespace {
 
     struct SpecAmpDistance_AMP_LOG_MSE
     {
+	real_t floor_log_amp;
+	
 	__host__ __device__ void operator() (const thrust::tuple<complex_t &,
 					     complex_t &, complex_t &> &t) const
 	{
@@ -481,10 +485,10 @@ namespace {
 	    // t.get<2>().y = [ log(Re(src)^2 + Im(src)^2) - log(Re(tar)^2 + Im(tar)^2) ]
 	    t.get<2>().y = (helpers::safeLog(t.get<0>().x * t.get<0>().x +
 					     t.get<0>().y * t.get<0>().y +
-					     FFT_KLD_FLOOR_NUM) -
+					     floor_log_amp) -
 			    helpers::safeLog(t.get<1>().x * t.get<1>().x +
 					     t.get<1>().y * t.get<1>().y +
-					     FFT_KLD_FLOOR_NUM));
+					     floor_log_amp));
 	    // t.get<2>().x = [ log(Re(src)^2 + Im(src)^2) - log(Re(tar)^2 + Im(tar)^2) ] ^ 2
 	    t.get<2>().x = t.get<2>().y * t.get<2>().y;
 
@@ -755,6 +759,8 @@ namespace {
 
     struct SpecAmpDistance_AMP_LOG_MSE_Grad
     {
+	real_t floor_log_amp;
+	
 	__host__ __device__ void operator() (const thrust::tuple<complex_t &,
 					     complex_t &, complex_t &> &t) const
 	{
@@ -766,7 +772,7 @@ namespace {
 	    // 
 	    real_t spec = (t.get<0>().x * t.get<0>().x +
 			   t.get<0>().y * t.get<0>().y +
-			   FFT_KLD_FLOOR_NUM);
+			   floor_log_amp);
 	    
 	    t.get<2>().x = t.get<2>().y * t.get<0>().x / spec;
 	    t.get<2>().y = t.get<2>().y * t.get<0>().y / spec;
@@ -1127,7 +1133,8 @@ namespace helpers {
 			    int batchSize,
 			    int signalBufLength,
 			    int signalLength,
-			    int specDisType)
+			    int specDisType,
+			    real_t floor_log_amp)
 	
 	: m_rawData         (rawData)
 	, m_framedData      (framedData)
@@ -1141,6 +1148,7 @@ namespace helpers {
 	, m_signalBufLength (signalBufLength)
 	, m_signalLength    (signalLength)
 	, m_disType         (specDisType)
+	, m_floor_log_amp   (floor_log_amp)
 	  
     {
 	// m_windowType is not implemented for windows other than Hann
@@ -1153,7 +1161,7 @@ namespace helpers {
 	
 	if (m_signalBufLength < m_signalLength)
 	    throw std::runtime_error("Error: signal Buff length < signal length");
-
+	
 	// clean the buffer cells that are beyond the length of current sentence
 	thrust::fill((*m_rawData).begin() + m_signalLength,
 		     (*m_rawData).end(), 0.0);
@@ -1406,6 +1414,7 @@ namespace helpers {
 	}else{
 	    {
 		internal::SpecAmpDistance_AMP_LOG_MSE fn1;
+		fn1.floor_log_amp = this->m_floor_log_amp;
 		thrust::for_each(
 		thrust::make_zip_iterator(
 			thrust::make_tuple((*m_fftData).begin(),
@@ -1690,9 +1699,10 @@ namespace helpers {
 		fn1);
 	    }
 	}else{
-	      {
-		  internal::SpecAmpDistance_AMP_LOG_MSE_Grad fn1;
-		  thrust::for_each(
+	    {
+		internal::SpecAmpDistance_AMP_LOG_MSE_Grad fn1;
+		fn1.floor_log_amp = this->m_floor_log_amp;
+		thrust::for_each(
 		thrust::make_zip_iterator(
 			thrust::make_tuple((*(source.m_fftData)).begin(),
 					   (*(target.m_fftData)).begin(),
@@ -1702,7 +1712,7 @@ namespace helpers {
 					   (*(target.m_fftData)).end(),
 					   (*m_fftData).end())),
 		fn1);
-	      }
+	    }
 	}
 	
     }

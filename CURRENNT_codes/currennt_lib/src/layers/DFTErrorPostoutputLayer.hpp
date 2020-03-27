@@ -156,6 +156,9 @@ namespace layers {
 	
 	int                m_lpcGain;           // whether LPC Gain should be used
 
+	real_t             m_floor_log_spec_amp; // floor for spec_amp
+
+	
 	// support for evaluation on signals from multiple layers
 	int                m_separate_excitation_loss;
 	int                m_otherSignalInputLayer_num;
@@ -196,7 +199,6 @@ namespace layers {
 			       const int fftLength, const int frameLength,
 			       const int frameShift, const int windowType,
 			       const int windowTypePhase, const int lpcOrder);
-
 	
 	// methods for utilities
 	int  __vSize();

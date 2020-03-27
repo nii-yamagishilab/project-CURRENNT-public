@@ -612,7 +612,11 @@ namespace layers{
 	m_specDisType   = (layerChild->HasMember("specDisType") ? 
 			   static_cast<real_t>((*layerChild)["specDisType"].GetInt()) :
 			   FFTMAT_SPECTYPE_AMP_LOG_MSE);
-
+	
+	m_floor_log_spec_amp = (layerChild->HasMember("logSpecAmpFloor") ? 
+				static_cast<real_t>((*layerChild)["logSpecAmpFloor"].GetDouble()) :
+				FFTMAT_LOG_AMP_FLOOR);
+	
 	m_phaseDisType  = (layerChild->HasMember("phaseDisType") ? 
 			   static_cast<real_t>((*layerChild)["phaseDisType"].GetInt()) :
 			   FFTMAT_PHASETYPE_COS);
@@ -854,6 +858,9 @@ namespace layers{
 	if (m_preEmphasis)
 	    printf("\n\tNatural waveform will be pre-emphasis before evaluating.");
 
+	if (m_floor_log_spec_amp != FFTMAT_LOG_AMP_FLOOR &&
+	    m_specDisType == FFTMAT_SPECTYPE_AMP_LOG_MSE)
+	    printf("\n\tLog-spectral-amplitude is floored by %f.", m_floor_log_spec_amp);
 	// Done
     }
 
@@ -1164,7 +1171,7 @@ namespace layers{
 			dftBuf.m_frameLength, dftBuf.m_frameShift,
 			dftBuf.m_windowType, dftBuf.m_fftLength, dftBuf.m_fftBinsNum,
 			dftBuf.m_frameNum, this->__vMaxSeqLength(), timeLength,
-			this->m_specDisType);
+			this->m_specDisType, this->m_floor_log_spec_amp);
 
 	helpers::FFTMat<TDevice> targetSig(
 			&this->_targets(), &dftBuf.m_fftTargetFramed,
@@ -1172,7 +1179,7 @@ namespace layers{
 			dftBuf.m_frameLength, dftBuf.m_frameShift,
 			dftBuf.m_windowType, dftBuf.m_fftLength, dftBuf.m_fftBinsNum,
 			dftBuf.m_frameNum, this->__vMaxSeqLength(), timeLength,
-			this->m_specDisType);
+			this->m_specDisType, this->m_floor_log_spec_amp);
 
 	helpers::FFTMat<TDevice> fftDiffSig(
 			&dftBuf.m_fftDiffData, &dftBuf.m_fftDiffFramed,
@@ -1180,7 +1187,7 @@ namespace layers{
 			dftBuf.m_frameLength, dftBuf.m_frameShift,
 			dftBuf.m_windowType, dftBuf.m_fftLength, dftBuf.m_fftBinsNum,
 			dftBuf.m_frameNum, this->__vMaxSeqLength(), timeLength,
-			this->m_specDisType);
+			this->m_specDisType, this->m_floor_log_spec_amp);
 	
 	// step1. framing and windowing
 	sourceSig.frameSignal();
@@ -1520,7 +1527,7 @@ namespace layers{
 			dftBuf.m_frameLength, dftBuf.m_frameShift,
 			dftBuf.m_windowType, dftBuf.m_fftLength, dftBuf.m_fftBinsNum,
 			dftBuf.m_frameNum, this->__vMaxSeqLength(), timeLength,
-			this->m_specDisType);
+			this->m_specDisType, this->m_floor_log_spec_amp);
 	// specAmpDistance should have done the two steps on target signals
 	//targetSig.frameSignal();
 	//targetSig.FFT();
@@ -1536,7 +1543,7 @@ namespace layers{
 			dftBuf.m_frameLength, dftBuf.m_frameShift,
 			dftBuf.m_windowType, dftBuf.m_fftLength, dftBuf.m_fftBinsNum,
 			dftBuf.m_frameNum, this->__vMaxSeqLength(), timeLength,
-			this->m_specDisType);
+			this->m_specDisType, this->m_floor_log_spec_amp);
 
 		sourceSig.frameSignal();
 		sourceSig.FFT();
@@ -1553,7 +1560,7 @@ namespace layers{
 			dftBuf.m_frameLength, dftBuf.m_frameShift,
 			dftBuf.m_windowType, dftBuf.m_fftLength, dftBuf.m_fftBinsNum,
 			dftBuf.m_frameNum, this->__vMaxSeqLength(), timeLength,
-			this->m_specDisType);
+			this->m_specDisType, this->m_floor_log_spec_amp);
 
 		    if (layerIndex == 0){
 			// only do framing and FFT once
@@ -1575,7 +1582,7 @@ namespace layers{
 			dftBuf.m_frameLength, dftBuf.m_frameShift,
 			dftBuf.m_windowType, dftBuf.m_fftLength, dftBuf.m_fftBinsNum,
 			dftBuf.m_frameNum, this->__vMaxSeqLength(), timeLength,
-			this->m_specDisType);
+			this->m_specDisType, this->m_floor_log_spec_amp);
 	
 		// calculate the error
 		dftBuf.m_specErrorOthers += sourceSig.specAmpDistance(targetSig, fftDiffSig);
@@ -1591,7 +1598,7 @@ namespace layers{
 			dftBuf.m_frameLength, dftBuf.m_frameShift,
 			dftBuf.m_windowType, dftBuf.m_fftLength, dftBuf.m_fftBinsNum,
 			dftBuf.m_frameNum, this->__vMaxSeqLength(), timeLength,
-			this->m_specDisType);
+			this->m_specDisType, this->m_floor_log_spec_amp);
 		    fftDiffSig.spectralMask(maskSig);
 		}
 
@@ -1867,6 +1874,9 @@ namespace layers{
 
 	if (m_specDisType != FFTMAT_SPECTYPE_AMP_LOG_MSE)
 	    (*layersArray)[layersArray->Size() - 1].AddMember("specDisType", m_specDisType,
+							      allocator);
+	if (m_floor_log_spec_amp != FFTMAT_LOG_AMP_FLOOR)
+	    (*layersArray)[layersArray->Size() - 1].AddMember("logSpecAmpFloor", m_floor_log_spec_amp,
 							      allocator);
 	if (m_phaseDisType != FFTMAT_PHASETYPE_COS)
 	    (*layersArray)[layersArray->Size() - 1].AddMember("phaseDisType", m_phaseDisType,
