@@ -94,9 +94,12 @@ namespace helpers{
 
 
 	if (__LOCAL_VECPOOL_DEBUG_FLAG){
-	    printf("\n");
+	    if (flag_add)
+		printf("\nAdd: ");
+	    else
+		printf("\nDel: ");
 	    for (size_t idx = 0; idx < m_vecCntBuff.size(); idx++)
-		printf("%4d, %4d, %4d\t",
+		printf("vector dim %4d, vector tmp num %4d, vector max num %4d\t",
 		       m_vecCntBuff[idx].vecSize,
 		       m_vecCntBuff[idx].tmp_requiredNum,
 		       m_vecCntBuff[idx].max_requiredNum);
@@ -156,9 +159,15 @@ namespace helpers{
 
 	if (__LOCAL_VECPOOL_DEBUG_FLAG){
 	    printf("\n");
+	    if (flag_get){
+		printf("Get memory for layer %d of %d dims", layerID, vecDim);
+	    }else{
+		printf("Get memory for layer %d of %d dims", layerID, vecDim);
+	    }
+	    printf("\nBuffer dimension: ");
 	    for (size_t idx = 0; idx < m_vecPoolInfor.size(); idx++)
 		printf("%4d", m_vecPoolInfor[idx].vecSize);
-	    printf("\n");
+	    printf("\nLayer ID:         ");
 	    for (size_t idx = 0; idx < m_vecPoolInfor.size(); idx++)
 		printf("%4d", m_vecPoolInfor[idx].layerID);
 	    std::cout << std::flush;

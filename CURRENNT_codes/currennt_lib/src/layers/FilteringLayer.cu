@@ -1151,16 +1151,14 @@ namespace layers {
 	    if (m_filter_coeffs_str.size() == 0)
 		throw std::runtime_error("\nError: filterCoeffs is not specified");
 
-	    if (m_filter_mode == FILTERING_LAYER_MODE_NONE_SELECTIVE){
+	    if (this->size() == this->precedingLayer().size()){
+		m_filter_mode = FILTERING_LAYER_MODE_NONE_SELECTIVE;
 		// only 1 group of filter, for all dimensions
 		m_filter_num = 1;
-		if (this->size() != this->precedingLayer().size()){
-		    printf("layer size != previous layer size");
-		    throw std::runtime_error("Error in network.jsn");
-		}
 	    }else{
 		// multiple groups of filters
 		m_filter_num = this->precedingLayer().size() - this->size();
+		m_filter_mode = FILTERING_LAYER_MODE_SELECTIVE;
 	    }
 	    
 	    m_filter_coeffs.clear();

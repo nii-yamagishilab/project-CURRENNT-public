@@ -429,6 +429,7 @@ void NeuralNetwork<TDevice>::__CreateNetworkLayers(
 
 	    
 	    // decide the maximum length for memory allocation
+	    /*
 	    if (m_waveNetMemSaveFlag == NETWORK_WAVENET_SAVE_MA 
 		&& (!m_signalGenLayerId.empty())
 		&& internal::flagLayerCanBeOptimizedMA(counter, m_signalGenLayerId[0],
@@ -439,7 +440,8 @@ void NeuralNetwork<TDevice>::__CreateNetworkLayers(
 		tmp_maxSeqLength = NETWORK_TEMPMAXLENGTH_FOR_MA;
 	    }else{
 		tmp_maxSeqLength = maxSeqLength;
-	    }
+		}*/
+	    tmp_maxSeqLength = maxSeqLength;
 
 	    
 	    
@@ -1792,7 +1794,7 @@ void NeuralNetwork<TDevice>::__computeGenPass_LayerByLayer_mem(
 	    
 	    // only count layers that can be optimized
 	    if (this->flagLayerCanbeOptimizedMA(layerID)){
-		if (!(tmp_networkMng2.get_layerDep(layerID).empty_towhich())){
+		if (!(tmp_networkMng2.get_layerDep(layerID).flag_towhich_is_empty())){
 		    layer->logAllBuffers(m_vecPoolMng, true);
 		}
 		
@@ -1804,7 +1806,7 @@ void NeuralNetwork<TDevice>::__computeGenPass_LayerByLayer_mem(
 			
 			tmp_networkMng2.get_layerDep(fromwhich).del_towhich(layerID);
 			
-			if (tmp_networkMng2.get_layerDep(fromwhich).empty_towhich())
+			if (tmp_networkMng2.get_layerDep(fromwhich).flag_towhich_is_empty())
 			    this->m_layers[fromwhich]->logAllBuffers(m_vecPoolMng, false);
 		    }
 		}
@@ -1849,7 +1851,7 @@ void NeuralNetwork<TDevice>::__computeGenPass_LayerByLayer_mem(
 	    }
 
 	    // allocate memory and do propagation
-	    if (!(tmp_networkMng.get_layerDep(layerID).empty_towhich())){
+	    if (!(tmp_networkMng.get_layerDep(layerID).flag_towhich_is_empty())){
 		// layer->resizeAllBuffers(curMaxSeqLength);
 		layer->swapAllBuffers(m_vecPoolMng, true);
 		layer->loadSequences(fraction, m_trainingState);
@@ -1866,7 +1868,7 @@ void NeuralNetwork<TDevice>::__computeGenPass_LayerByLayer_mem(
 		    tmp_networkMng.get_layerDep(fromwhich).del_towhich(layerID);
 		    
 		    // If the 'input' layer is no longer needed by any layer, release the mem
-		    if (tmp_networkMng.get_layerDep(fromwhich).empty_towhich()){
+		    if (tmp_networkMng.get_layerDep(fromwhich).flag_towhich_is_empty()){
 			//this->m_layers[fromwhich]->clearAllBuffers();
 			this->m_layers[fromwhich]->swapAllBuffers(m_vecPoolMng, false);
 		    }
@@ -1887,7 +1889,7 @@ void NeuralNetwork<TDevice>::__computeGenPass_LayerByLayer_mem(
     // layer by layer generation mode for Non-AR WaveModel
     BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
 	if (this->flagLayerCanbeOptimizedMA(layerID) &&
-	    !(tmp_networkMng.get_layerDep(layerID).empty_towhich())){
+	    !(tmp_networkMng.get_layerDep(layerID).flag_towhich_is_empty())){
 	    this->m_layers[layerID]->swapAllBuffers(m_vecPoolMng, false);
 	}
 	layerID++;
@@ -2603,7 +2605,7 @@ void NeuralNetwork<TDevice>::__computeGenPass_special_NSF_FBH(
 			throw std::runtime_error("Error from which");
 		}
 
-		if (tmp_networkMng.get_layerDep(layerID).empty_towhich()){
+		if (tmp_networkMng.get_layerDep(layerID).flag_towhich_is_empty()){
 		    // no other layer needs the output of this layer, skip propagation
 		}else{
 		    layer->resizeAllBuffers(curMaxSeqLength);
@@ -2619,7 +2621,7 @@ void NeuralNetwork<TDevice>::__computeGenPass_special_NSF_FBH(
 			// Delete dependency temporarily
 			tmp_networkMng.get_layerDep(fromwhich).del_towhich(layerID);
 			// If the 'input' layer is no longer needed by any layer, release the mem
-			if (tmp_networkMng.get_layerDep(fromwhich).empty_towhich())
+			if (tmp_networkMng.get_layerDep(fromwhich).flag_towhich_is_empty())
 			    this->m_layers[fromwhich]->clearAllBuffers();
 		    }
 		}

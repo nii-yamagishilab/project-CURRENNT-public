@@ -72,8 +72,10 @@ namespace helpers{
     void layerDep::del_towhich(const int outs)
     {
 	for (size_t idx=0; idx < m_towhich.size(); idx++)
-	    if (m_towhich[idx] == outs)
+	    if (m_towhich[idx] == outs){
 		m_towhich[idx] = -1;
+		break;
+	    }
     }
 
     void layerDep::nul_towhich()
@@ -81,7 +83,7 @@ namespace helpers{
 	this->m_towhich.clear();
     }
 
-    bool layerDep::empty_towhich()
+    bool layerDep::flag_towhich_is_empty()
     {
 	bool any_val = true;
 	for (size_t idx=0; idx < m_towhich.size(); idx++)
@@ -102,8 +104,10 @@ namespace helpers{
     void layerDep::del_fromwhich(const int ins)
     {
 	for (size_t idx=0; idx < m_fromwhich.size(); idx++)
-	    if (m_fromwhich[idx] == ins)
+	    if (m_fromwhich[idx] == ins){
 		m_fromwhich[idx] = -1;
+		break;
+	    }
     }
     
     void layerDep::nul_fromwhich()
@@ -111,7 +115,7 @@ namespace helpers{
 	this->m_fromwhich.clear();
     }
 
-    bool layerDep::empty_fromwhich()
+    bool layerDep::flag_fromwhich_is_empty()
     {
 	bool any_val = true;
 	for (size_t idx=0; idx < m_fromwhich.size(); idx++)
@@ -172,8 +176,8 @@ namespace helpers{
     {
 	for (size_t layerIdx = 0; layerIdx < m_layerDeps.size(); layerIdx++){
 
-	    if (m_layerDeps[layerIdx].empty_towhich() &&
-		m_layerDeps[layerIdx].empty_fromwhich())
+	    if (m_layerDeps[layerIdx].flag_towhich_is_empty() &&
+		m_layerDeps[layerIdx].flag_fromwhich_is_empty())
 		continue;
 	    
 	    printf("\n%d: to ", m_layerDeps[layerIdx].get_layerID());

@@ -53,17 +53,22 @@ namespace helpers{
 	// return ID of this layer
 	int get_layerID();
 
+	// add ID of the layer that takes this layer as input layer
 	void add_towhich(std::vector<int> &outs);
 	void add_towhich(const int outs);
+
+	// del ID of the layer that takes this layer as input layer
 	void del_towhich(const int outs);
+	// clear towhich buffer
 	void nul_towhich();
-	bool empty_towhich();
+	// whether towhich is empty
+	bool flag_towhich_is_empty();
 	
 	void add_fromwhich(std::vector<int> &ins);
 	void add_fromwhich(const int ins);
 	void del_fromwhich(const int ins);
 	void nul_fromwhich();
-	bool empty_fromwhich();
+	bool flag_fromwhich_is_empty();
     };
 
     
