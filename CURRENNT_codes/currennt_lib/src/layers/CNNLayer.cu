@@ -79,8 +79,8 @@ namespace{
     {
 
 	real_t *dataBuffer;
-	//real_t *targetBuff;
-	real_t *biasWeight;
+	real_t *bias;
+	real_t  biasWeight;
 	
 	int    *winSizeCum;
 	int    *winHalfSize;
@@ -172,9 +172,9 @@ namespace{
 
 	    // add bias and pass through the activation function
 	    if (outputTanh)
-		t.get<0>() = cell_act_fn_t::fn(maxValue + biasWeight[dimIdx]);
+		t.get<0>() = cell_act_fn_t::fn(maxValue + bias[dimIdx] * biasWeight);
 	    else
-		t.get<0>() = maxValue + biasWeight[dimIdx];
+		t.get<0>() = maxValue + bias[dimIdx] * biasWeight;
         }
     };
 
@@ -415,7 +415,8 @@ namespace{
     {
 
 	real_t *dataBuffer;
-	real_t *biasWeight;
+	real_t *bias;
+	real_t  biasWeight;
        
 	int     recFieldSize;     // recep field size
 	int     curLayerSize;     // output feature dimension
@@ -445,9 +446,9 @@ namespace{
 				   dataBuffer[timeIdxBuf2 * winTotalLength + dimIdxBuf2]);
 	    // add bias and pass through the activation function
 	    if (outputTanh)
-		t.get<0>() = cell_act_fn_t::fn(summedOutput + biasWeight[dimIdx]);
+		t.get<0>() = cell_act_fn_t::fn(summedOutput + bias[dimIdx] * biasWeight);
 	    else
-		t.get<0>() = summedOutput + biasWeight[dimIdx];
+		t.get<0>() = summedOutput + bias[dimIdx] * biasWeight;
         }
     };
 
@@ -1184,8 +1185,9 @@ namespace layers {
 	    internal::ConvolutionCore fn;
 	    	    
 	    fn.dataBuffer       = helpers::getRawPointer(this->m_conBuffer);
-	    //fn.targetBuff       = helpers::getRawPointer(this->outputs());
-	    fn.biasWeight       = helpers::getRawPointer(this->m_weightBuffer) + m_biasPosInBuffer;
+	    
+	    fn.bias      = helpers::getRawPointer(this->m_weightBuffer) + m_biasPosInBuffer;
+	    fn.biasWeight       = this->bias();
 	    
 	    fn.winSizeCum       = helpers::getRawPointer(m_winWidth_Cum_D);
 	    fn.winHalfSize      = helpers::getRawPointer(m_winWidth_D);
@@ -1317,8 +1319,9 @@ namespace layers {
 	    // Step2. data summation
 	    internal::ConvolutionCoreMemSaveMode fn;
 	    	    
-	    fn.dataBuffer       = helpers::getRawPointer(this->m_conBuffer);
-	    fn.biasWeight       = helpers::getRawPointer(this->m_weightBuffer) + m_biasPosInBuffer;
+	    fn.dataBuffer  = helpers::getRawPointer(this->m_conBuffer);
+	    fn.bias        = helpers::getRawPointer(this->m_weightBuffer) + m_biasPosInBuffer;
+	    fn.biasWeight  = this->bias();
 
 	    fn.recFieldSize     = recField;
 	    fn.curLayerSize     = this->size();
@@ -1366,9 +1369,9 @@ namespace layers {
 	    {{
 	    internal::ConvolutionCore fn;
 	    	    
-	    fn.dataBuffer       = helpers::getRawPointer(this->m_conBuffer);
-	    //fn.targetBuff       = helpers::getRawPointer(this->outputs());
-	    fn.biasWeight       = helpers::getRawPointer(this->m_weightBuffer) + m_biasPosInBuffer;
+	    fn.dataBuffer  = helpers::getRawPointer(this->m_conBuffer);
+	    fn.bias        = helpers::getRawPointer(this->m_weightBuffer) + m_biasPosInBuffer;
+	    fn.biasWeight  = this->bias();     
 	    
 	    fn.winSizeCum       = helpers::getRawPointer(m_winWidth_Cum_D);
 	    fn.winHalfSize      = helpers::getRawPointer(m_winWidth_D);
@@ -1505,9 +1508,11 @@ namespace layers {
 	// Step5: gradient to the bias part
 	{{
 	    // Borrow the m_conBuffer as one vector [1, 1, 1, 1, 1]
+	    // by default, this->bias() should be 1.0, otherwise
+	    // this->bias() is the weight to each bias
 	    thrust::fill(m_conBuffer.begin(),
 			 m_conBuffer.begin() + this->curMaxSeqLength() * this->parallelSequences(),
-			 1.0);
+			 this->bias());
 	    
 	    helpers::Matrix<TDevice> biasError   (&this->m_weightBuffer, 1, this->size(),
 						  m_biasPosInBuffer);
