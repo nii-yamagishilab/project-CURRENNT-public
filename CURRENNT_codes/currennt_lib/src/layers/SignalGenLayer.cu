@@ -1066,45 +1066,59 @@ namespace layers{
         TrainableLayer<TDevice>::exportLayer(layersArray, allocator);
 
 	if (m_freqDim >= 0){
-	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyOpt", m_freqOpt,
+	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyOpt",
+							      m_freqOpt,
 							      allocator);
-	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencySR",  m_freqSR,
+	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencySR",
+							      m_freqSR,
 							      allocator);
-	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyQF0min", m_freqQF0min,
+	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyQF0min",
+							      m_freqQF0min,
 							      allocator);
-	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyQF0max", m_freqQF0max,
+	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyQF0max",
+							      m_freqQF0max,
 							      allocator);
-	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyQF0Lev", m_freqQF0Lev,
+	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyQF0Lev",
+							      m_freqQF0Lev,
 							      allocator);
-	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyF0Mean", m_freqDataM,
+	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyF0Mean",
+							      m_freqDataM,
 							      allocator);
-	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyF0Std",  m_freqDataS,
+	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyF0Std",
+							      m_freqDataS,
 							      allocator);
 	    
-	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyF0Mag",  m_freqSignalMag,
+	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyF0Mag",
+							      m_freqSignalMag,
 							      allocator);
-	    if (m_freqBins > 0){
-		(*layersArray)[layersArray->Size() - 1].AddMember("frequencyBins", m_freqBins,
+	    (*layersArray)[layersArray->Size() - 1].AddMember("frequencyHarmonics",
+							      m_freqHmn,
+							      allocator);
+	    if (m_freqBins > 0)
+		(*layersArray)[layersArray->Size() - 1].AddMember("frequencyBins",
+								  m_freqBins,
 								  allocator);
-		(*layersArray)[layersArray->Size() - 1].AddMember("frequencyHarmonics", m_freqHmn,
-								  allocator);
-	    }
 	    if (m_noNoiseInSine)
-		(*layersArray)[layersArray->Size() - 1].AddMember("noNoiseInSine", m_noNoiseInSine,
+		(*layersArray)[layersArray->Size() - 1].AddMember("noNoiseInSine",
+								  m_noNoiseInSine,
 								  allocator);
-
 	}
-	(*layersArray)[layersArray->Size() - 1].AddMember("frequencyDim",      m_freqDim,
+	
+	(*layersArray)[layersArray->Size() - 1].AddMember("frequencyDim",
+							  m_freqDim,
 							  allocator);
 	
-	(*layersArray)[layersArray->Size() - 1].AddMember("frequencyNoiseMag", m_noiseMag,
+	(*layersArray)[layersArray->Size() - 1].AddMember("frequencyNoiseMag",
+							  m_noiseMag,
 							  allocator);
 
 	// if (m_noiseType != NN_SIGGEN_LAYER_NOISE_UNIFORM)
-	(*layersArray)[layersArray->Size() - 1].AddMember("noiseType", m_noiseType,
+	(*layersArray)[layersArray->Size() - 1].AddMember("noiseType",
+							  m_noiseType,
 							  allocator);
 
-	(*layersArray)[layersArray->Size() - 1].AddMember("phaseNoiseMag",     m_phaseNoiseMag,
+	(*layersArray)[layersArray->Size() - 1].AddMember("phaseNoiseMag",
+							  m_phaseNoiseMag,
 							  allocator);
 
 	//if (m_equalNoiseSinePower){
