@@ -184,7 +184,7 @@ def write_raw_mat(data,filename,format='f4',end='l'):
             format = '>'+format
         else:
             format = '='+format
-        datatype = np.dtype((format,1))
+        datatype = np.dtype(format)
         temp_data = data.astype(datatype)
     else:
         temp_data = data
