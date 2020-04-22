@@ -93,6 +93,10 @@ namespace layers {
 	    // for spectral mask
 	    real_vector        m_fftMaskSignalFramed;
 	    fft_vector         m_fftMaskFFT;
+
+	    // for spectral weight vector
+	    real_vector        m_specWeight;
+	    std::string        m_specWeightStr;
 	    
 	    // for real-valued spectral 
 	    int                m_fftLengthRealSpec;
@@ -127,6 +131,7 @@ namespace layers {
 	    // for additional spec-amp-distances on hidden layers
 	    real_vector        m_specGrad_others;
 	    real_vector        m_specGrad_tmpBuf;
+
 	};
 
 	/*
@@ -198,7 +203,8 @@ namespace layers {
 	void __configDFTBuffer(struct_DFTData &dftBuf,
 			       const int fftLength, const int frameLength,
 			       const int frameShift, const int windowType,
-			       const int windowTypePhase, const int lpcOrder);
+			       const int windowTypePhase, const int lpcOrder,
+			       const std::string specWeightVec);
 	
 	// methods for utilities
 	int  __vSize();

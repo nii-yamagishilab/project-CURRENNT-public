@@ -65,6 +65,8 @@ namespace helpers {
 	real_vector    *m_framedData;
 	complex_vector *m_fftData;
 
+	real_vector    *m_specWeights;
+	
 	int m_frameLength;
 	int m_frameShift;
 	int m_windowType;
@@ -102,7 +104,8 @@ namespace helpers {
 	       int signalBufLength,
 	       int signsignalLength,
 	       int disType,
-	       real_t floor_log_amp = FFTMAT_LOG_AMP_FLOOR);
+	       real_t floor_log_amp = FFTMAT_LOG_AMP_FLOOR,
+	       real_vector *specWeight = NULL);
 
 	FFTMat(real_vector *framedDAta, complex_vector *fftData,
 	       int fftLength, int fftBins, int batchSize);

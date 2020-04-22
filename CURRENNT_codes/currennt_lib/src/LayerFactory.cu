@@ -83,6 +83,7 @@
 #include "layers/BatchNormNew.hpp"
 #include "layers/SpecialFeedBackLayer.hpp"
 #include "layers/DummyLayer.hpp"
+#include "layers/MIDIInterfaceLayer.hpp"
 #include <stdexcept>
 
 
@@ -233,6 +234,9 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
     else if (layerType == "dummy")
     	return new DummyLayer<TDevice>(layerChild, weightsSection,
 				       *precedingLayer, maxSeqLength, layerID);    
+    else if (layerType == "midi_interface")
+    	return new MIDIInterfaceLayer<TDevice>(layerChild, weightsSection,
+					       *precedingLayer, maxSeqLength, layerID);    
 
     else if (layerType == "sse"                       || layerType == "weightedsse"  || 
 	     layerType == "rmse"                      || layerType == "ce"  || 

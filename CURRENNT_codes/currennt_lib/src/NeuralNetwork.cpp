@@ -315,6 +315,10 @@ void NeuralNetwork<TDevice>::__InitializeNetworkLayerIdx(
 		// signal generation layers
 		m_signalGenLayerId.push_back(counter);
 		
+	    }else if (layerType == "midi_interface"){
+		// MIDI sin generator
+		m_signalGenLayerId.push_back(counter);
+		
 	    }else if (layerType == "distilling"){
 		// distilling layers (not maintained)
 		m_distillingLayers.push_back(counter);

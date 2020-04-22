@@ -1021,6 +1021,8 @@ namespace {
 	}
     };
 
+    
+    // produce the sine-mask based on the input spectral of sine waveforms
     struct SpectralToMask
     {
 	int fftBins;
@@ -1098,7 +1100,30 @@ namespace {
 	}
     };
 
-    
+
+    // apply spec weight to the gradient vector
+    struct specWeightToGrad
+    {
+	int fftBins;
+	int validFrameNum;
+
+	real_t* weight;
+
+	// dummy, frame_number
+	__host__ __device__ void operator() (const thrust::tuple<complex_t &, int> &t) const
+	{
+	    int dimIdx   = t.get<1>() % fftBins;
+	    int frameIdx = t.get<1>() / fftBins;
+	    
+	    if (frameIdx > validFrameNum){
+		return;
+	    }else{
+		t.get<0>().x = t.get<0>().x * weight[dimIdx];
+		t.get<0>().y = t.get<0>().y * weight[dimIdx];
+	    }
+	}
+    };
+
 }
 }
 
@@ -1134,7 +1159,8 @@ namespace helpers {
 			    int signalBufLength,
 			    int signalLength,
 			    int specDisType,
-			    real_t floor_log_amp)
+			    real_t floor_log_amp,
+			    real_vector *specWeight)
 	
 	: m_rawData         (rawData)
 	, m_framedData      (framedData)
@@ -1149,6 +1175,7 @@ namespace helpers {
 	, m_signalLength    (signalLength)
 	, m_disType         (specDisType)
 	, m_floor_log_amp   (floor_log_amp)
+	, m_specWeights     (specWeight)
 	  
     {
 	// m_windowType is not implemented for windows other than Hann
@@ -1168,6 +1195,10 @@ namespace helpers {
 
 	m_validFrameNum     = fftTools::fftFrameNum(m_signalLength, m_frameLength, m_frameShift);
 	m_validDataPointNum = m_validFrameNum * m_frameLength;
+
+	if (m_specWeights != NULL && (*m_specWeights).size() != m_fftBins)
+	    throw std::runtime_error("Error: specWeight length != fftL/2+1");
+	
     }
 
     template <typename TDevice>
@@ -1713,6 +1744,27 @@ namespace helpers {
 					   (*m_fftData).end())),
 		fn1);
 	    }
+	}
+
+	// If weight is applied on the FFT bins, do this on the gradients
+	// We simply ignored the impact of weights on Loss
+	if (m_specWeights != NULL){
+	    {{
+		internal::specWeightToGrad fn1;
+		fn1.fftBins       = this->m_fftBins;
+		fn1.validFrameNum = this->m_validFrameNum;
+		fn1.weight        = helpers::getRawPointer((*m_specWeights));
+		
+		thrust::for_each(
+		 thrust::make_zip_iterator(
+			thrust::make_tuple((*m_fftData).begin(),
+					   thrust::counting_iterator<int>(0))),
+		 thrust::make_zip_iterator(
+			thrust::make_tuple((*m_fftData).end(),
+					   thrust::counting_iterator<int>(0) +
+					   (*m_fftData).size())),
+		 fn1);
+	    }}
 	}
 	
     }

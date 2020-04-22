@@ -405,6 +405,7 @@ namespace layers{
 
 	dftBuf.m_fftMaskFFT.clear();
 	dftBuf.m_fftMaskSignalFramed.clear();
+	dftBuf.m_specWeight.clear();
 	
 	dftBuf.m_autoCorrSrc.clear();
 	dftBuf.m_lpcCoefSrc.clear();
@@ -429,7 +430,8 @@ namespace layers{
 							const int frameShift,
 							const int windowType,
 							const int windowTypePhase,
-							const int lpcOrder)
+							const int lpcOrder,
+							const std::string specWeightVec)
     {
 	
 	//  make m_fftLength an even number
@@ -576,6 +578,21 @@ namespace layers{
 		
 		printf("\n\t\tspectral amplitude distance on hidden features [weight: %f]", m_iota);
 	    }
+
+	    dftBuf.m_specWeightStr = specWeightVec;
+	    if (dftBuf.m_specWeightStr.size()){
+		cpu_real_vector tmp;
+		misFuncs::ParseFloatOpt(dftBuf.m_specWeightStr, tmp);
+		dftBuf.m_specWeight = tmp;
+		if (dftBuf.m_specWeight.size() != dftBuf.m_fftBinsNum){
+		    printf("\n\tSpectral weight vec %s length != %d\n",
+			   specWeightVec.c_str(), dftBuf.m_fftBinsNum);
+		    throw std::runtime_error("Error in CURRENNT network.jsn");
+		}
+	    }else{
+		dftBuf.m_specWeight.clear();
+	    }
+	    
 	}		
     }
     
@@ -759,11 +776,16 @@ namespace layers{
 	    int tmp_lpcOrder  = (layerChild->HasMember("lpcOrder") ? 
 			  static_cast<int>((*layerChild)["lpcOrder"].GetInt()) : 0);
 
+
+	    std::string tmp_specWeight = (layerChild->HasMember("specWeightVec") ? 
+					  ((*layerChild)["specWeightVec"].GetString()) : "");
+	    
 	    
 	    struct_DFTData dftBuf_1;
 	    this->__initDFTBuffer(dftBuf_1);
 	    this->__configDFTBuffer(dftBuf_1, tmp_fftLength, tmp_frameLength, tmp_frameShift,
-				    tmp_windowType, tmp_windowTypePhase, tmp_lpcOrder);
+				    tmp_windowType, tmp_windowTypePhase, tmp_lpcOrder,
+				    tmp_specWeight);
 	    this->m_DFTDataBuf.push_back(dftBuf_1);
 
 	    if (this->m_DFTDataBuf[0].m_valid_flag == false)
@@ -784,11 +806,14 @@ namespace layers{
 	    tmp_windowTypePhase  = layerChild->HasMember("windowTypePhase2") ? 
 		static_cast<real_t>((*layerChild)["windowTypePhase2"].GetInt()) :
 		FFTMAT_WINDOW_HANN;
-	
+
+	    tmp_specWeight = (layerChild->HasMember("specWeightVec2") ? 
+			      ((*layerChild)["specWeightVec2"].GetString()) : "");
 	    struct_DFTData dftBuf_2;
 	    this->__initDFTBuffer(dftBuf_2);
 	    this->__configDFTBuffer(dftBuf_2, tmp_fftLength, tmp_frameLength, tmp_frameShift,
-				    tmp_windowType, tmp_windowTypePhase, tmp_lpcOrder);
+				    tmp_windowType, tmp_windowTypePhase, tmp_lpcOrder,
+				    tmp_specWeight);
 	    this->m_DFTDataBuf.push_back(dftBuf_2);
 	    
 
@@ -808,11 +833,14 @@ namespace layers{
 	    tmp_windowTypePhase  = layerChild->HasMember("windowTypePhase3") ? 
 		static_cast<real_t>((*layerChild)["windowTypePhase3"].GetInt()) :
 		FFTMAT_WINDOW_HANN;
+	    tmp_specWeight = (layerChild->HasMember("specWeightVec3") ? 
+			      ((*layerChild)["specWeightVec3"].GetString()) : "");
 	    
 	    struct_DFTData dftBuf_3;
 	    this->__initDFTBuffer(dftBuf_3);
 	    this->__configDFTBuffer(dftBuf_3, tmp_fftLength, tmp_frameLength, tmp_frameShift,
-				    tmp_windowType, tmp_windowTypePhase, tmp_lpcOrder);
+				    tmp_windowType, tmp_windowTypePhase, tmp_lpcOrder,
+				    tmp_specWeight);
 	    this->m_DFTDataBuf.push_back(dftBuf_3);
 
 	    // Note: here we only used three DFT configurations
@@ -1187,7 +1215,8 @@ namespace layers{
 			dftBuf.m_frameLength, dftBuf.m_frameShift,
 			dftBuf.m_windowType, dftBuf.m_fftLength, dftBuf.m_fftBinsNum,
 			dftBuf.m_frameNum, this->__vMaxSeqLength(), timeLength,
-			this->m_specDisType, this->m_floor_log_spec_amp);
+			this->m_specDisType, this->m_floor_log_spec_amp,
+			(dftBuf.m_specWeight.size()?(&dftBuf.m_specWeight):NULL));
 	
 	// step1. framing and windowing
 	sourceSig.frameSignal();
@@ -1965,6 +1994,13 @@ namespace layers{
 			"lpcOrder",
 			m_DFTDataBuf[dftBufIndex].m_lpcOrder,
 			allocator);
+
+		    if (m_DFTDataBuf[dftBufIndex].m_specWeightStr.size())
+			(*layersArray)[layersArray->Size() - 1].AddMember(
+			"specWeightVec",
+			m_DFTDataBuf[dftBufIndex].m_specWeightStr.c_str(),
+			allocator);
+		    
 		}else if (dftBufIndex == 1 && m_DFTDataBuf[dftBufIndex].m_valid_flag){
 		    (*layersArray)[layersArray->Size() - 1].AddMember(
 			"fftLength2",
@@ -1992,6 +2028,13 @@ namespace layers{
 			"lpcOrder2",
 			m_DFTDataBuf[dftBufIndex].m_lpcOrder,
 			allocator);
+
+		    if (m_DFTDataBuf[dftBufIndex].m_specWeightStr.size())
+			(*layersArray)[layersArray->Size() - 1].AddMember(
+			"specWeightVec2",
+			m_DFTDataBuf[dftBufIndex].m_specWeightStr.c_str(),
+			allocator);
+		    
 		}else if (dftBufIndex == 2 && m_DFTDataBuf[dftBufIndex].m_valid_flag){
 		    (*layersArray)[layersArray->Size() - 1].AddMember(
 			"fftLength3",
@@ -2019,6 +2062,13 @@ namespace layers{
 			"lpcOrder3",
 			m_DFTDataBuf[dftBufIndex].m_lpcOrder,
 			allocator);
+
+		    if (m_DFTDataBuf[dftBufIndex].m_specWeightStr.size())
+			(*layersArray)[layersArray->Size() - 1].AddMember(
+			"specWeightVec3",
+			m_DFTDataBuf[dftBufIndex].m_specWeightStr.c_str(),
+			allocator);
+		    
 		}else{
 		    // pass
 		}
