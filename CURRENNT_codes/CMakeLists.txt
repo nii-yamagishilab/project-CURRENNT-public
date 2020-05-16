@@ -45,5 +45,9 @@ SET (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-format-security")
 
 FILE (GLOB_RECURSE src_lib     currennt_lib/*.cpp currennt_lib/*.hpp     currennt_lib/*.h     currennt_lib/*.cu     currennt_lib/*.cuh)
 FILE (GLOB_RECURSE src_trainer currennt/*.cpp     currennt/*.hpp         currennt/*.h         currennt/*.cu         currennt/*.cuh)
+
+# remove the CMake test file because it, too, has a main function
+list(FILTER src_trainer EXCLUDE REGEX ".*MakeCXXCompilerId.cpp")
+
 CUDA_ADD_EXECUTABLE (${PROJECT_NAME} ${src_lib} ${src_trainer})
 TARGET_LINK_LIBRARIES (${PROJECT_NAME} ${Boost_LIBRARIES} ${CUDA_cublas_LIBRARY} ${CUDA_CUFFT_LIBRARIES} netcdf)
