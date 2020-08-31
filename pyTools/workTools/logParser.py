@@ -70,9 +70,9 @@ def read_log_train(file_path):
     data_str = []
     with open(file_path, 'r') as file_ptr:
         for line in file_ptr:
-            if read_flag and line.count('|'):
+            if read_flag and line.count('|') > 2:
                 data_str.append(line)
-            if line.startswith('----'):
+            if line.count('Duration'):
                 read_flag = True
             
     row = len(data_str)
@@ -81,7 +81,10 @@ def read_log_train(file_path):
     data_val   = np.zeros([row, 3])
     time_per_epoch = np.zeros(row)
     for idx, line in enumerate(data_str):
-        time_per_epoch[idx] = float(line.split('|')[1])
+        try:
+            time_per_epoch[idx] = float(line.split('|')[1])
+        except ValueError:
+            continue
         trn_data = line.split('|')[2].split('/')
         val_data = line.split('|')[3].split('/')
         for idx2 in np.arange(len(trn_data)):
